@@ -41,7 +41,7 @@ type WebsocketEvent {
     player_name: String,
   )
   DeleteConnection(ConnectionId, room_code: String)
-  ProcessRequest(from: ConnectionId, message: shared.Request)
+  ProcessWebsocketRequest(from: ConnectionId, message: shared.WebsocketRequest)
 }
 
 // Messages sent to each websocket actor to update its state or for
@@ -50,9 +50,9 @@ type WebsocketConnectionUpdate {
   // Sent once set up so the websocket connection actor can set its internal state.
   SetupConnection(id: ConnectionId, room_code: String)
   // Sent to the actor from the state manager, which is then sent over the websocket.
-  Request(shared.Request)
+  Request(shared.WebsocketRequest)
   // Sent to the actor to pass on to the state manager.
-  Response(shared.Response)
+  Response(shared.WebsocketResponse)
   // Sent for the websocket connection to seppuku.
   Shutdown
 }
@@ -136,7 +136,10 @@ fn on_init(state_subj, room_code, player_name) {
             Request(req) -> {
               case connection_state {
                 WebsocketConnection(id, _, _) -> {
-                  actor.send(state_subj, ProcessRequest(from: id, message: req))
+                  actor.send(
+                    state_subj,
+                    ProcessWebsocketRequest(from: id, message: req),
+                  )
                   actor.continue(connection_state)
                 }
                 _ -> actor.continue(connection_state)
@@ -146,7 +149,7 @@ fn on_init(state_subj, room_code, player_name) {
               let assert Ok(_) =
                 mist.send_text_frame(
                   conn,
-                  shared.encode_response(outgoing_message),
+                  shared.encode_websocket_response(outgoing_message),
                 )
               actor.continue(connection_state)
             }
@@ -187,7 +190,7 @@ fn handle_ws_message(ws_conn_subject, conn, message) {
     }
     mist.Text(text) -> {
       io.println("Received request: " <> text)
-      let req = shared.decode_request(text)
+      let req = shared.decode_websocket_request(text)
       case req {
         Ok(req) -> actor.send(ws_conn_subject, Request(req))
         Error(err) -> {
@@ -264,19 +267,19 @@ fn handle_message(
         ),
       )
     }
-    ProcessRequest(from, request) -> {
+    ProcessWebsocketRequest(from, request) -> {
       actor.continue(
-        handle_request(state, from, request)
+        handle_websocket_request(state, from, request)
         |> result.unwrap(state),
       )
     }
   }
 }
 
-fn handle_request(
+fn handle_websocket_request(
   state: State(ConnectionSubject),
   from: ConnectionId,
-  request: shared.Request,
+  request: shared.WebsocketRequest,
 ) -> Result(State(ConnectionSubject), Nil) {
   use player <- result.map(dict.get(state.connections, from))
 
@@ -298,7 +301,6 @@ fn handle_request(
       |> result.unwrap(None)
       |> option.unwrap(state)
     }
-    _ -> state
   }
 }
 

@@ -5,17 +5,24 @@ import gleam/option.{type Option}
 import gleam/pair
 import gleam/result
 
-pub type Request {
-  Start
-  Join(room_code: String)
+pub type HttpRequest {
+  CreateRoom(player_name: String)
+  JoinRoom(player_name: String, room_code: String)
+}
+
+pub type HttpResponse {
+  // Returned from successfully creating/joining a room.
+  JoinedRoom(room_code: String)
+}
+
+pub type WebsocketRequest {
   AddWord(String)
   ListWords
   StartRound
   SubmitOrderedWords(List(String))
 }
 
-pub type Response {
-  JoinedRoom(room_code: String)
+pub type WebsocketResponse {
   PlayersInRoom(List(Player))
   WordList(List(String))
   RoundInfo(
@@ -137,11 +144,26 @@ pub fn room_from_json(
   )
 }
 
-pub fn encode_request(request: Request) {
+pub fn encode_http_request(request: HttpRequest) {
   let #(t, message) =
     case request {
-      Start -> #("startGame", json.null())
-      Join(room_code) -> #("joinGame", json.string(room_code))
+      CreateRoom(player_name) -> #("createRoom", json.string(player_name))
+      JoinRoom(player_name, room_code) -> #(
+        "joinRoom",
+        json.object([
+          #("playerName", json.string(player_name)),
+          #("roomCode", json.string(room_code)),
+        ]),
+      )
+    }
+    |> pair.map_first(json.string)
+  json.object([#("type", t), #("message", message)])
+  |> json.to_string
+}
+
+pub fn encode_request(request: WebsocketRequest) {
+  let #(t, message) =
+    case request {
       AddWord(word) -> #("addWord", json.string(word))
       ListWords -> #("listWords", json.null())
       StartRound -> #("startRound", json.null())
@@ -155,8 +177,43 @@ pub fn encode_request(request: Request) {
   |> json.to_string
 }
 
-/// decode_request takes a stringified JSON request and decodes it.
-pub fn decode_request(text: String) -> Result(Request, String) {
+pub fn decode_http_request(request: String) -> Result(HttpRequest, String) {
+  let type_decoder =
+    dynamic.decode2(
+      fn(t, msg) { #(t, msg) },
+      dynamic.field("type", dynamic.string),
+      dynamic.field("message", dynamic.dynamic),
+    )
+  let request_with_type = json.decode(request, type_decoder)
+
+  case request_with_type {
+    Ok(#("createRoom", msg)) ->
+      msg
+      |> dynamic.decode1(CreateRoom, dynamic.string)
+    Ok(#("joinRoom", msg)) ->
+      msg
+      |> dynamic.decode2(
+        JoinRoom,
+        dynamic.field("playerName", dynamic.string),
+        dynamic.field("roomCode", dynamic.string),
+      )
+    Ok(#(request_type, _)) ->
+      Error([dynamic.DecodeError("unknown request type", request_type, [])])
+    Error(json.UnexpectedFormat(e)) -> Error(e)
+    Error(json.UnexpectedByte(byte, _))
+    | Error(json.UnexpectedSequence(byte, _)) ->
+      Error([dynamic.DecodeError("invalid request", byte, [])])
+    Error(json.UnexpectedEndOfInput) ->
+      Error([
+        dynamic.DecodeError("bad request: unexpected end of input", "", []),
+      ])
+  }
+  |> result.map_error(decode_errs_to_string)
+}
+
+pub fn decode_websocket_request(
+  text: String,
+) -> Result(WebsocketRequest, String) {
   let type_decoder =
     dynamic.decode2(
       fn(t, msg) { #(t, msg) },
@@ -166,10 +223,6 @@ pub fn decode_request(text: String) -> Result(Request, String) {
   let request_with_type = json.decode(text, type_decoder)
 
   case request_with_type {
-    Ok(#("startGame", _)) -> Ok(Start)
-    Ok(#("joinGame", msg)) ->
-      msg
-      |> dynamic.decode1(Join, dynamic.string)
     Ok(#("addWord", msg)) ->
       msg
       |> dynamic.decode1(AddWord, dynamic.string)
@@ -192,13 +245,22 @@ pub fn decode_request(text: String) -> Result(Request, String) {
   |> result.map_error(decode_errs_to_string)
 }
 
-pub fn encode_response(response: Response) {
+pub fn encode_http_response(response: HttpResponse) {
   let #(t, message) =
     case response {
       JoinedRoom(room_code) -> #(
         "joinedRoom",
         json.object([#("roomCode", json.string(room_code))]),
       )
+    }
+    |> pair.map_first(json.string)
+  json.object([#("type", t), #("message", message)])
+  |> json.to_string
+}
+
+pub fn encode_websocket_response(response: WebsocketResponse) {
+  let #(t, message) =
+    case response {
       PlayersInRoom(players) -> #(
         "playersInRoom",
         json.array(from: players, of: player_to_json),
@@ -222,8 +284,35 @@ pub fn encode_response(response: Response) {
   |> json.to_string
 }
 
-/// decode_response takes a stringified JSON response and decodes it.
-pub fn decode_response(text: String) -> Result(Response, String) {
+pub fn decode_http_response(request: String) -> Result(HttpResponse, String) {
+  let type_decoder =
+    dynamic.decode2(
+      fn(t, msg) { #(t, msg) },
+      dynamic.field("type", dynamic.string),
+      dynamic.field("message", dynamic.dynamic),
+    )
+  let response_with_type = json.decode(request, type_decoder)
+  case response_with_type {
+    Ok(#("joinedRoom", msg)) ->
+      msg
+      |> dynamic.decode1(JoinedRoom, dynamic.field("roomCode", dynamic.string))
+    Ok(#(request_type, _)) ->
+      Error([dynamic.DecodeError("unknown request type", request_type, [])])
+    Error(json.UnexpectedFormat(e)) -> Error(e)
+    Error(json.UnexpectedByte(byte, _))
+    | Error(json.UnexpectedSequence(byte, _)) ->
+      Error([dynamic.DecodeError("invalid request", byte, [])])
+    Error(json.UnexpectedEndOfInput) ->
+      Error([
+        dynamic.DecodeError("bad request: unexpected end of input", "", []),
+      ])
+  }
+  |> result.map_error(decode_errs_to_string)
+}
+
+pub fn decode_websocket_response(
+  text: String,
+) -> Result(WebsocketResponse, String) {
   let type_decoder =
     dynamic.decode2(
       fn(t, msg) { #(t, msg) },
@@ -233,9 +322,6 @@ pub fn decode_response(text: String) -> Result(Response, String) {
   let response_with_type = json.decode(text, type_decoder)
 
   case response_with_type {
-    Ok(#("joinedRoom", msg)) ->
-      msg
-      |> dynamic.decode1(JoinedRoom, dynamic.field("roomCode", dynamic.string))
     Ok(#("playersInRoom", msg)) ->
       msg
       |> dynamic.decode1(PlayersInRoom, dynamic.list(of: player_from_json))
