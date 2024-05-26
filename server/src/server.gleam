@@ -10,12 +10,7 @@ import gleam/option.{Some}
 import gleam/otp/actor
 import gleam/result
 import mist.{type Connection, type ResponseData}
-import shared
-
-// Endpoints:
-// /startgame - GET returns a game code
-// /joingame - POST takes a game code and returns 200 if it works
-// /players - GET returns all players in the game
+import shared.{AddWord, ListWords, StartRound, SubmitOrderedWords}
 
 type ConnectionId =
   Int
@@ -269,7 +264,10 @@ fn handle_message(
       )
     }
     ProcessRequest(from, request) -> {
-      actor.continue(handle_request(state, from, request))
+      actor.continue(
+        handle_request(state, from, request)
+        |> result.unwrap(state),
+      )
     }
   }
 }
@@ -278,39 +276,42 @@ fn handle_request(
   state: State(ConnectionSubject),
   from: ConnectionId,
   request: shared.Request,
-) -> State(ConnectionSubject) {
-  let player = dict.get(state.connections, from)
+) -> Result(State(ConnectionSubject), Nil) {
+  use player <- result.map(dict.get(state.connections, from))
 
   case request {
-    shared.AddWord(word) -> {
-      result.try(player, fn(player) {
-        case dict.get(state.rooms, player.room_code) {
-          Ok(room) -> {
-            let word_list = [word, ..room.word_list]
-            list.each(room.players, fn(p) {
-              result.map(dict.get(state.connections, p.id), fn(conn) {
-                actor.send(
-                  conn.connection_subject,
-                  Response(shared.WordList(word_list)),
-                )
-              })
-            })
-            Ok(
-              State(
-                ..state,
-                rooms: dict.insert(
-                  state.rooms,
-                  player.room_code,
-                  shared.Room(..room, word_list: word_list),
-                ),
-              ),
-            )
-          }
-          Error(_) -> Ok(state)
-        }
-      })
-      |> result.unwrap(state)
+    AddWord(word) -> {
+      let new_state = add_word_to_room(state, player.room_code, word)
+      let _ = result.try(new_state, list_words(_, player.room_code))
+      result.unwrap(new_state, state)
+    }
+    ListWords -> {
+      let _ = list_words(state, player.room_code)
+      state
     }
     _ -> state
   }
+}
+
+fn list_words(state: State(ConnectionSubject), room_code: String) {
+  use room <- result.map(dict.get(state.rooms, room_code))
+  use p <- list.each(room.players)
+  use conn <- result.map(dict.get(state.connections, p.id))
+  actor.send(conn.connection_subject, Response(shared.WordList(room.word_list)))
+}
+
+fn add_word_to_room(
+  state: State(ConnectionSubject),
+  room_code: String,
+  word: String,
+) {
+  use room <- result.map(dict.get(state.rooms, room_code))
+  State(
+    ..state,
+    rooms: dict.insert(
+      state.rooms,
+      room_code,
+      shared.Room(..room, word_list: [word, ..room.word_list]),
+    ),
+  )
 }
