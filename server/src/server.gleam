@@ -6,9 +6,10 @@ import gleam/http/response.{type Response}
 import gleam/int
 import gleam/io
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import gleam/otp/actor
 import gleam/result
+import gleam/string
 import mist.{type Connection, type ResponseData}
 import shared.{AddWord, ListWords, StartRound, SubmitOrderedWords}
 
@@ -289,6 +290,14 @@ fn handle_request(
       let _ = list_words(state, player.room_code)
       state
     }
+    StartRound -> {
+      state
+    }
+    SubmitOrderedWords(ordered_words) -> {
+      submit_words(state, player, ordered_words)
+      |> result.unwrap(None)
+      |> option.unwrap(state)
+    }
     _ -> state
   }
 }
@@ -312,6 +321,54 @@ fn add_word_to_room(
       state.rooms,
       room_code,
       shared.Room(..room, word_list: [word, ..room.word_list]),
+    ),
+  )
+}
+
+fn submit_words(
+  state: State(ConnectionSubject),
+  player: ConnectedPlayer(ConnectionSubject),
+  ordered_words: List(String),
+) {
+  use room <- result.map(dict.get(state.rooms, player.room_code))
+  use round <- option.map(room.round)
+
+  let lists_equal = list.sort(ordered_words, string.compare) == round.words
+  let is_leading = { round.leading_player.0 }.id == player.id
+
+  let new_round = case lists_equal, is_leading {
+    False, _ -> {
+      actor.send(
+        player.connection_subject,
+        Response(shared.ServerError("submitted words don't match the word list")),
+      )
+      round
+    }
+    True, True -> {
+      shared.Round(
+        ..round,
+        leading_player: #(round.leading_player.0, ordered_words),
+      )
+    }
+    True, False -> {
+      shared.Round(
+        ..round,
+        other_players: list.map(round.other_players, fn(p) {
+          case { p.0 }.id == player.id {
+            True -> #(p.0, ordered_words)
+            False -> p
+          }
+        }),
+      )
+    }
+  }
+
+  State(
+    ..state,
+    rooms: dict.insert(
+      state.rooms,
+      player.room_code,
+      shared.Room(..room, round: Some(new_round)),
     ),
   )
 }
