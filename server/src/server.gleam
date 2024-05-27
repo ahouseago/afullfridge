@@ -48,11 +48,11 @@ type Message {
   ProcessWebsocketRequest(from: ConnectionId, message: shared.WebsocketRequest)
 
   GetRoom(reply_with: Subject(Result(Room, Nil)), room_code: RoomCode)
-  GetPlayer(
-    reqly_with: Subject(Result(PlayerConnection, Nil)),
-    // TODO: maybe this is room code + player name
-    id: ConnectionId,
-  )
+  // GetPlayer(
+  //   reqly_with: Subject(Result(PlayerConnection, Nil)),
+  //   // TODO: maybe this is room code + player name
+  //   id: ConnectionId,
+  // )
   CreateRoom(reply_with: Subject(Result(#(Room, ConnectionId), Nil)))
   AddPlayerToRoom(
     reply_with: Subject(Result(#(Room, ConnectionId), String)),
@@ -97,10 +97,6 @@ type StateWithSubject(connection_subject) {
 
 type State =
   StateWithSubject(ConnectionSubject)
-
-type Store {
-  Store(state: State)
-}
 
 fn get_next_id(state: State) {
   let id = state.next_id
@@ -397,7 +393,7 @@ fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
         |> int.to_string
       let connection =
         DisconnectedPlayer(id: connection_id, name: "", room_code: room_code)
-      let player = Player(connection_id, room_code)
+      let player = Player(id: connection_id, name: "")
       let room =
         Room(
           room_code: room_code,
@@ -415,9 +411,41 @@ fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
         ),
       )
     }
-    GetRoom(subj, room_code) -> todo
-    GetPlayer(subj, id) -> todo
-    AddPlayerToRoom(subj, room_code) -> todo
+    GetRoom(subj, room_code) -> {
+      case dict.get(state.rooms, room_code) {
+        Ok(room) -> actor.send(subj, Ok(room))
+        Error(_) -> Nil
+      }
+      actor.continue(state)
+    }
+    // GetPlayer(subj, id) -> todo
+    AddPlayerToRoom(subj, room_code) -> {
+      result.map(dict.get(state.rooms, room_code), fn(room) {
+        let #(state, connection_id) = get_next_id(state)
+        let connection =
+          DisconnectedPlayer(id: connection_id, name: "", room_code: room_code)
+        let player = Player(id: connection_id, name: "")
+        let room =
+          Room(
+            ..room,
+            players: room.players
+              |> dict.insert(connection_id, player),
+          )
+        actor.send(subj, Ok(#(room, connection_id)))
+        actor.continue(
+          State(
+            ..state,
+            connections: dict.insert(
+              state.connections,
+              connection_id,
+              connection,
+            ),
+            rooms: dict.insert(state.rooms, room_code, room),
+          ),
+        )
+      })
+      |> result.unwrap(actor.continue(state))
+    }
   }
 }
 
