@@ -75,7 +75,7 @@ type WebsocketConnectionUpdate {
 
 type PlayerWithSubject(connection_subject) {
   // Before the websocket has been established
-  DisconnectedPlayer(id: ConnectionId, name: PlayerName, room_code: RoomCode)
+  DisconnectedPlayer(id: ConnectionId, name: String, room_code: RoomCode)
   ConnectedPlayer(
     id: ConnectionId,
     name: PlayerName,
@@ -390,7 +390,31 @@ fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
         |> result.unwrap(state),
       )
     }
-    CreateRoom(subj) -> todo
+    CreateRoom(subj) -> {
+      let #(state, connection_id) = get_next_id(state)
+      let room_code =
+        dict.size(state.rooms)
+        |> int.to_string
+      let connection =
+        DisconnectedPlayer(id: connection_id, name: "", room_code: room_code)
+      let player = Player(connection_id, room_code)
+      let room =
+        Room(
+          room_code: room_code,
+          players: dict.new()
+            |> dict.insert(connection_id, player),
+          word_list: [],
+          round: None,
+        )
+      actor.send(subj, Ok(#(room, connection_id)))
+      actor.continue(
+        State(
+          ..state,
+          connections: dict.insert(state.connections, connection_id, connection),
+          rooms: dict.insert(state.rooms, room_code, room),
+        ),
+      )
+    }
     GetRoom(subj, room_code) -> todo
     GetPlayer(subj, id) -> todo
     AddPlayerToRoom(subj, room_code) -> todo
