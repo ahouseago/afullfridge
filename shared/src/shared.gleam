@@ -1,3 +1,4 @@
+import gleam/dict.{type Dict}
 import gleam/dynamic
 import gleam/json
 import gleam/list
@@ -5,14 +6,20 @@ import gleam/option.{type Option}
 import gleam/pair
 import gleam/result
 
+pub type PlayerName =
+  String
+
+pub type RoomCode =
+  String
+
 pub type HttpRequest {
-  CreateRoom(player_name: String)
-  JoinRoom(player_name: String, room_code: String)
+  CreateRoom(player_name: PlayerName)
+  JoinRoom(player_name: PlayerName, room_code: RoomCode)
 }
 
 pub type HttpResponse {
   // Returned from successfully creating/joining a room.
-  JoinedRoom(room_code: String)
+  JoinedRoom(room_code: RoomCode)
 }
 
 pub type WebsocketRequest {
@@ -34,7 +41,7 @@ pub type WebsocketResponse {
 }
 
 pub type Player {
-  Player(id: Int, name: String)
+  Player(id: Int, name: PlayerName)
 }
 
 fn player_to_json(player: Player) {
@@ -44,7 +51,7 @@ fn player_to_json(player: Player) {
   ])
 }
 
-fn player_from_json(
+pub fn player_from_json(
   player: dynamic.Dynamic,
 ) -> Result(Player, List(dynamic.DecodeError)) {
   player
@@ -115,8 +122,8 @@ pub fn round_from_json(
 
 pub type Room {
   Room(
-    room_code: String,
-    players: List(Player),
+    room_code: RoomCode,
+    players: Dict(PlayerName, Player),
     word_list: List(String),
     round: Option(Round),
   )
@@ -125,10 +132,19 @@ pub type Room {
 pub fn room_to_json(room: Room) {
   json.object([
     #("roomCode", json.string(room.room_code)),
-    #("players", json.array(room.players, of: player_to_json)),
+    #("players", json.array(dict.values(room.players), of: player_to_json)),
     #("wordList", json.array(room.word_list, of: json.string)),
     #("round", json.nullable(room.round, of: round_to_json)),
   ])
+}
+
+fn player_list_to_dict(
+  player_list: dynamic.Dynamic,
+) -> Result(Dict(PlayerName, Player), List(dynamic.DecodeError)) {
+  use players <- result.map(dynamic.list(player_from_json)(player_list))
+  players
+  |> list.map(fn(player) { #(player.name, player) })
+  |> dict.from_list
 }
 
 pub fn room_from_json(
@@ -138,9 +154,9 @@ pub fn room_from_json(
   |> dynamic.decode4(
     Room,
     dynamic.field("roomCode", dynamic.string),
-    dynamic.field("players", dynamic.list(player_from_json)),
+    dynamic.field("players", player_list_to_dict),
     dynamic.field("wordList", dynamic.list(dynamic.string)),
-    dynamic.field("round", dynamic.optional(round_from_json)),
+    dynamic.optional_field("round", round_from_json),
   )
 }
 
