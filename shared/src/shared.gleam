@@ -13,13 +13,13 @@ pub type RoomCode =
   String
 
 pub type HttpRequest {
-  CreateRoom(player_name: PlayerName)
-  JoinRoom(player_name: PlayerName, room_code: RoomCode)
+  CreateRoomRequest
+  JoinRoomRequest(room_code: RoomCode)
 }
 
 pub type HttpResponse {
   // Returned from successfully creating/joining a room.
-  JoinedRoom(room_code: RoomCode)
+  RoomResponse(room: Room, player_id: Int)
 }
 
 pub type WebsocketRequest {
@@ -123,7 +123,7 @@ pub fn round_from_json(
 pub type Room {
   Room(
     room_code: RoomCode,
-    players: Dict(PlayerName, Player),
+    players: Dict(Int, Player),
     word_list: List(String),
     round: Option(Round),
   )
@@ -140,10 +140,10 @@ pub fn room_to_json(room: Room) {
 
 fn player_list_to_dict(
   player_list: dynamic.Dynamic,
-) -> Result(Dict(PlayerName, Player), List(dynamic.DecodeError)) {
+) -> Result(Dict(Int, Player), List(dynamic.DecodeError)) {
   use players <- result.map(dynamic.list(player_from_json)(player_list))
   players
-  |> list.map(fn(player) { #(player.name, player) })
+  |> list.map(fn(player) { #(player.id, player) })
   |> dict.from_list
 }
 
@@ -163,14 +163,8 @@ pub fn room_from_json(
 pub fn encode_http_request(request: HttpRequest) {
   let #(t, message) =
     case request {
-      CreateRoom(player_name) -> #("createRoom", json.string(player_name))
-      JoinRoom(player_name, room_code) -> #(
-        "joinRoom",
-        json.object([
-          #("playerName", json.string(player_name)),
-          #("roomCode", json.string(room_code)),
-        ]),
-      )
+      CreateRoomRequest -> #("createRoom", json.null())
+      JoinRoomRequest(room_code) -> #("joinRoom", json.string(room_code))
     }
     |> pair.map_first(json.string)
   json.object([#("type", t), #("message", message)])
@@ -203,16 +197,10 @@ pub fn decode_http_request(request: String) -> Result(HttpRequest, String) {
   let request_with_type = json.decode(request, type_decoder)
 
   case request_with_type {
-    Ok(#("createRoom", msg)) ->
-      msg
-      |> dynamic.decode1(CreateRoom, dynamic.string)
+    Ok(#("createRoom", _)) -> Ok(CreateRoomRequest)
     Ok(#("joinRoom", msg)) ->
       msg
-      |> dynamic.decode2(
-        JoinRoom,
-        dynamic.field("playerName", dynamic.string),
-        dynamic.field("roomCode", dynamic.string),
-      )
+      |> dynamic.decode1(JoinRoomRequest, dynamic.string)
     Ok(#(request_type, _)) ->
       Error([dynamic.DecodeError("unknown request type", request_type, [])])
     Error(json.UnexpectedFormat(e)) -> Error(e)
@@ -264,9 +252,12 @@ pub fn decode_websocket_request(
 pub fn encode_http_response(response: HttpResponse) {
   let #(t, message) =
     case response {
-      JoinedRoom(room_code) -> #(
+      RoomResponse(room, player_id) -> #(
         "joinedRoom",
-        json.object([#("roomCode", json.string(room_code))]),
+        json.object([
+          #("room", room_to_json(room)),
+          #("playerId", json.int(player_id)),
+        ]),
       )
     }
     |> pair.map_first(json.string)
@@ -309,9 +300,13 @@ pub fn decode_http_response(request: String) -> Result(HttpResponse, String) {
     )
   let response_with_type = json.decode(request, type_decoder)
   case response_with_type {
-    Ok(#("joinedRoom", msg)) ->
+    Ok(#("room", msg)) ->
       msg
-      |> dynamic.decode1(JoinedRoom, dynamic.field("roomCode", dynamic.string))
+      |> dynamic.decode2(
+        RoomResponse,
+        dynamic.field("room", room_from_json),
+        dynamic.field("playerId", dynamic.int),
+      )
     Ok(#(request_type, _)) ->
       Error([dynamic.DecodeError("unknown request type", request_type, [])])
     Error(json.UnexpectedFormat(e)) -> Error(e)

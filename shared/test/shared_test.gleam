@@ -28,8 +28,8 @@ pub fn room_from_json_test() {
     Ok(Room(
       room_code: "abcd",
       players: dict.new()
-        |> dict.insert("bartholemew", Player(name: "bartholemew", id: 12))
-        |> dict.insert("susan", Player(name: "susan", id: 26)),
+        |> dict.insert(12, Player(name: "bartholemew", id: 12))
+        |> dict.insert(26, Player(name: "susan", id: 26)),
       word_list: ["sand", "squirrels", "wild swimming"],
       round: None,
     )),
