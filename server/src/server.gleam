@@ -168,42 +168,22 @@ pub fn main() {
 
 fn handle_create_room_request(
   state_subject,
-  req: request.Request(Connection),
+  _req: request.Request(Connection),
 ) -> Result(response.Response(ResponseData), response.Response(ResponseData)) {
-  use req <- result.try(
-    mist.read_body(req, 1024 * 1024 * 10)
-    |> result.map_error(fn(read_error) {
-      case read_error {
-        mist.ExcessBody -> bad_request("body too large")
-        mist.MalformedBody -> bad_request("malformed request body")
-      }
-    }),
-  )
-  use body <- result.try(
-    bit_array.to_string(req.body)
-    |> result.map_error(fn(_) { bad_request("invalid body") }),
-  )
-
-  case shared.decode_http_request(body) {
-    Ok(shared.CreateRoomRequest) -> {
-      process.try_call(state_subject, CreateRoom, 2)
-      |> result.map_error(fn(_call_result) {
-        internal_error("failed to create room")
-      })
-      |> result.try(fn(create_room_result) {
-        result.map(create_room_result, fn(room) {
-          response.new(200)
-          |> response.set_body(mist.Bytes(
-            shared.encode_http_response(shared.RoomResponse(room.0, room.1))
-            |> bytes_builder.from_string,
-          ))
-        })
-        |> result.map_error(fn(_) { internal_error("creating room") })
-      })
-    }
-    Error(reason) -> Error(bad_request(reason))
-    _ -> Error(bad_request("invalid request"))
-  }
+  process.try_call(state_subject, CreateRoom, 2)
+  |> result.map_error(fn(_call_result) {
+    internal_error("failed to create room")
+  })
+  |> result.try(fn(create_room_result) {
+    result.map(create_room_result, fn(room) {
+      response.new(200)
+      |> response.set_body(mist.Bytes(
+        shared.encode_http_response(shared.RoomResponse(room.0, room.1))
+        |> bytes_builder.from_string,
+      ))
+    })
+    |> result.map_error(fn(_) { internal_error("creating room") })
+  })
 }
 
 fn handle_join_request(
