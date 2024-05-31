@@ -168,7 +168,6 @@ pub fn encode_http_request(request: HttpRequest) {
     }
     |> pair.map_first(json.string)
   json.object([#("type", t), #("message", message)])
-  |> json.to_string
 }
 
 pub fn encode_request(request: WebsocketRequest) {
