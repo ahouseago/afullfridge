@@ -17,24 +17,24 @@ import shared
 
 pub type Model {
   Model(route: Route, room_code_input: String)
-  InRoom(route: Route, player_id: Int, room: shared.Room, player_name: String)
+  InRoom(player_id: Int, room: shared.Room, player_name: String)
 }
 
 pub type Route {
   Home
-  JoinRoom(room_code: Option(String))
-  Room(room_code: String)
+  Join(room_code: Option(String))
   NotFound
 }
 
 pub type Msg {
-  // ApiReturnedCat(Result(String, lustre_http.HttpError))
   OnRouteChange(Route)
+
+  StartGame
+  JoinGame
+  JoinedRoom(Result(shared.HttpResponse, lustre_http.HttpError))
+
   UpdateRoomCode(String)
   UpdatePlayerName(String)
-  StartGame
-  JoinedRoom(Result(shared.HttpResponse, lustre_http.HttpError))
-  // UpdatePlayerName(String)
 }
 
 pub fn main() {
@@ -46,8 +46,8 @@ pub fn main() {
 
 fn init(_flags) -> #(Model, effect.Effect(Msg)) {
   case modem.initial_uri() |> result.map(get_route_from_uri) {
-    Ok(JoinRoom(Some(room_code))) -> #(
-      Model(JoinRoom(Some(room_code)), room_code),
+    Ok(Join(Some(room_code))) -> #(
+      Model(Join(Some(room_code)), room_code),
       modem.init(on_url_change),
     )
     Ok(route) -> #(Model(route, ""), modem.init(on_url_change))
@@ -61,12 +61,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
     Model(_, _), JoinedRoom(Ok(shared.RoomResponse(room, player_id))) -> {
       io.debug(player_id)
       #(
-        InRoom(
-          route: Room(room.room_code),
-          player_id: player_id,
-          room: room,
-          player_name: "",
-        ),
+        InRoom(player_id: player_id, room: room, player_name: ""),
         effect.none(),
       )
     }
@@ -74,8 +69,6 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       io.debug(err)
       #(model, effect.none())
     }
-    // ApiReturnedCat(Ok(_cat)) -> #(model, effect.none())
-    // ApiReturnedCat(Error(_)) -> #(model, effect.none())
     Model(_route, room_code_input), OnRouteChange(route) -> #(
       Model(route, room_code_input),
       effect.none(),
@@ -84,21 +77,27 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       Model(route, room_code),
       effect.none(),
     )
+    Model(_, room_code_input), JoinGame -> #(model, join_game(room_code_input))
     Model(_, _), UpdatePlayerName(_) -> #(model, effect.none())
-    InRoom(route, player_id, room, _player_name), UpdatePlayerName(player_name) -> #(
-      InRoom(route, player_id, room, player_name),
+    InRoom(player_id, room, _player_name), UpdatePlayerName(player_name) -> #(
+      InRoom(player_id, room, player_name),
       effect.none(),
     )
-    InRoom(_route, _player_id, _room, _player_name), _ -> #(
-      model,
-      effect.none(),
-    )
+    InRoom(_player_id, _room, _player_name), _ -> #(model, effect.none())
   }
 }
 
 fn start_game() {
   lustre_http.get(
     "http://localhost:3000/createroom",
+    lustre_http.expect_json(shared.decode_http_response_json, JoinedRoom),
+  )
+}
+
+fn join_game(room_code) {
+  lustre_http.post(
+    "http://localhost:3000/joinroom",
+    shared.encode_http_request(shared.JoinRoomRequest(room_code)),
     lustre_http.expect_json(shared.decode_http_response_json, JoinedRoom),
   )
 }
@@ -115,7 +114,7 @@ fn get_route_from_uri(uri: uri.Uri) -> Route {
     })
   case uri.path_segments(uri.path), room_code {
     [""], _ | [], _ -> Home
-    ["join"], room_code -> JoinRoom(room_code)
+    ["join"], room_code -> Join(room_code)
     _, _ -> NotFound
   }
 }
@@ -136,7 +135,7 @@ pub fn view(model: Model) -> element.Element(Msg) {
   let content = content(model)
 
   html.div([], [
-    header(model.route),
+    header(model),
     // html.button([event.on_click(UserIncrementedCount)], [element.text("+")]),
     content,
     // html.button([event.on_click(UserDecrementedCount)], [element.text("-")]),
@@ -153,9 +152,9 @@ fn link(href, content) {
   )
 }
 
-fn header(route: Route) {
-  case route {
-    Home ->
+fn header(model: Model) {
+  case model {
+    Model(Home, _) ->
       html.h1([attribute.class("text-4xl my-10 text-center")], [
         element.text("A Full Fridge"),
       ])
@@ -168,7 +167,7 @@ fn header(route: Route) {
     //       ]),
     //     ]),
     //   ])
-    JoinRoom(Some(_)) ->
+    Model(Join(Some(_)), _) ->
       html.div([], [
         html.nav([attribute.class("flex items-center")], [
           link("/", [element.text("Home")]),
@@ -177,23 +176,23 @@ fn header(route: Route) {
           element.text("Joining game..."),
         ]),
       ])
-    JoinRoom(None) ->
+    Model(Join(None), _) ->
       html.div([], [
         html.nav([attribute.class("flex items-center")], [
           link("/", [element.text("Home")]),
         ]),
         html.h1([attribute.class("text-2xl my-5")], [element.text("Join game")]),
       ])
-    Room(room_code) ->
+    InRoom(_, room, _) ->
       html.div([], [
         html.nav([attribute.class("flex items-center")], [
           // link("/", [element.text("Leave game")]),
         ]),
         html.h1([attribute.class("text-2xl my-5")], [
-          element.text("Game: " <> room_code),
+          element.text("Game: " <> room.room_code),
         ]),
       ])
-    NotFound ->
+    Model(NotFound, _) ->
       html.div([], [
         html.nav([attribute.class("flex items-center")], [
           link("/", [element.text("Home")]),
@@ -232,25 +231,29 @@ fn content(model: Model) {
     //       ),
     //     ]),
     //   ])
-    Model(JoinRoom(Some(room_code)), _) ->
+    Model(Join(Some(room_code)), _) ->
       element.text("Joining room " <> room_code <> "...")
-    Model(JoinRoom(None), room_code_input) ->
-      html.div([attribute.class("flex flex-col m-4")], [
-        html.label([attribute.for("room-code-input")], [
-          element.text("Enter game code:"),
-        ]),
-        html.input([
-          attribute.id("room-code-input"),
-          attribute.placeholder("glittering-intelligent-iguana"),
-          attribute.type_("text"),
-          attribute.class(
-            "my-2 p-2 border-2 rounded placeholder:text-slate-300 placeholder:tracking-widest font-mono",
-          ),
-          event.on_input(UpdateRoomCode),
-          attribute.value(room_code_input),
-        ]),
-      ])
-    InRoom(Room(room_code), player_id, room, player_name) ->
+    Model(Join(None), room_code_input) ->
+      html.form(
+        [event.on_submit(JoinGame), attribute.class("flex flex-col m-4")],
+        [
+          html.label([attribute.for("room-code-input")], [
+            element.text("Enter game code:"),
+          ]),
+          html.input([
+            attribute.id("room-code-input"),
+            attribute.placeholder("glittering-intelligent-iguana"),
+            attribute.type_("text"),
+            attribute.class(
+              "my-2 p-2 border-2 rounded placeholder:text-slate-300 placeholder:tracking-widest font-mono",
+            ),
+            event.on_input(UpdateRoomCode),
+            attribute.value(room_code_input),
+          ]),
+          html.button([attribute.type_("submit")], [element.text("Join")]),
+        ],
+      )
+    InRoom(player_id, room, player_name) ->
       html.div([attribute.class("flex flex-col m-4")], [
         html.label([attribute.for("name-input")], [element.text("Name:")]),
         html.input([
@@ -270,6 +273,8 @@ fn content(model: Model) {
             list.map(dict.values(room.players), fn(player) {
               let display =
                 case player.name, player.id {
+                  "", id if id == player_id -> int.to_string(id) <> " (you)"
+                  name, id if id == player_id -> name <> " (you)"
                   "", id -> int.to_string(id)
                   name, _ -> name
                 }

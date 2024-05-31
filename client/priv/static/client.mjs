@@ -319,6 +319,11 @@ function second(pair) {
   let a2 = pair[1];
   return a2;
 }
+function map_first(pair, fun) {
+  let a2 = pair[0];
+  let b = pair[1];
+  return [fun(a2), b];
+}
 
 // build/dev/javascript/gleam_stdlib/gleam/list.mjs
 function do_reverse(loop$remaining, loop$accumulator) {
@@ -456,6 +461,19 @@ function do_repeat(loop$a, loop$times, loop$acc) {
 }
 function repeat(a2, times) {
   return do_repeat(a2, times, toList([]));
+}
+function key_set(list2, key, value3) {
+  if (list2.hasLength(0)) {
+    return toList([[key, value3]]);
+  } else if (list2.atLeastLength(1) && isEqual(list2.head[0], key)) {
+    let k = list2.head[0];
+    let rest$1 = list2.tail;
+    return prepend([key, value3], rest$1);
+  } else {
+    let first$1 = list2.head;
+    let rest$1 = list2.tail;
+    return prepend(first$1, key_set(rest$1, key, value3));
+  }
 }
 
 // build/dev/javascript/gleam_stdlib/gleam/result.mjs
@@ -2089,6 +2107,18 @@ function guard(requirement, consequence, alternative) {
 }
 
 // build/dev/javascript/gleam_json/gleam_json_ffi.mjs
+function json_to_string(json) {
+  return JSON.stringify(json);
+}
+function object(entries) {
+  return Object.fromEntries(entries);
+}
+function identity2(x) {
+  return x;
+}
+function do_null() {
+  return null;
+}
 function decode(string3) {
   try {
     const result = JSON.parse(string3);
@@ -2208,6 +2238,18 @@ function do_decode(json, decoder) {
 }
 function decode5(json, decoder) {
   return do_decode(json, decoder);
+}
+function to_string6(json) {
+  return json_to_string(json);
+}
+function string2(input2) {
+  return identity2(input2);
+}
+function null$() {
+  return do_null();
+}
+function object2(entries) {
+  return object(entries);
 }
 
 // build/dev/javascript/lustre/lustre/effect.mjs
@@ -2751,6 +2793,7 @@ var start = (app, selector, flags) => LustreClientApplication2.start(
   app.view
 );
 var is_browser = () => window && window.document;
+var prevent_default = (event2) => event2.preventDefault();
 
 // build/dev/javascript/lustre/lustre.mjs
 var App = class extends CustomType {
@@ -2814,6 +2857,9 @@ function span(attrs, children) {
 function button(attrs, children) {
   return element("button", attrs, children);
 }
+function form(attrs, children) {
+  return element("form", attrs, children);
+}
 function input(attrs) {
   return element("input", attrs, toList([]));
 }
@@ -2842,6 +2888,15 @@ function on_input(msg) {
     (event2) => {
       let _pipe = value2(event2);
       return map3(_pipe, msg);
+    }
+  );
+}
+function on_submit(msg) {
+  return on2(
+    "submit",
+    (event2) => {
+      let $ = prevent_default(event2);
+      return new Ok(msg);
     }
   );
 }
@@ -2965,6 +3020,23 @@ function from_uri(uri) {
       );
     }
   );
+}
+function set_header(request, key, value3) {
+  let headers = key_set(request.headers, lowercase2(key), value3);
+  return request.withFields({ headers });
+}
+function set_body(req, body) {
+  let method = req.method;
+  let headers = req.headers;
+  let scheme = req.scheme;
+  let host = req.host;
+  let port = req.port;
+  let path = req.path;
+  let query = req.query;
+  return new Request(method, headers, body, scheme, host, port, path, query);
+}
+function set_method(req, method) {
+  return req.withFields({ method });
 }
 function to(url) {
   let _pipe = url;
@@ -3173,6 +3245,27 @@ function get2(url, expect) {
     }
   );
 }
+function post(url, body, expect) {
+  return from2(
+    (dispatch) => {
+      let $ = to(url);
+      if ($.isOk()) {
+        let req = $[0];
+        let _pipe = req;
+        let _pipe$1 = set_method(_pipe, new Post());
+        let _pipe$2 = set_header(
+          _pipe$1,
+          "Content-Type",
+          "application/json"
+        );
+        let _pipe$3 = set_body(_pipe$2, to_string6(body));
+        return do_send(_pipe$3, expect, dispatch);
+      } else {
+        return dispatch(expect.run(new Error(new BadUrl(url))));
+      }
+    }
+  );
+}
 function response_to_result(response) {
   if (response instanceof Response && (200 <= response.status && response.status <= 299)) {
     let status = response.status;
@@ -3316,6 +3409,14 @@ function init2(handler) {
 }
 
 // build/dev/javascript/shared/shared.mjs
+var CreateRoomRequest = class extends CustomType {
+};
+var JoinRoomRequest = class extends CustomType {
+  constructor(room_code) {
+    super();
+    this.room_code = room_code;
+  }
+};
 var RoomResponse = class extends CustomType {
   constructor(room, player_id) {
     super();
@@ -3408,6 +3509,22 @@ function room_from_json(room) {
     optional_field("round", round_from_json)
   )(_pipe);
 }
+function encode_http_request(request) {
+  let $ = (() => {
+    let _pipe = (() => {
+      if (request instanceof CreateRoomRequest) {
+        return ["createRoom", null$()];
+      } else {
+        let room_code = request.room_code;
+        return ["joinRoom", string2(room_code)];
+      }
+    })();
+    return map_first(_pipe, string2);
+  })();
+  let t = $[0];
+  let message = $[1];
+  return object2(toList([["type", t], ["message", message]]));
+}
 function decode_http_response_json(response) {
   let type_decoder = decode2(
     (t, msg) => {
@@ -3453,9 +3570,8 @@ var Model = class extends CustomType {
   }
 };
 var InRoom = class extends CustomType {
-  constructor(route, player_id, room, player_name) {
+  constructor(player_id, room, player_name) {
     super();
-    this.route = route;
     this.player_id = player_id;
     this.room = room;
     this.player_name = player_name;
@@ -3463,13 +3579,7 @@ var InRoom = class extends CustomType {
 };
 var Home = class extends CustomType {
 };
-var JoinRoom = class extends CustomType {
-  constructor(room_code) {
-    super();
-    this.room_code = room_code;
-  }
-};
-var Room2 = class extends CustomType {
+var Join = class extends CustomType {
   constructor(room_code) {
     super();
     this.room_code = room_code;
@@ -3478,6 +3588,16 @@ var Room2 = class extends CustomType {
 var NotFound2 = class extends CustomType {
 };
 var OnRouteChange = class extends CustomType {
+  constructor(x0) {
+    super();
+    this[0] = x0;
+  }
+};
+var StartGame = class extends CustomType {
+};
+var JoinGame = class extends CustomType {
+};
+var JoinedRoom = class extends CustomType {
   constructor(x0) {
     super();
     this[0] = x0;
@@ -3495,17 +3615,21 @@ var UpdatePlayerName = class extends CustomType {
     this[0] = x0;
   }
 };
-var StartGame = class extends CustomType {
-};
-var JoinedRoom = class extends CustomType {
-  constructor(x0) {
-    super();
-    this[0] = x0;
-  }
-};
 function start_game() {
   return get2(
     "http://localhost:3000/createroom",
+    expect_json(
+      decode_http_response_json,
+      (var0) => {
+        return new JoinedRoom(var0);
+      }
+    )
+  );
+}
+function join_game(room_code) {
+  return post(
+    "http://localhost:3000/joinroom",
+    encode_http_request(new JoinRoomRequest(room_code)),
     expect_json(
       decode_http_response_json,
       (var0) => {
@@ -3521,10 +3645,7 @@ function update2(model, msg) {
     let room = msg[0][0].room;
     let player_id = msg[0][0].player_id;
     debug(player_id);
-    return [
-      new InRoom(new Room2(room.room_code), player_id, room, ""),
-      none()
-    ];
+    return [new InRoom(player_id, room, ""), none()];
   } else if (model instanceof Model && msg instanceof JoinedRoom && !msg[0].isOk()) {
     let err = msg[0][0];
     debug(err);
@@ -3537,14 +3658,16 @@ function update2(model, msg) {
     let route = model.route;
     let room_code = msg[0];
     return [new Model(route, room_code), none()];
+  } else if (model instanceof Model && msg instanceof JoinGame) {
+    let room_code_input = model.room_code_input;
+    return [model, join_game(room_code_input)];
   } else if (model instanceof Model && msg instanceof UpdatePlayerName) {
     return [model, none()];
   } else if (model instanceof InRoom && msg instanceof UpdatePlayerName) {
-    let route = model.route;
     let player_id = model.player_id;
     let room = model.room;
     let player_name = msg[0];
-    return [new InRoom(route, player_id, room, player_name), none()];
+    return [new InRoom(player_id, room, player_name), none()];
   } else {
     return [model, none()];
   }
@@ -3572,7 +3695,7 @@ function get_route_from_uri(uri) {
     return new Home();
   } else if ($.hasLength(1) && $.head === "join") {
     let room_code$1 = room_code;
-    return new JoinRoom(room_code$1);
+    return new Join(room_code$1);
   } else {
     return new NotFound2();
   }
@@ -3586,10 +3709,10 @@ function init3(_) {
     let _pipe = do_initial_uri();
     return map3(_pipe, get_route_from_uri);
   })();
-  if ($.isOk() && $[0] instanceof JoinRoom && $[0].room_code instanceof Some) {
+  if ($.isOk() && $[0] instanceof Join && $[0].room_code instanceof Some) {
     let room_code = $[0].room_code[0];
     return [
-      new Model(new JoinRoom(new Some(room_code)), room_code),
+      new Model(new Join(new Some(room_code)), room_code),
       init2(on_url_change)
     ];
   } else if ($.isOk()) {
@@ -3608,13 +3731,13 @@ function link(href2, content2) {
     content2
   );
 }
-function header(route) {
-  if (route instanceof Home) {
+function header(model) {
+  if (model instanceof Model && model.route instanceof Home) {
     return h1(
       toList([class$("text-4xl my-10 text-center")]),
       toList([text("A Full Fridge")])
     );
-  } else if (route instanceof JoinRoom && route.room_code instanceof Some) {
+  } else if (model instanceof Model && model.route instanceof Join && model.route.room_code instanceof Some) {
     return div(
       toList([]),
       toList([
@@ -3628,7 +3751,7 @@ function header(route) {
         )
       ])
     );
-  } else if (route instanceof JoinRoom && route.room_code instanceof None) {
+  } else if (model instanceof Model && model.route instanceof Join && model.route.room_code instanceof None) {
     return div(
       toList([]),
       toList([
@@ -3642,15 +3765,15 @@ function header(route) {
         )
       ])
     );
-  } else if (route instanceof Room2) {
-    let room_code = route.room_code;
+  } else if (model instanceof InRoom) {
+    let room = model.room;
     return div(
       toList([]),
       toList([
         nav(toList([class$("flex items-center")]), toList([])),
         h1(
           toList([class$("text-2xl my-5")]),
-          toList([text("Game: " + room_code)])
+          toList([text("Game: " + room.room_code)])
         )
       ])
     );
@@ -3692,13 +3815,16 @@ function content(model) {
         link("/join", toList([text("Join a game")]))
       ])
     );
-  } else if (model instanceof Model && model.route instanceof JoinRoom && model.route.room_code instanceof Some) {
+  } else if (model instanceof Model && model.route instanceof Join && model.route.room_code instanceof Some) {
     let room_code = model.route.room_code[0];
     return text("Joining room " + room_code + "...");
-  } else if (model instanceof Model && model.route instanceof JoinRoom && model.route.room_code instanceof None) {
+  } else if (model instanceof Model && model.route instanceof Join && model.route.room_code instanceof None) {
     let room_code_input = model.room_code_input;
-    return div(
-      toList([class$("flex flex-col m-4")]),
+    return form(
+      toList([
+        on_submit(new JoinGame()),
+        class$("flex flex-col m-4")
+      ]),
       toList([
         label(
           toList([for$("room-code-input")]),
@@ -3717,11 +3843,14 @@ function content(model) {
             }),
             value(room_code_input)
           ])
+        ),
+        button(
+          toList([type_("submit")]),
+          toList([text("Join")])
         )
       ])
     );
-  } else if (model instanceof InRoom && model.route instanceof Room2) {
-    let room_code = model.route.room_code;
+  } else if (model instanceof InRoom) {
     let player_id = model.player_id;
     let room = model.room;
     let player_name = model.player_name;
@@ -3759,7 +3888,14 @@ function content(model) {
                     let _pipe = (() => {
                       let $ = player.name;
                       let $1 = player.id;
-                      if ($ === "") {
+                      if ($ === "" && $1 === player_id) {
+                        let id2 = $1;
+                        return to_string2(id2) + " (you)";
+                      } else if ($1 === player_id) {
+                        let name = $;
+                        let id2 = $1;
+                        return name + " (you)";
+                      } else if ($ === "") {
                         let id2 = $1;
                         return to_string2(id2);
                       } else {
@@ -3785,7 +3921,7 @@ function content(model) {
 }
 function view(model) {
   let content$1 = content(model);
-  return div(toList([]), toList([header(model.route), content$1]));
+  return div(toList([]), toList([header(model), content$1]));
 }
 function main() {
   let app = application(init3, update2, view);
