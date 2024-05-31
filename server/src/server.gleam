@@ -154,6 +154,7 @@ pub fn main() {
 
         _ -> not_found()
       }
+      |> response.set_header("Access-Control-Allow-Origin", "http://localhost:1234")
     }
     |> mist.new
     |> mist.port(3000)

@@ -290,6 +290,29 @@ pub fn encode_websocket_response(response: WebsocketResponse) {
   |> json.to_string
 }
 
+pub fn decode_http_response_json(
+  response: dynamic.Dynamic,
+) -> Result(HttpResponse, dynamic.DecodeErrors) {
+  let type_decoder =
+    dynamic.decode2(
+      fn(t, msg) { #(t, msg) },
+      dynamic.field("type", dynamic.string),
+      dynamic.field("message", dynamic.dynamic),
+    )
+  case type_decoder(response) {
+    Ok(#("joinedRoom", msg)) ->
+      msg
+      |> dynamic.decode2(
+        RoomResponse,
+        dynamic.field("room", room_from_json),
+        dynamic.field("playerId", dynamic.int),
+      )
+    Ok(#(request_type, _)) ->
+      Error([dynamic.DecodeError("unknown request type", request_type, [])])
+    Error(e) -> Error(e)
+  }
+}
+
 pub fn decode_http_response(request: String) -> Result(HttpResponse, String) {
   let type_decoder =
     dynamic.decode2(

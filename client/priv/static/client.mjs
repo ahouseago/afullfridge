@@ -108,6 +108,11 @@ var BitArray = class _BitArray {
     return new _BitArray(this.buffer.slice(index3));
   }
 };
+var UtfCodepoint = class {
+  constructor(value3) {
+    this.value = value3;
+  }
+};
 function byteArrayToInt(byteArray) {
   byteArray = byteArray.reverse();
   let value3 = 0;
@@ -167,9 +172,9 @@ function isEqual(x, y) {
       } catch {
       }
     }
-    let [keys2, get2] = getters(a2);
+    let [keys2, get3] = getters(a2);
     for (let k of keys2(a2)) {
-      values2.push(get2(a2, k), get2(b, k));
+      values2.push(get3(a2, k), get3(b, k));
     }
   }
   return true;
@@ -239,6 +244,14 @@ function to_result(option, e) {
     return new Error(e);
   }
 }
+function from_result(result) {
+  if (result.isOk()) {
+    let a2 = result[0];
+    return new Some(a2);
+  } else {
+    return new None();
+  }
+}
 function unwrap(option, default$) {
   if (option instanceof Some) {
     let x = option[0];
@@ -262,6 +275,447 @@ function then$(option, fun) {
   } else {
     return new None();
   }
+}
+
+// build/dev/javascript/gleam_stdlib/gleam/regex.mjs
+var Match = class extends CustomType {
+  constructor(content2, submatches) {
+    super();
+    this.content = content2;
+    this.submatches = submatches;
+  }
+};
+var CompileError = class extends CustomType {
+  constructor(error, byte_index) {
+    super();
+    this.error = error;
+    this.byte_index = byte_index;
+  }
+};
+var Options = class extends CustomType {
+  constructor(case_insensitive, multi_line) {
+    super();
+    this.case_insensitive = case_insensitive;
+    this.multi_line = multi_line;
+  }
+};
+function compile(pattern, options) {
+  return compile_regex(pattern, options);
+}
+function scan(regex, string3) {
+  return regex_scan(regex, string3);
+}
+
+// build/dev/javascript/gleam_stdlib/gleam/int.mjs
+function parse(string3) {
+  return parse_int(string3);
+}
+function to_string2(x) {
+  return to_string(x);
+}
+
+// build/dev/javascript/gleam_stdlib/gleam/pair.mjs
+function second(pair) {
+  let a2 = pair[1];
+  return a2;
+}
+
+// build/dev/javascript/gleam_stdlib/gleam/list.mjs
+function do_reverse(loop$remaining, loop$accumulator) {
+  while (true) {
+    let remaining = loop$remaining;
+    let accumulator = loop$accumulator;
+    if (remaining.hasLength(0)) {
+      return accumulator;
+    } else {
+      let item = remaining.head;
+      let rest$1 = remaining.tail;
+      loop$remaining = rest$1;
+      loop$accumulator = prepend(item, accumulator);
+    }
+  }
+}
+function reverse(xs) {
+  return do_reverse(xs, toList([]));
+}
+function first(list2) {
+  if (list2.hasLength(0)) {
+    return new Error(void 0);
+  } else {
+    let x = list2.head;
+    return new Ok(x);
+  }
+}
+function do_map(loop$list, loop$fun, loop$acc) {
+  while (true) {
+    let list2 = loop$list;
+    let fun = loop$fun;
+    let acc = loop$acc;
+    if (list2.hasLength(0)) {
+      return reverse(acc);
+    } else {
+      let x = list2.head;
+      let xs = list2.tail;
+      loop$list = xs;
+      loop$fun = fun;
+      loop$acc = prepend(fun(x), acc);
+    }
+  }
+}
+function map2(list2, fun) {
+  return do_map(list2, fun, toList([]));
+}
+function do_try_map(loop$list, loop$fun, loop$acc) {
+  while (true) {
+    let list2 = loop$list;
+    let fun = loop$fun;
+    let acc = loop$acc;
+    if (list2.hasLength(0)) {
+      return new Ok(reverse(acc));
+    } else {
+      let x = list2.head;
+      let xs = list2.tail;
+      let $ = fun(x);
+      if ($.isOk()) {
+        let y = $[0];
+        loop$list = xs;
+        loop$fun = fun;
+        loop$acc = prepend(y, acc);
+      } else {
+        let error = $[0];
+        return new Error(error);
+      }
+    }
+  }
+}
+function try_map(list2, fun) {
+  return do_try_map(list2, fun, toList([]));
+}
+function do_append(loop$first, loop$second) {
+  while (true) {
+    let first2 = loop$first;
+    let second2 = loop$second;
+    if (first2.hasLength(0)) {
+      return second2;
+    } else {
+      let item = first2.head;
+      let rest$1 = first2.tail;
+      loop$first = rest$1;
+      loop$second = prepend(item, second2);
+    }
+  }
+}
+function append(first2, second2) {
+  return do_append(reverse(first2), second2);
+}
+function reverse_and_prepend(loop$prefix, loop$suffix) {
+  while (true) {
+    let prefix = loop$prefix;
+    let suffix = loop$suffix;
+    if (prefix.hasLength(0)) {
+      return suffix;
+    } else {
+      let first$1 = prefix.head;
+      let rest$1 = prefix.tail;
+      loop$prefix = rest$1;
+      loop$suffix = prepend(first$1, suffix);
+    }
+  }
+}
+function do_concat(loop$lists, loop$acc) {
+  while (true) {
+    let lists = loop$lists;
+    let acc = loop$acc;
+    if (lists.hasLength(0)) {
+      return reverse(acc);
+    } else {
+      let list2 = lists.head;
+      let further_lists = lists.tail;
+      loop$lists = further_lists;
+      loop$acc = reverse_and_prepend(list2, acc);
+    }
+  }
+}
+function concat(lists) {
+  return do_concat(lists, toList([]));
+}
+function do_repeat(loop$a, loop$times, loop$acc) {
+  while (true) {
+    let a2 = loop$a;
+    let times = loop$times;
+    let acc = loop$acc;
+    let $ = times <= 0;
+    if ($) {
+      return acc;
+    } else {
+      loop$a = a2;
+      loop$times = times - 1;
+      loop$acc = prepend(a2, acc);
+    }
+  }
+}
+function repeat(a2, times) {
+  return do_repeat(a2, times, toList([]));
+}
+
+// build/dev/javascript/gleam_stdlib/gleam/result.mjs
+function map3(result, fun) {
+  if (result.isOk()) {
+    let x = result[0];
+    return new Ok(fun(x));
+  } else {
+    let e = result[0];
+    return new Error(e);
+  }
+}
+function map_error(result, fun) {
+  if (result.isOk()) {
+    let x = result[0];
+    return new Ok(x);
+  } else {
+    let error = result[0];
+    return new Error(fun(error));
+  }
+}
+function try$(result, fun) {
+  if (result.isOk()) {
+    let x = result[0];
+    return fun(x);
+  } else {
+    let e = result[0];
+    return new Error(e);
+  }
+}
+function then$2(result, fun) {
+  return try$(result, fun);
+}
+function unwrap2(result, default$) {
+  if (result.isOk()) {
+    let v = result[0];
+    return v;
+  } else {
+    return default$;
+  }
+}
+function nil_error(result) {
+  return map_error(result, (_) => {
+    return void 0;
+  });
+}
+
+// build/dev/javascript/gleam_stdlib/gleam/string_builder.mjs
+function from_strings(strings) {
+  return concat2(strings);
+}
+function from_string(string3) {
+  return identity(string3);
+}
+function to_string3(builder) {
+  return identity(builder);
+}
+function split2(iodata, pattern) {
+  return split(iodata, pattern);
+}
+
+// build/dev/javascript/gleam_stdlib/gleam/dynamic.mjs
+var DecodeError = class extends CustomType {
+  constructor(expected, found, path) {
+    super();
+    this.expected = expected;
+    this.found = found;
+    this.path = path;
+  }
+};
+function from(a2) {
+  return identity(a2);
+}
+function dynamic(value3) {
+  return new Ok(value3);
+}
+function string(data) {
+  return decode_string(data);
+}
+function classify(data) {
+  return classify_dynamic(data);
+}
+function int(data) {
+  return decode_int(data);
+}
+function shallow_list(value3) {
+  return decode_list(value3);
+}
+function any(decoders) {
+  return (data) => {
+    if (decoders.hasLength(0)) {
+      return new Error(
+        toList([new DecodeError("another type", classify(data), toList([]))])
+      );
+    } else {
+      let decoder = decoders.head;
+      let decoders$1 = decoders.tail;
+      let $ = decoder(data);
+      if ($.isOk()) {
+        let decoded = $[0];
+        return new Ok(decoded);
+      } else {
+        return any(decoders$1)(data);
+      }
+    }
+  };
+}
+function all_errors(result) {
+  if (result.isOk()) {
+    return toList([]);
+  } else {
+    let errors = result[0];
+    return errors;
+  }
+}
+function push_path(error, name) {
+  let name$1 = from(name);
+  let decoder = any(
+    toList([string, (x) => {
+      return map3(int(x), to_string2);
+    }])
+  );
+  let name$2 = (() => {
+    let $ = decoder(name$1);
+    if ($.isOk()) {
+      let name$22 = $[0];
+      return name$22;
+    } else {
+      let _pipe = toList(["<", classify(name$1), ">"]);
+      let _pipe$1 = from_strings(_pipe);
+      return to_string3(_pipe$1);
+    }
+  })();
+  return error.withFields({ path: prepend(name$2, error.path) });
+}
+function list(decoder_type) {
+  return (dynamic2) => {
+    return try$(
+      shallow_list(dynamic2),
+      (list2) => {
+        let _pipe = list2;
+        let _pipe$1 = try_map(_pipe, decoder_type);
+        return map_errors(
+          _pipe$1,
+          (_capture) => {
+            return push_path(_capture, "*");
+          }
+        );
+      }
+    );
+  };
+}
+function map_errors(result, f) {
+  return map_error(
+    result,
+    (_capture) => {
+      return map2(_capture, f);
+    }
+  );
+}
+function field(name, inner_type) {
+  return (value3) => {
+    let missing_field_error = new DecodeError("field", "nothing", toList([]));
+    return try$(
+      decode_field(value3, name),
+      (maybe_inner) => {
+        let _pipe = maybe_inner;
+        let _pipe$1 = to_result(_pipe, toList([missing_field_error]));
+        let _pipe$2 = try$(_pipe$1, inner_type);
+        return map_errors(
+          _pipe$2,
+          (_capture) => {
+            return push_path(_capture, name);
+          }
+        );
+      }
+    );
+  };
+}
+function optional_field(name, inner_type) {
+  return (value3) => {
+    return try$(
+      decode_field(value3, name),
+      (maybe_inner) => {
+        if (maybe_inner instanceof None) {
+          return new Ok(new None());
+        } else {
+          let dynamic_inner = maybe_inner[0];
+          let _pipe = dynamic_inner;
+          let _pipe$1 = decode_option(_pipe, inner_type);
+          return map_errors(
+            _pipe$1,
+            (_capture) => {
+              return push_path(_capture, name);
+            }
+          );
+        }
+      }
+    );
+  };
+}
+function decode2(constructor, t1, t2) {
+  return (value3) => {
+    let $ = t1(value3);
+    let $1 = t2(value3);
+    if ($.isOk() && $1.isOk()) {
+      let a2 = $[0];
+      let b = $1[0];
+      return new Ok(constructor(a2, b));
+    } else {
+      let a2 = $;
+      let b = $1;
+      return new Error(concat(toList([all_errors(a2), all_errors(b)])));
+    }
+  };
+}
+function decode3(constructor, t1, t2, t3) {
+  return (value3) => {
+    let $ = t1(value3);
+    let $1 = t2(value3);
+    let $2 = t3(value3);
+    if ($.isOk() && $1.isOk() && $2.isOk()) {
+      let a2 = $[0];
+      let b = $1[0];
+      let c = $2[0];
+      return new Ok(constructor(a2, b, c));
+    } else {
+      let a2 = $;
+      let b = $1;
+      let c = $2;
+      return new Error(
+        concat(toList([all_errors(a2), all_errors(b), all_errors(c)]))
+      );
+    }
+  };
+}
+function decode4(constructor, t1, t2, t3, t4) {
+  return (x) => {
+    let $ = t1(x);
+    let $1 = t2(x);
+    let $2 = t3(x);
+    let $3 = t4(x);
+    if ($.isOk() && $1.isOk() && $2.isOk() && $3.isOk()) {
+      let a2 = $[0];
+      let b = $1[0];
+      let c = $2[0];
+      let d = $3[0];
+      return new Ok(constructor(a2, b, c, d));
+    } else {
+      let a2 = $;
+      let b = $1;
+      let c = $2;
+      let d = $3;
+      return new Error(
+        concat(
+          toList([all_errors(a2), all_errors(b), all_errors(c), all_errors(d)])
+        )
+      );
+    }
+  };
 }
 
 // build/dev/javascript/gleam_stdlib/dict.mjs
@@ -967,6 +1421,13 @@ var NOT_FOUND = {};
 function identity(x) {
   return x;
 }
+function parse_int(value3) {
+  if (/^[-+]?(\d+)$/.test(value3)) {
+    return new Ok(parseInt(value3));
+  } else {
+    return new Error(Nil);
+  }
+}
 function to_string(term) {
   return term.toString();
 }
@@ -983,15 +1444,80 @@ function graphemes_iterator(string3) {
     return new Intl.Segmenter().segment(string3)[Symbol.iterator]();
   }
 }
+function pop_grapheme(string3) {
+  let first2;
+  const iterator = graphemes_iterator(string3);
+  if (iterator) {
+    first2 = iterator.next().value?.segment;
+  } else {
+    first2 = string3.match(/./su)?.[0];
+  }
+  if (first2) {
+    return new Ok([first2, string3.slice(first2.length)]);
+  } else {
+    return new Error(Nil);
+  }
+}
+function lowercase(string3) {
+  return string3.toLowerCase();
+}
 function split(xs, pattern) {
   return List.fromArray(xs.split(pattern));
 }
-function concat(xs) {
+function concat2(xs) {
   let result = "";
   for (const x of xs) {
     result = result + x;
   }
   return result;
+}
+function starts_with(haystack, needle) {
+  return haystack.startsWith(needle);
+}
+function print_debug(string3) {
+  if (typeof process === "object" && process.stderr?.write) {
+    process.stderr.write(string3 + "\n");
+  } else if (typeof Deno === "object") {
+    Deno.stderr.writeSync(new TextEncoder().encode(string3 + "\n"));
+  } else {
+    console.log(string3);
+  }
+}
+function compile_regex(pattern, options) {
+  try {
+    let flags = "gu";
+    if (options.case_insensitive)
+      flags += "i";
+    if (options.multi_line)
+      flags += "m";
+    return new Ok(new RegExp(pattern, flags));
+  } catch (error) {
+    const number = (error.columnNumber || 0) | 0;
+    return new Error(new CompileError(error.message, number));
+  }
+}
+function regex_scan(regex, string3) {
+  const matches = Array.from(string3.matchAll(regex)).map((match) => {
+    const content2 = match[0];
+    const submatches = [];
+    for (let n = match.length - 1; n > 0; n--) {
+      if (match[n]) {
+        submatches[n - 1] = new Some(match[n]);
+        continue;
+      }
+      if (submatches.length > 0) {
+        submatches[n - 1] = new None();
+      }
+    }
+    return new Match(content2, List.fromArray(submatches));
+  });
+  return List.fromArray(matches);
+}
+function new_map() {
+  return Dict.new();
+}
+function map_to_list(map6) {
+  return List.fromArray(map6.entries());
 }
 function map_get(map6, key) {
   const value3 = map6.get(key, NOT_FOUND);
@@ -999,6 +1525,9 @@ function map_get(map6, key) {
     return new Error(Nil);
   }
   return new Ok(value3);
+}
+function map_insert(key, value3, map6) {
+  return map6.set(key, value3);
 }
 function unsafe_percent_decode(string3) {
   return decodeURIComponent((string3 || "").replace("+", " "));
@@ -1059,6 +1588,24 @@ function decode_string(data) {
 function decode_int(data) {
   return Number.isInteger(data) ? new Ok(data) : decoder_error("Int", data);
 }
+function decode_list(data) {
+  if (Array.isArray(data)) {
+    return new Ok(List.fromArray(data));
+  }
+  return data instanceof List ? new Ok(data) : decoder_error("List", data);
+}
+function decode_option(data, decoder) {
+  if (data === null || data === void 0 || data instanceof None)
+    return new Ok(new None());
+  if (data instanceof Some)
+    data = data[0];
+  const result = decoder(data);
+  if (result.isOk()) {
+    return new Ok(new Some(result[0]));
+  } else {
+    return result;
+  }
+}
 function decode_field(value3, name) {
   const not_a_map_error = () => decoder_error("Dict", value3);
   if (value3 instanceof Dict || value3 instanceof WeakMap || value3 instanceof Map) {
@@ -1079,14 +1626,109 @@ function try_get_field(value3, field2, or_else) {
     return or_else();
   }
 }
-
-// build/dev/javascript/gleam_stdlib/gleam/int.mjs
-function to_string2(x) {
-  return to_string(x);
+function inspect(v) {
+  const t = typeof v;
+  if (v === true)
+    return "True";
+  if (v === false)
+    return "False";
+  if (v === null)
+    return "//js(null)";
+  if (v === void 0)
+    return "Nil";
+  if (t === "string")
+    return JSON.stringify(v);
+  if (t === "bigint" || t === "number")
+    return v.toString();
+  if (Array.isArray(v))
+    return `#(${v.map(inspect).join(", ")})`;
+  if (v instanceof List)
+    return inspectList(v);
+  if (v instanceof UtfCodepoint)
+    return inspectUtfCodepoint(v);
+  if (v instanceof BitArray)
+    return inspectBitArray(v);
+  if (v instanceof CustomType)
+    return inspectCustomType(v);
+  if (v instanceof Dict)
+    return inspectDict(v);
+  if (v instanceof Set)
+    return `//js(Set(${[...v].map(inspect).join(", ")}))`;
+  if (v instanceof RegExp)
+    return `//js(${v})`;
+  if (v instanceof Date)
+    return `//js(Date("${v.toISOString()}"))`;
+  if (v instanceof Function) {
+    const args = [];
+    for (const i of Array(v.length).keys())
+      args.push(String.fromCharCode(i + 97));
+    return `//fn(${args.join(", ")}) { ... }`;
+  }
+  return inspectObject(v);
+}
+function inspectDict(map6) {
+  let body = "dict.from_list([";
+  let first2 = true;
+  map6.forEach((value3, key) => {
+    if (!first2)
+      body = body + ", ";
+    body = body + "#(" + inspect(key) + ", " + inspect(value3) + ")";
+    first2 = false;
+  });
+  return body + "])";
+}
+function inspectObject(v) {
+  const name = Object.getPrototypeOf(v)?.constructor?.name || "Object";
+  const props = [];
+  for (const k of Object.keys(v)) {
+    props.push(`${inspect(k)}: ${inspect(v[k])}`);
+  }
+  const body = props.length ? " " + props.join(", ") + " " : "";
+  const head = name === "Object" ? "" : name + " ";
+  return `//js(${head}{${body}})`;
+}
+function inspectCustomType(record) {
+  const props = Object.keys(record).map((label2) => {
+    const value3 = inspect(record[label2]);
+    return isNaN(parseInt(label2)) ? `${label2}: ${value3}` : value3;
+  }).join(", ");
+  return props ? `${record.constructor.name}(${props})` : record.constructor.name;
+}
+function inspectList(list2) {
+  return `[${list2.toArray().map(inspect).join(", ")}]`;
+}
+function inspectBitArray(bits) {
+  return `<<${Array.from(bits.buffer).join(", ")}>>`;
+}
+function inspectUtfCodepoint(codepoint2) {
+  return `//utfcodepoint(${String.fromCodePoint(codepoint2.value)})`;
 }
 
-// build/dev/javascript/gleam_stdlib/gleam/list.mjs
-function do_reverse(loop$remaining, loop$accumulator) {
+// build/dev/javascript/gleam_stdlib/gleam/dict.mjs
+function new$() {
+  return new_map();
+}
+function insert(dict, key, value3) {
+  return map_insert(key, value3, dict);
+}
+function fold_list_of_pair(loop$list, loop$initial) {
+  while (true) {
+    let list2 = loop$list;
+    let initial = loop$initial;
+    if (list2.hasLength(0)) {
+      return initial;
+    } else {
+      let x = list2.head;
+      let rest = list2.tail;
+      loop$list = rest;
+      loop$initial = insert(initial, x[0], x[1]);
+    }
+  }
+}
+function from_list(list2) {
+  return fold_list_of_pair(list2, new$());
+}
+function reverse_and_concat(loop$remaining, loop$accumulator) {
   while (true) {
     let remaining = loop$remaining;
     let accumulator = loop$accumulator;
@@ -1094,167 +1736,49 @@ function do_reverse(loop$remaining, loop$accumulator) {
       return accumulator;
     } else {
       let item = remaining.head;
-      let rest$1 = remaining.tail;
-      loop$remaining = rest$1;
+      let rest = remaining.tail;
+      loop$remaining = rest;
       loop$accumulator = prepend(item, accumulator);
     }
   }
 }
-function reverse(xs) {
-  return do_reverse(xs, toList([]));
-}
-function do_map(loop$list, loop$fun, loop$acc) {
+function do_values_acc(loop$list, loop$acc) {
   while (true) {
     let list2 = loop$list;
-    let fun = loop$fun;
     let acc = loop$acc;
     if (list2.hasLength(0)) {
-      return reverse(acc);
+      return reverse_and_concat(acc, toList([]));
     } else {
       let x = list2.head;
       let xs = list2.tail;
       loop$list = xs;
-      loop$fun = fun;
-      loop$acc = prepend(fun(x), acc);
+      loop$acc = prepend(x[1], acc);
     }
   }
 }
-function map2(list2, fun) {
-  return do_map(list2, fun, toList([]));
+function do_values(dict) {
+  let list_of_pairs = map_to_list(dict);
+  return do_values_acc(list_of_pairs, toList([]));
 }
-
-// build/dev/javascript/gleam_stdlib/gleam/result.mjs
-function map3(result, fun) {
-  if (result.isOk()) {
-    let x = result[0];
-    return new Ok(fun(x));
-  } else {
-    let e = result[0];
-    return new Error(e);
-  }
-}
-function map_error(result, fun) {
-  if (result.isOk()) {
-    let x = result[0];
-    return new Ok(x);
-  } else {
-    let error = result[0];
-    return new Error(fun(error));
-  }
-}
-function try$(result, fun) {
-  if (result.isOk()) {
-    let x = result[0];
-    return fun(x);
-  } else {
-    let e = result[0];
-    return new Error(e);
-  }
-}
-
-// build/dev/javascript/gleam_stdlib/gleam/string_builder.mjs
-function from_strings(strings) {
-  return concat(strings);
-}
-function from_string(string3) {
-  return identity(string3);
-}
-function to_string3(builder) {
-  return identity(builder);
-}
-function split2(iodata, pattern) {
-  return split(iodata, pattern);
-}
-
-// build/dev/javascript/gleam_stdlib/gleam/dynamic.mjs
-var DecodeError = class extends CustomType {
-  constructor(expected, found, path) {
-    super();
-    this.expected = expected;
-    this.found = found;
-    this.path = path;
-  }
-};
-function from(a2) {
-  return identity(a2);
-}
-function string(data) {
-  return decode_string(data);
-}
-function classify(data) {
-  return classify_dynamic(data);
-}
-function int(data) {
-  return decode_int(data);
-}
-function any(decoders) {
-  return (data) => {
-    if (decoders.hasLength(0)) {
-      return new Error(
-        toList([new DecodeError("another type", classify(data), toList([]))])
-      );
-    } else {
-      let decoder = decoders.head;
-      let decoders$1 = decoders.tail;
-      let $ = decoder(data);
-      if ($.isOk()) {
-        let decoded = $[0];
-        return new Ok(decoded);
-      } else {
-        return any(decoders$1)(data);
-      }
-    }
-  };
-}
-function push_path(error, name) {
-  let name$1 = from(name);
-  let decoder = any(
-    toList([string, (x) => {
-      return map3(int(x), to_string2);
-    }])
-  );
-  let name$2 = (() => {
-    let $ = decoder(name$1);
-    if ($.isOk()) {
-      let name$22 = $[0];
-      return name$22;
-    } else {
-      let _pipe = toList(["<", classify(name$1), ">"]);
-      let _pipe$1 = from_strings(_pipe);
-      return to_string3(_pipe$1);
-    }
-  })();
-  return error.withFields({ path: prepend(name$2, error.path) });
-}
-function map_errors(result, f) {
-  return map_error(
-    result,
-    (_capture) => {
-      return map2(_capture, f);
-    }
-  );
-}
-function field(name, inner_type) {
-  return (value3) => {
-    let missing_field_error = new DecodeError("field", "nothing", toList([]));
-    return try$(
-      decode_field(value3, name),
-      (maybe_inner) => {
-        let _pipe = maybe_inner;
-        let _pipe$1 = to_result(_pipe, toList([missing_field_error]));
-        let _pipe$2 = try$(_pipe$1, inner_type);
-        return map_errors(
-          _pipe$2,
-          (_capture) => {
-            return push_path(_capture, name);
-          }
-        );
-      }
-    );
-  };
+function values(dict) {
+  return do_values(dict);
 }
 
 // build/dev/javascript/gleam_stdlib/gleam/string.mjs
+function lowercase2(string3) {
+  return lowercase(string3);
+}
+function starts_with2(string3, prefix) {
+  return starts_with(string3, prefix);
+}
+function concat3(strings) {
+  let _pipe = strings;
+  let _pipe$1 = from_strings(_pipe);
+  return to_string3(_pipe$1);
+}
+function pop_grapheme2(string3) {
+  return pop_grapheme(string3);
+}
 function split3(x, substring) {
   if (substring === "") {
     return graphemes(x);
@@ -1264,6 +1788,18 @@ function split3(x, substring) {
     let _pipe$2 = split2(_pipe$1, substring);
     return map2(_pipe$2, to_string3);
   }
+}
+function inspect2(term) {
+  let _pipe = inspect(term);
+  return to_string3(_pipe);
+}
+
+// build/dev/javascript/gleam_stdlib/gleam/io.mjs
+function debug(term) {
+  let _pipe = term;
+  let _pipe$1 = inspect2(_pipe);
+  print_debug(_pipe$1);
+  return term;
 }
 
 // build/dev/javascript/gleam_stdlib/gleam/uri.mjs
@@ -1279,6 +1815,154 @@ var Uri = class extends CustomType {
     this.fragment = fragment;
   }
 };
+function regex_submatches(pattern, string3) {
+  let _pipe = pattern;
+  let _pipe$1 = compile(_pipe, new Options(true, false));
+  let _pipe$2 = nil_error(_pipe$1);
+  let _pipe$3 = map3(
+    _pipe$2,
+    (_capture) => {
+      return scan(_capture, string3);
+    }
+  );
+  let _pipe$4 = try$(_pipe$3, first);
+  let _pipe$5 = map3(_pipe$4, (m) => {
+    return m.submatches;
+  });
+  return unwrap2(_pipe$5, toList([]));
+}
+function noneify_query(x) {
+  if (x instanceof None) {
+    return new None();
+  } else {
+    let x$1 = x[0];
+    let $ = pop_grapheme2(x$1);
+    if ($.isOk() && $[0][0] === "?") {
+      let query = $[0][1];
+      return new Some(query);
+    } else {
+      return new None();
+    }
+  }
+}
+function noneify_empty_string(x) {
+  if (x instanceof Some && x[0] === "") {
+    return new None();
+  } else if (x instanceof None) {
+    return new None();
+  } else {
+    return x;
+  }
+}
+function extra_required(loop$list, loop$remaining) {
+  while (true) {
+    let list2 = loop$list;
+    let remaining = loop$remaining;
+    if (remaining === 0) {
+      return 0;
+    } else if (list2.hasLength(0)) {
+      return remaining;
+    } else {
+      let xs = list2.tail;
+      loop$list = xs;
+      loop$remaining = remaining - 1;
+    }
+  }
+}
+function pad_list(list2, size) {
+  let _pipe = list2;
+  return append(
+    _pipe,
+    repeat(new None(), extra_required(list2, size))
+  );
+}
+function split_authority(authority) {
+  let $ = unwrap(authority, "");
+  if ($ === "") {
+    return [new None(), new None(), new None()];
+  } else if ($ === "//") {
+    return [new None(), new Some(""), new None()];
+  } else {
+    let authority$1 = $;
+    let matches = (() => {
+      let _pipe = "^(//)?((.*)@)?(\\[[a-zA-Z0-9:.]*\\]|[^:]*)(:(\\d*))?";
+      let _pipe$1 = regex_submatches(_pipe, authority$1);
+      return pad_list(_pipe$1, 6);
+    })();
+    if (matches.hasLength(6)) {
+      let userinfo = matches.tail.tail.head;
+      let host = matches.tail.tail.tail.head;
+      let port = matches.tail.tail.tail.tail.tail.head;
+      let userinfo$1 = noneify_empty_string(userinfo);
+      let host$1 = noneify_empty_string(host);
+      let port$1 = (() => {
+        let _pipe = port;
+        let _pipe$1 = unwrap(_pipe, "");
+        let _pipe$2 = parse(_pipe$1);
+        return from_result(_pipe$2);
+      })();
+      return [userinfo$1, host$1, port$1];
+    } else {
+      return [new None(), new None(), new None()];
+    }
+  }
+}
+function do_parse(uri_string) {
+  let pattern = "^(([a-z][a-z0-9\\+\\-\\.]*):)?(//([^/?#]*))?([^?#]*)(\\?([^#]*))?(#.*)?";
+  let matches = (() => {
+    let _pipe = pattern;
+    let _pipe$1 = regex_submatches(_pipe, uri_string);
+    return pad_list(_pipe$1, 8);
+  })();
+  let $ = (() => {
+    if (matches.hasLength(8)) {
+      let scheme2 = matches.tail.head;
+      let authority_with_slashes = matches.tail.tail.head;
+      let path2 = matches.tail.tail.tail.tail.head;
+      let query_with_question_mark = matches.tail.tail.tail.tail.tail.head;
+      let fragment2 = matches.tail.tail.tail.tail.tail.tail.tail.head;
+      return [
+        scheme2,
+        authority_with_slashes,
+        path2,
+        query_with_question_mark,
+        fragment2
+      ];
+    } else {
+      return [new None(), new None(), new None(), new None(), new None()];
+    }
+  })();
+  let scheme = $[0];
+  let authority = $[1];
+  let path = $[2];
+  let query = $[3];
+  let fragment = $[4];
+  let scheme$1 = noneify_empty_string(scheme);
+  let path$1 = unwrap(path, "");
+  let query$1 = noneify_query(query);
+  let $1 = split_authority(authority);
+  let userinfo = $1[0];
+  let host = $1[1];
+  let port = $1[2];
+  let fragment$1 = (() => {
+    let _pipe = fragment;
+    let _pipe$1 = to_result(_pipe, void 0);
+    let _pipe$2 = try$(_pipe$1, pop_grapheme2);
+    let _pipe$3 = map3(_pipe$2, second);
+    return from_result(_pipe$3);
+  })();
+  let scheme$2 = (() => {
+    let _pipe = scheme$1;
+    let _pipe$1 = noneify_empty_string(_pipe);
+    return map(_pipe$1, lowercase2);
+  })();
+  return new Ok(
+    new Uri(scheme$2, userinfo, host, port, path$1, query$1, fragment$1)
+  );
+}
+function parse2(uri_string) {
+  return do_parse(uri_string);
+}
 function parse_query2(query) {
   return parse_query(query);
 }
@@ -1320,6 +2004,80 @@ function remove_dot_segments(input2) {
 function path_segments(path) {
   return remove_dot_segments(split3(path, "/"));
 }
+function to_string4(uri) {
+  let parts = (() => {
+    let $ = uri.fragment;
+    if ($ instanceof Some) {
+      let fragment = $[0];
+      return toList(["#", fragment]);
+    } else {
+      return toList([]);
+    }
+  })();
+  let parts$1 = (() => {
+    let $ = uri.query;
+    if ($ instanceof Some) {
+      let query = $[0];
+      return prepend("?", prepend(query, parts));
+    } else {
+      return parts;
+    }
+  })();
+  let parts$2 = prepend(uri.path, parts$1);
+  let parts$3 = (() => {
+    let $ = uri.host;
+    let $1 = starts_with2(uri.path, "/");
+    if ($ instanceof Some && !$1 && $[0] !== "") {
+      let host = $[0];
+      return prepend("/", parts$2);
+    } else {
+      return parts$2;
+    }
+  })();
+  let parts$4 = (() => {
+    let $ = uri.host;
+    let $1 = uri.port;
+    if ($ instanceof Some && $1 instanceof Some) {
+      let port = $1[0];
+      return prepend(":", prepend(to_string2(port), parts$3));
+    } else {
+      return parts$3;
+    }
+  })();
+  let parts$5 = (() => {
+    let $ = uri.scheme;
+    let $1 = uri.userinfo;
+    let $2 = uri.host;
+    if ($ instanceof Some && $1 instanceof Some && $2 instanceof Some) {
+      let s = $[0];
+      let u = $1[0];
+      let h = $2[0];
+      return prepend(
+        s,
+        prepend(
+          "://",
+          prepend(u, prepend("@", prepend(h, parts$4)))
+        )
+      );
+    } else if ($ instanceof Some && $1 instanceof None && $2 instanceof Some) {
+      let s = $[0];
+      let h = $2[0];
+      return prepend(s, prepend("://", prepend(h, parts$4)));
+    } else if ($ instanceof Some && $1 instanceof Some && $2 instanceof None) {
+      let s = $[0];
+      return prepend(s, prepend(":", parts$4));
+    } else if ($ instanceof Some && $1 instanceof None && $2 instanceof None) {
+      let s = $[0];
+      return prepend(s, prepend(":", parts$4));
+    } else if ($ instanceof None && $1 instanceof None && $2 instanceof Some) {
+      let h = $2[0];
+      return prepend("//", prepend(h, parts$4));
+    } else {
+      return parts$4;
+    }
+  })();
+  return concat3(parts$5);
+}
 
 // build/dev/javascript/gleam_stdlib/gleam/bool.mjs
 function guard(requirement, consequence, alternative) {
@@ -1328,6 +2086,128 @@ function guard(requirement, consequence, alternative) {
   } else {
     return alternative();
   }
+}
+
+// build/dev/javascript/gleam_json/gleam_json_ffi.mjs
+function decode(string3) {
+  try {
+    const result = JSON.parse(string3);
+    return new Ok(result);
+  } catch (err) {
+    return new Error(getJsonDecodeError(err, string3));
+  }
+}
+function getJsonDecodeError(stdErr, json) {
+  if (isUnexpectedEndOfInput(stdErr))
+    return new UnexpectedEndOfInput();
+  return toUnexpectedByteError(stdErr, json);
+}
+function isUnexpectedEndOfInput(err) {
+  const unexpectedEndOfInputRegex = /((unexpected (end|eof))|(end of data)|(unterminated string)|(json( parse error|\.parse)\: expected '(\:|\}|\])'))/i;
+  return unexpectedEndOfInputRegex.test(err.message);
+}
+function toUnexpectedByteError(err, json) {
+  let converters = [
+    v8UnexpectedByteError,
+    oldV8UnexpectedByteError,
+    jsCoreUnexpectedByteError,
+    spidermonkeyUnexpectedByteError
+  ];
+  for (let converter of converters) {
+    let result = converter(err, json);
+    if (result)
+      return result;
+  }
+  return new UnexpectedByte("", 0);
+}
+function v8UnexpectedByteError(err) {
+  const regex = /unexpected token '(.)', ".+" is not valid JSON/i;
+  const match = regex.exec(err.message);
+  if (!match)
+    return null;
+  const byte = toHex(match[1]);
+  return new UnexpectedByte(byte, -1);
+}
+function oldV8UnexpectedByteError(err) {
+  const regex = /unexpected token (.) in JSON at position (\d+)/i;
+  const match = regex.exec(err.message);
+  if (!match)
+    return null;
+  const byte = toHex(match[1]);
+  const position = Number(match[2]);
+  return new UnexpectedByte(byte, position);
+}
+function spidermonkeyUnexpectedByteError(err, json) {
+  const regex = /(unexpected character|expected .*) at line (\d+) column (\d+)/i;
+  const match = regex.exec(err.message);
+  if (!match)
+    return null;
+  const line = Number(match[2]);
+  const column = Number(match[3]);
+  const position = getPositionFromMultiline(line, column, json);
+  const byte = toHex(json[position]);
+  return new UnexpectedByte(byte, position);
+}
+function jsCoreUnexpectedByteError(err) {
+  const regex = /unexpected (identifier|token) "(.)"/i;
+  const match = regex.exec(err.message);
+  if (!match)
+    return null;
+  const byte = toHex(match[2]);
+  return new UnexpectedByte(byte, 0);
+}
+function toHex(char) {
+  return "0x" + char.charCodeAt(0).toString(16).toUpperCase();
+}
+function getPositionFromMultiline(line, column, string3) {
+  if (line === 1)
+    return column - 1;
+  let currentLn = 1;
+  let position = 0;
+  string3.split("").find((char, idx) => {
+    if (char === "\n")
+      currentLn += 1;
+    if (currentLn === line) {
+      position = idx + column;
+      return true;
+    }
+    return false;
+  });
+  return position;
+}
+
+// build/dev/javascript/gleam_json/gleam/json.mjs
+var UnexpectedEndOfInput = class extends CustomType {
+};
+var UnexpectedByte = class extends CustomType {
+  constructor(byte, position) {
+    super();
+    this.byte = byte;
+    this.position = position;
+  }
+};
+var UnexpectedFormat = class extends CustomType {
+  constructor(x0) {
+    super();
+    this[0] = x0;
+  }
+};
+function do_decode(json, decoder) {
+  return then$2(
+    decode(json),
+    (dynamic_value) => {
+      let _pipe = decoder(dynamic_value);
+      return map_error(
+        _pipe,
+        (var0) => {
+          return new UnexpectedFormat(var0);
+        }
+      );
+    }
+  );
+}
+function decode5(json, decoder) {
+  return do_decode(json, decoder);
 }
 
 // build/dev/javascript/lustre/lustre/effect.mjs
@@ -1907,20 +2787,32 @@ function start3(app, selector, flags) {
 function h1(attrs, children) {
   return element("h1", attrs, children);
 }
+function h2(attrs, children) {
+  return element("h2", attrs, children);
+}
 function nav(attrs, children) {
   return element("nav", attrs, children);
 }
 function div(attrs, children) {
   return element("div", attrs, children);
 }
+function li(attrs, children) {
+  return element("li", attrs, children);
+}
 function p(attrs, children) {
   return element("p", attrs, children);
+}
+function ul(attrs, children) {
+  return element("ul", attrs, children);
 }
 function a(attrs, children) {
   return element("a", attrs, children);
 }
 function span(attrs, children) {
   return element("span", attrs, children);
+}
+function button(attrs, children) {
+  return element("button", attrs, children);
 }
 function input(attrs) {
   return element("input", attrs, toList([]));
@@ -1932,6 +2824,11 @@ function label(attrs, children) {
 // build/dev/javascript/lustre/lustre/event.mjs
 function on2(name, handler) {
   return on(name, handler);
+}
+function on_click(msg) {
+  return on2("click", (_) => {
+    return new Ok(msg);
+  });
 }
 function value2(event2) {
   let _pipe = event2;
@@ -1945,6 +2842,374 @@ function on_input(msg) {
     (event2) => {
       let _pipe = value2(event2);
       return map3(_pipe, msg);
+    }
+  );
+}
+
+// build/dev/javascript/gleam_http/gleam/http.mjs
+var Get = class extends CustomType {
+};
+var Post = class extends CustomType {
+};
+var Head = class extends CustomType {
+};
+var Put = class extends CustomType {
+};
+var Delete = class extends CustomType {
+};
+var Trace = class extends CustomType {
+};
+var Connect = class extends CustomType {
+};
+var Options2 = class extends CustomType {
+};
+var Patch = class extends CustomType {
+};
+var Http = class extends CustomType {
+};
+var Https = class extends CustomType {
+};
+function method_to_string(method) {
+  if (method instanceof Connect) {
+    return "connect";
+  } else if (method instanceof Delete) {
+    return "delete";
+  } else if (method instanceof Get) {
+    return "get";
+  } else if (method instanceof Head) {
+    return "head";
+  } else if (method instanceof Options2) {
+    return "options";
+  } else if (method instanceof Patch) {
+    return "patch";
+  } else if (method instanceof Post) {
+    return "post";
+  } else if (method instanceof Put) {
+    return "put";
+  } else if (method instanceof Trace) {
+    return "trace";
+  } else {
+    let s = method[0];
+    return s;
+  }
+}
+function scheme_to_string(scheme) {
+  if (scheme instanceof Http) {
+    return "http";
+  } else {
+    return "https";
+  }
+}
+function scheme_from_string(scheme) {
+  let $ = lowercase2(scheme);
+  if ($ === "http") {
+    return new Ok(new Http());
+  } else if ($ === "https") {
+    return new Ok(new Https());
+  } else {
+    return new Error(void 0);
+  }
+}
+
+// build/dev/javascript/gleam_http/gleam/http/request.mjs
+var Request = class extends CustomType {
+  constructor(method, headers, body, scheme, host, port, path, query) {
+    super();
+    this.method = method;
+    this.headers = headers;
+    this.body = body;
+    this.scheme = scheme;
+    this.host = host;
+    this.port = port;
+    this.path = path;
+    this.query = query;
+  }
+};
+function to_uri(request) {
+  return new Uri(
+    new Some(scheme_to_string(request.scheme)),
+    new None(),
+    new Some(request.host),
+    request.port,
+    request.path,
+    request.query,
+    new None()
+  );
+}
+function from_uri(uri) {
+  return then$2(
+    (() => {
+      let _pipe = uri.scheme;
+      let _pipe$1 = unwrap(_pipe, "");
+      return scheme_from_string(_pipe$1);
+    })(),
+    (scheme) => {
+      return then$2(
+        (() => {
+          let _pipe = uri.host;
+          return to_result(_pipe, void 0);
+        })(),
+        (host) => {
+          let req = new Request(
+            new Get(),
+            toList([]),
+            "",
+            scheme,
+            host,
+            uri.port,
+            uri.path,
+            uri.query
+          );
+          return new Ok(req);
+        }
+      );
+    }
+  );
+}
+function to(url) {
+  let _pipe = url;
+  let _pipe$1 = parse2(_pipe);
+  return then$2(_pipe$1, from_uri);
+}
+
+// build/dev/javascript/gleam_http/gleam/http/response.mjs
+var Response = class extends CustomType {
+  constructor(status, headers, body) {
+    super();
+    this.status = status;
+    this.headers = headers;
+    this.body = body;
+  }
+};
+
+// build/dev/javascript/gleam_javascript/ffi.mjs
+var PromiseLayer = class _PromiseLayer {
+  constructor(promise) {
+    this.promise = promise;
+  }
+  static wrap(value3) {
+    return value3 instanceof Promise ? new _PromiseLayer(value3) : value3;
+  }
+  static unwrap(value3) {
+    return value3 instanceof _PromiseLayer ? value3.promise : value3;
+  }
+};
+function resolve(value3) {
+  return Promise.resolve(PromiseLayer.wrap(value3));
+}
+function then(promise, fn) {
+  return promise.then((value3) => fn(PromiseLayer.unwrap(value3)));
+}
+function map_promise(promise, fn) {
+  return promise.then(
+    (value3) => PromiseLayer.wrap(fn(PromiseLayer.unwrap(value3)))
+  );
+}
+function rescue(promise, fn) {
+  return promise.catch((error) => fn(error));
+}
+
+// build/dev/javascript/gleam_javascript/gleam/javascript/promise.mjs
+function tap(promise, callback) {
+  let _pipe = promise;
+  return map_promise(
+    _pipe,
+    (a2) => {
+      callback(a2);
+      return a2;
+    }
+  );
+}
+function try_await(promise, callback) {
+  let _pipe = promise;
+  return then(
+    _pipe,
+    (result) => {
+      if (result.isOk()) {
+        let a2 = result[0];
+        return callback(a2);
+      } else {
+        let e = result[0];
+        return resolve(new Error(e));
+      }
+    }
+  );
+}
+
+// build/dev/javascript/gleam_fetch/ffi.mjs
+async function raw_send(request) {
+  try {
+    return new Ok(await fetch(request));
+  } catch (error) {
+    return new Error(new NetworkError(error.toString()));
+  }
+}
+function from_fetch_response(response) {
+  return new Response(
+    response.status,
+    List.fromArray([...response.headers]),
+    response
+  );
+}
+function to_fetch_request(request) {
+  let url = to_string4(to_uri(request));
+  let method = method_to_string(request.method).toUpperCase();
+  let options = {
+    headers: make_headers(request.headers),
+    method
+  };
+  if (method !== "GET" && method !== "HEAD")
+    options.body = request.body;
+  return new globalThis.Request(url, options);
+}
+function make_headers(headersList) {
+  let headers = new globalThis.Headers();
+  for (let [k, v] of headersList)
+    headers.append(k.toLowerCase(), v);
+  return headers;
+}
+async function read_text_body(response) {
+  let body;
+  try {
+    body = await response.body.text();
+  } catch (error) {
+    return new Error(new UnableToReadBody());
+  }
+  return new Ok(response.withFields({ body }));
+}
+
+// build/dev/javascript/gleam_fetch/gleam/fetch.mjs
+var NetworkError = class extends CustomType {
+  constructor(x0) {
+    super();
+    this[0] = x0;
+  }
+};
+var UnableToReadBody = class extends CustomType {
+};
+function send(request) {
+  let _pipe = request;
+  let _pipe$1 = to_fetch_request(_pipe);
+  let _pipe$2 = raw_send(_pipe$1);
+  return try_await(
+    _pipe$2,
+    (resp) => {
+      return resolve(new Ok(from_fetch_response(resp)));
+    }
+  );
+}
+
+// build/dev/javascript/lustre_http/lustre_http.mjs
+var BadUrl = class extends CustomType {
+  constructor(x0) {
+    super();
+    this[0] = x0;
+  }
+};
+var InternalServerError = class extends CustomType {
+  constructor(x0) {
+    super();
+    this[0] = x0;
+  }
+};
+var JsonError = class extends CustomType {
+  constructor(x0) {
+    super();
+    this[0] = x0;
+  }
+};
+var NetworkError2 = class extends CustomType {
+};
+var NotFound = class extends CustomType {
+};
+var OtherError = class extends CustomType {
+  constructor(x0, x1) {
+    super();
+    this[0] = x0;
+    this[1] = x1;
+  }
+};
+var Unauthorized = class extends CustomType {
+};
+var ExpectTextResponse = class extends CustomType {
+  constructor(run) {
+    super();
+    this.run = run;
+  }
+};
+function do_send(req, expect, dispatch) {
+  let _pipe = send(req);
+  let _pipe$1 = try_await(_pipe, read_text_body);
+  let _pipe$2 = map_promise(
+    _pipe$1,
+    (response) => {
+      if (response.isOk()) {
+        let res = response[0];
+        return expect.run(new Ok(res));
+      } else {
+        return expect.run(new Error(new NetworkError2()));
+      }
+    }
+  );
+  let _pipe$3 = rescue(
+    _pipe$2,
+    (_) => {
+      return expect.run(new Error(new NetworkError2()));
+    }
+  );
+  tap(_pipe$3, dispatch);
+  return void 0;
+}
+function get2(url, expect) {
+  return from2(
+    (dispatch) => {
+      let $ = to(url);
+      if ($.isOk()) {
+        let req = $[0];
+        return do_send(req, expect, dispatch);
+      } else {
+        return dispatch(expect.run(new Error(new BadUrl(url))));
+      }
+    }
+  );
+}
+function response_to_result(response) {
+  if (response instanceof Response && (200 <= response.status && response.status <= 299)) {
+    let status = response.status;
+    let body = response.body;
+    return new Ok(body);
+  } else if (response instanceof Response && response.status === 401) {
+    return new Error(new Unauthorized());
+  } else if (response instanceof Response && response.status === 404) {
+    return new Error(new NotFound());
+  } else if (response instanceof Response && response.status === 500) {
+    let body = response.body;
+    return new Error(new InternalServerError(body));
+  } else {
+    let code = response.status;
+    let body = response.body;
+    return new Error(new OtherError(code, body));
+  }
+}
+function expect_json(decoder, to_msg) {
+  return new ExpectTextResponse(
+    (response) => {
+      let _pipe = response;
+      let _pipe$1 = then$2(_pipe, response_to_result);
+      let _pipe$2 = then$2(
+        _pipe$1,
+        (body) => {
+          let $ = decode5(body, decoder);
+          if ($.isOk()) {
+            let json = $[0];
+            return new Ok(json);
+          } else {
+            let json_error = $[0];
+            return new Error(new JsonError(json_error));
+          }
+        }
+      );
+      return to_msg(_pipe$2);
     }
   );
 }
@@ -2050,18 +3315,153 @@ function init2(handler) {
   );
 }
 
+// build/dev/javascript/shared/shared.mjs
+var RoomResponse = class extends CustomType {
+  constructor(room, player_id) {
+    super();
+    this.room = room;
+    this.player_id = player_id;
+  }
+};
+var Player = class extends CustomType {
+  constructor(id2, name) {
+    super();
+    this.id = id2;
+    this.name = name;
+  }
+};
+var Round = class extends CustomType {
+  constructor(words, leading_player, other_players) {
+    super();
+    this.words = words;
+    this.leading_player = leading_player;
+    this.other_players = other_players;
+  }
+};
+var Room = class extends CustomType {
+  constructor(room_code, players, word_list, round3) {
+    super();
+    this.room_code = room_code;
+    this.players = players;
+    this.word_list = word_list;
+    this.round = round3;
+  }
+};
+function player_from_json(player) {
+  let _pipe = player;
+  return decode2(
+    (var0, var1) => {
+      return new Player(var0, var1);
+    },
+    field("id", int),
+    field("name", string)
+  )(_pipe);
+}
+function player_with_preferences_from_json(player_with_prefs) {
+  let _pipe = player_with_prefs;
+  return decode2(
+    (player, prefs) => {
+      return [player, prefs];
+    },
+    field("player", player_from_json),
+    field("wordOrder", list(string))
+  )(_pipe);
+}
+function round_from_json(round3) {
+  let _pipe = round3;
+  return decode3(
+    (var0, var1, var2) => {
+      return new Round(var0, var1, var2);
+    },
+    field("words", list(string)),
+    field("leadingPlayer", player_with_preferences_from_json),
+    field(
+      "otherPlayers",
+      list(player_with_preferences_from_json)
+    )
+  )(_pipe);
+}
+function player_list_to_dict(player_list) {
+  return map3(
+    list(player_from_json)(player_list),
+    (players) => {
+      let _pipe = players;
+      let _pipe$1 = map2(
+        _pipe,
+        (player) => {
+          return [player.id, player];
+        }
+      );
+      return from_list(_pipe$1);
+    }
+  );
+}
+function room_from_json(room) {
+  let _pipe = room;
+  return decode4(
+    (var0, var1, var2, var3) => {
+      return new Room(var0, var1, var2, var3);
+    },
+    field("roomCode", string),
+    field("players", player_list_to_dict),
+    field("wordList", list(string)),
+    optional_field("round", round_from_json)
+  )(_pipe);
+}
+function decode_http_response_json(response) {
+  let type_decoder = decode2(
+    (t, msg) => {
+      return [t, msg];
+    },
+    field("type", string),
+    field("message", dynamic)
+  );
+  let $ = type_decoder(response);
+  if ($.isOk() && $[0][0] === "joinedRoom") {
+    let msg = $[0][1];
+    let _pipe = msg;
+    return decode2(
+      (var0, var1) => {
+        return new RoomResponse(var0, var1);
+      },
+      field("room", room_from_json),
+      field("playerId", int)
+    )(_pipe);
+  } else if ($.isOk()) {
+    let request_type = $[0][0];
+    return new Error(
+      toList([
+        new DecodeError(
+          "unknown request type",
+          request_type,
+          toList([])
+        )
+      ])
+    );
+  } else {
+    let e = $[0];
+    return new Error(e);
+  }
+}
+
 // build/dev/javascript/client/client.mjs
 var Model = class extends CustomType {
-  constructor(route, room_code, room_code_input) {
+  constructor(route, room_code_input) {
     super();
     this.route = route;
-    this.room_code = room_code;
     this.room_code_input = room_code_input;
   }
 };
-var Home = class extends CustomType {
+var InRoom = class extends CustomType {
+  constructor(route, player_id, room, player_name) {
+    super();
+    this.route = route;
+    this.player_id = player_id;
+    this.room = room;
+    this.player_name = player_name;
+  }
 };
-var CreateRoom = class extends CustomType {
+var Home = class extends CustomType {
 };
 var JoinRoom = class extends CustomType {
   constructor(room_code) {
@@ -2069,13 +3469,13 @@ var JoinRoom = class extends CustomType {
     this.room_code = room_code;
   }
 };
-var NotFound = class extends CustomType {
-};
-var ApiReturnedCat = class extends CustomType {
-  constructor(x0) {
+var Room2 = class extends CustomType {
+  constructor(room_code) {
     super();
-    this[0] = x0;
+    this.room_code = room_code;
   }
+};
+var NotFound2 = class extends CustomType {
 };
 var OnRouteChange = class extends CustomType {
   constructor(x0) {
@@ -2089,21 +3489,64 @@ var UpdateRoomCode = class extends CustomType {
     this[0] = x0;
   }
 };
+var UpdatePlayerName = class extends CustomType {
+  constructor(x0) {
+    super();
+    this[0] = x0;
+  }
+};
+var StartGame = class extends CustomType {
+};
+var JoinedRoom = class extends CustomType {
+  constructor(x0) {
+    super();
+    this[0] = x0;
+  }
+};
+function start_game() {
+  return get2(
+    "http://localhost:3000/createroom",
+    expect_json(
+      decode_http_response_json,
+      (var0) => {
+        return new JoinedRoom(var0);
+      }
+    )
+  );
+}
 function update2(model, msg) {
-  if (msg instanceof ApiReturnedCat && msg[0].isOk()) {
-    let cat = msg[0][0];
-    return [model, none()];
-  } else if (msg instanceof ApiReturnedCat && !msg[0].isOk()) {
-    return [model, none()];
-  } else if (msg instanceof OnRouteChange) {
-    let route = msg[0];
-    return [model.withFields({ route }), none()];
-  } else {
-    let room_code = msg[0];
+  if (model instanceof Model && msg instanceof StartGame) {
+    return [model, start_game()];
+  } else if (model instanceof Model && msg instanceof JoinedRoom && msg[0].isOk() && msg[0][0] instanceof RoomResponse) {
+    let room = msg[0][0].room;
+    let player_id = msg[0][0].player_id;
+    debug(player_id);
     return [
-      model.withFields({ room_code: new Some(room_code) }),
+      new InRoom(new Room2(room.room_code), player_id, room, ""),
       none()
     ];
+  } else if (model instanceof Model && msg instanceof JoinedRoom && !msg[0].isOk()) {
+    let err = msg[0][0];
+    debug(err);
+    return [model, none()];
+  } else if (model instanceof Model && msg instanceof OnRouteChange) {
+    let room_code_input = model.room_code_input;
+    let route = msg[0];
+    return [new Model(route, room_code_input), none()];
+  } else if (model instanceof Model && msg instanceof UpdateRoomCode) {
+    let route = model.route;
+    let room_code = msg[0];
+    return [new Model(route, room_code), none()];
+  } else if (model instanceof Model && msg instanceof UpdatePlayerName) {
+    return [model, none()];
+  } else if (model instanceof InRoom && msg instanceof UpdatePlayerName) {
+    let route = model.route;
+    let player_id = model.player_id;
+    let room = model.room;
+    let player_name = msg[0];
+    return [new InRoom(route, player_id, room, player_name), none()];
+  } else {
+    return [model, none()];
   }
 }
 function get_route_from_uri(uri) {
@@ -2130,10 +3573,8 @@ function get_route_from_uri(uri) {
   } else if ($.hasLength(1) && $.head === "join") {
     let room_code$1 = room_code;
     return new JoinRoom(room_code$1);
-  } else if ($.hasLength(1) && $.head === "create") {
-    return new CreateRoom();
   } else {
-    return new NotFound();
+    return new NotFound2();
   }
 }
 function on_url_change(uri) {
@@ -2145,17 +3586,17 @@ function init3(_) {
     let _pipe = do_initial_uri();
     return map3(_pipe, get_route_from_uri);
   })();
-  if ($.isOk() && $[0] instanceof JoinRoom) {
-    let room_code = $[0].room_code;
+  if ($.isOk() && $[0] instanceof JoinRoom && $[0].room_code instanceof Some) {
+    let room_code = $[0].room_code[0];
     return [
-      new Model(new JoinRoom(room_code), room_code, ""),
+      new Model(new JoinRoom(new Some(room_code)), room_code),
       init2(on_url_change)
     ];
   } else if ($.isOk()) {
     let route = $[0];
-    return [new Model(route, new None(), ""), init2(on_url_change)];
+    return [new Model(route, ""), init2(on_url_change)];
   } else {
-    return [new Model(new Home(), new None(), ""), init2(on_url_change)];
+    return [new Model(new Home(), ""), init2(on_url_change)];
   }
 }
 function link(href2, content2) {
@@ -2173,35 +3614,17 @@ function header(route) {
       toList([class$("text-4xl my-10 text-center")]),
       toList([text("A Full Fridge")])
     );
-  } else if (route instanceof CreateRoom) {
-    return div(
-      toList([]),
-      toList([
-        nav(
-          toList([class$("flex items-center")]),
-          toList([
-            link("/", toList([text("Home")])),
-            h1(
-              toList([class$("text-2xl my-5")]),
-              toList([text("Start new game")])
-            )
-          ])
-        )
-      ])
-    );
   } else if (route instanceof JoinRoom && route.room_code instanceof Some) {
     return div(
       toList([]),
       toList([
         nav(
           toList([class$("flex items-center")]),
-          toList([
-            link("/", toList([text("Home")])),
-            h1(
-              toList([class$("text-2xl my-5")]),
-              toList([text("Joining game...")])
-            )
-          ])
+          toList([link("/", toList([text("Home")]))])
+        ),
+        h1(
+          toList([class$("text-2xl my-5")]),
+          toList([text("Joining game...")])
         )
       ])
     );
@@ -2211,13 +3634,23 @@ function header(route) {
       toList([
         nav(
           toList([class$("flex items-center")]),
-          toList([
-            link("/", toList([text("Home")])),
-            h1(
-              toList([class$("text-2xl my-5")]),
-              toList([text("Join game")])
-            )
-          ])
+          toList([link("/", toList([text("Home")]))])
+        ),
+        h1(
+          toList([class$("text-2xl my-5")]),
+          toList([text("Join game")])
+        )
+      ])
+    );
+  } else if (route instanceof Room2) {
+    let room_code = route.room_code;
+    return div(
+      toList([]),
+      toList([
+        nav(toList([class$("flex items-center")]), toList([])),
+        h1(
+          toList([class$("text-2xl my-5")]),
+          toList([text("Game: " + room_code)])
         )
       ])
     );
@@ -2227,21 +3660,18 @@ function header(route) {
       toList([
         nav(
           toList([class$("flex items-center")]),
-          toList([
-            link("/", toList([text("Home")])),
-            h1(
-              toList([class$("text-2xl my-5")]),
-              toList([text("Page not found")])
-            )
-          ])
+          toList([link("/", toList([text("Home")]))])
+        ),
+        h1(
+          toList([class$("text-2xl my-5")]),
+          toList([text("Page not found")])
         )
       ])
     );
   }
 }
 function content(model) {
-  let $ = model.route;
-  if ($ instanceof Home) {
+  if (model instanceof Model && model.route instanceof Home) {
     return div(
       toList([]),
       toList([
@@ -2255,34 +3685,18 @@ function content(model) {
             )
           ])
         ),
-        link("/create", toList([text("Start new game")])),
+        button(
+          toList([on_click(new StartGame())]),
+          toList([text("Start new game")])
+        ),
         link("/join", toList([text("Join a game")]))
       ])
     );
-  } else if ($ instanceof CreateRoom) {
-    return div(
-      toList([class$("flex flex-col m-4")]),
-      toList([
-        label(
-          toList([for$("name-input")]),
-          toList([text("Name:")])
-        ),
-        input(
-          toList([
-            id("name-input"),
-            placeholder("Enter name..."),
-            type_("text"),
-            class$(
-              "my-2 p-2 border-2 rounded placeholder:text-slate-300"
-            )
-          ])
-        )
-      ])
-    );
-  } else if ($ instanceof JoinRoom && $.room_code instanceof Some) {
-    let room_code = $.room_code[0];
+  } else if (model instanceof Model && model.route instanceof JoinRoom && model.route.room_code instanceof Some) {
+    let room_code = model.route.room_code[0];
     return text("Joining room " + room_code + "...");
-  } else if ($ instanceof JoinRoom && $.room_code instanceof None) {
+  } else if (model instanceof Model && model.route instanceof JoinRoom && model.route.room_code instanceof None) {
+    let room_code_input = model.room_code_input;
     return div(
       toList([class$("flex flex-col m-4")]),
       toList([
@@ -2301,16 +3715,70 @@ function content(model) {
             on_input((var0) => {
               return new UpdateRoomCode(var0);
             }),
-            value(
-              (() => {
-                let _pipe = model.room_code;
-                return unwrap(_pipe, "");
-              })()
+            value(room_code_input)
+          ])
+        )
+      ])
+    );
+  } else if (model instanceof InRoom && model.route instanceof Room2) {
+    let room_code = model.route.room_code;
+    let player_id = model.player_id;
+    let room = model.room;
+    let player_name = model.player_name;
+    return div(
+      toList([class$("flex flex-col m-4")]),
+      toList([
+        label(
+          toList([for$("name-input")]),
+          toList([text("Name:")])
+        ),
+        input(
+          toList([
+            id("name-input"),
+            placeholder("Enter name..."),
+            on_input((var0) => {
+              return new UpdatePlayerName(var0);
+            }),
+            value(player_name),
+            type_("text"),
+            class$(
+              "my-2 p-2 border-2 rounded placeholder:text-slate-300"
+            )
+          ])
+        ),
+        div(
+          toList([]),
+          toList([
+            h2(toList([]), toList([text("Players:")])),
+            ul(
+              toList([]),
+              map2(
+                values(room.players),
+                (player) => {
+                  let display = (() => {
+                    let _pipe = (() => {
+                      let $ = player.name;
+                      let $1 = player.id;
+                      if ($ === "") {
+                        let id2 = $1;
+                        return to_string2(id2);
+                      } else {
+                        let name = $;
+                        return name;
+                      }
+                    })();
+                    return text(_pipe);
+                  })();
+                  return li(toList([]), toList([display]));
+                }
+              )
             )
           ])
         )
       ])
     );
+  } else if (model instanceof Model && model.route instanceof NotFound2) {
+    return text("Page not found");
   } else {
     return text("Page not found");
   }
@@ -2326,7 +3794,7 @@ function main() {
     throw makeError(
       "assignment_no_match",
       "client",
-      39,
+      42,
       "main",
       "Assignment pattern did not match",
       { value: $ }
