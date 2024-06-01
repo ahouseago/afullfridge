@@ -2,6 +2,7 @@ import gleam/bit_array
 import gleam/bytes_builder
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Subject}
+import gleam/http
 import gleam/http/request
 import gleam/http/response
 import gleam/int
@@ -116,6 +117,11 @@ fn bad_request(reason) {
   ))
 }
 
+fn method_not_allowed() {
+  response.new(405)
+  |> response.set_body(mist.Bytes(bytes_builder.new()))
+}
+
 fn internal_error(reason) {
   response.new(500)
   |> response.set_body(mist.Bytes(
@@ -134,35 +140,45 @@ pub fn main() {
 
   let assert Ok(_) =
     fn(req: request.Request(Connection)) -> response.Response(ResponseData) {
-      case request.path_segments(req) {
-        ["ws", room_code, player_name] ->
-          mist.websocket(
-            request: req,
-            on_init: on_init(state_subject, room_code, player_name),
-            on_close: fn(ws_conn_subject) {
-              process.send(ws_conn_subject, Shutdown)
-            },
-            handler: handle_ws_message,
+      case req.method {
+        http.Options ->
+          response.new(200)
+          |> response.set_body(mist.Bytes(bytes_builder.new()))
+          |> response.set_header(
+            "Access-Control-Allow-Origin",
+            "http://localhost:1234",
           )
-        ["createroom"] ->
-          handle_create_room_request(state_subject, req)
-          |> result.unwrap_both
-        ["joinroom"] -> {
-          handle_join_request(state_subject, req)
-          |> result.unwrap_both
-        }
+          |> response.set_header("Access-Control-Allow-Methods", "GET, POST")
+          |> response.set_header("Access-Control-Allow-Headers", "content-type")
+        http.Get | http.Post ->
+          case request.path_segments(req) {
+            ["ws", room_code, player_name] ->
+              mist.websocket(
+                request: req,
+                on_init: on_init(state_subject, room_code, player_name),
+                on_close: fn(ws_conn_subject) {
+                  process.send(ws_conn_subject, Shutdown)
+                },
+                handler: handle_ws_message,
+              )
+            ["createroom"] ->
+              handle_create_room_request(state_subject, req)
+              |> result.unwrap_both
+            ["joinroom"] -> {
+              handle_join_request(state_subject, req)
+              |> result.unwrap_both
+            }
 
-        _ -> not_found()
+            _ -> not_found()
+          }
+          |> response.set_header(
+            "Access-Control-Allow-Origin",
+            "http://localhost:1234",
+          )
+          |> response.set_header("Access-Control-Allow-Methods", "GET, POST")
+          |> response.set_header("Access-Control-Allow-Headers", "content-type")
+        _ -> method_not_allowed()
       }
-      |> response.set_header(
-        "Access-Control-Allow-Origin",
-        "http://localhost:1234",
-      )
-      |> response.set_header("Access-Control-Allow-Methods", "GET, POST")
-      // |> response.set_header(
-      //   "Access-Control-Allow-Headers",
-      //   "*",
-      // )
     }
     |> mist.new
     |> mist.port(3000)
