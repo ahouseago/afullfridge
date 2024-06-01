@@ -1,1 +1,2 @@
-client/priv/static/ linguist-generated
+client/priv/static/ linguist-generated=true
+client/priv/static/**/* linguist-generated=true
