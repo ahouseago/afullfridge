@@ -16,18 +16,18 @@ import modem
 import shared
 
 pub type Model {
-  Model(route: Route, room_code_input: String)
+  Model(uri: uri.Uri, route: Route, room_code_input: String)
   InRoom(player_id: Int, room: shared.Room, player_name: String)
 }
 
 pub type Route {
   Home
-  Join(room_code: Option(String))
+  Play(room_code: Option(String))
   NotFound
 }
 
 pub type Msg {
-  OnRouteChange(Route)
+  OnRouteChange(uri.Uri, Route)
 
   StartGame
   JoinGame
@@ -44,41 +44,68 @@ pub fn main() {
   Nil
 }
 
+fn new_uri() -> uri.Uri {
+  uri.Uri(
+    scheme: None,
+    userinfo: None,
+    host: None,
+    port: None,
+    path: "",
+    query: None,
+    fragment: None,
+  )
+}
+
+fn relative(path: String) -> uri.Uri {
+  uri.Uri(..new_uri(), path: path)
+}
+
 fn init(_flags) -> #(Model, effect.Effect(Msg)) {
-  case modem.initial_uri() |> result.map(get_route_from_uri) {
-    Ok(Join(Some(room_code))) -> #(
-      Model(Join(Some(room_code)), room_code),
+  let uri = modem.initial_uri()
+  case uri, uri |> result.map(get_route_from_uri) {
+    Ok(uri), Ok(Play(Some(room_code))) -> #(
+      Model(uri, Play(Some(room_code)), room_code),
       modem.init(on_url_change),
     )
-    Ok(route) -> #(Model(route, ""), modem.init(on_url_change))
-    Error(Nil) -> #(Model(Home, ""), modem.init(on_url_change))
+    Ok(uri), Ok(route) -> #(Model(uri, route, ""), modem.init(on_url_change))
+    Error(Nil), _ | _, Error(Nil) -> #(
+      Model(relative(""), Home, ""),
+      modem.init(on_url_change),
+    )
   }
 }
 
 pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
   case model, msg {
-    Model(_, _), StartGame -> #(model, start_game())
-    Model(_, _), JoinedRoom(Ok(shared.RoomResponse(room, player_id))) -> {
-      io.debug(player_id)
+    Model(_, _, _), StartGame -> #(model, start_game())
+    Model(uri, _, _), JoinedRoom(Ok(shared.RoomResponse(room, player_id))) -> {
       #(
         InRoom(player_id: player_id, room: room, player_name: ""),
-        effect.none(),
+        modem.push(
+          uri.Uri(
+            ..relative("/play"),
+            query: Some(uri.query_to_string([#("game", room.room_code)])),
+          ),
+        ),
       )
     }
-    Model(_, _), JoinedRoom(Error(err)) -> {
+    Model(_, _, _), JoinedRoom(Error(err)) -> {
       io.debug(err)
       #(model, effect.none())
     }
-    Model(_route, room_code_input), OnRouteChange(route) -> #(
-      Model(route, room_code_input),
+    Model(_, _route, room_code_input), OnRouteChange(uri, route) -> #(
+      Model(uri, route, room_code_input),
       effect.none(),
     )
-    Model(route, _room_code_input), UpdateRoomCode(room_code) -> #(
-      Model(route, room_code),
+    Model(uri, route, _room_code_input), UpdateRoomCode(room_code) -> #(
+      Model(uri, route, room_code),
       effect.none(),
     )
-    Model(_, room_code_input), JoinGame -> #(model, join_game(room_code_input))
-    Model(_, _), UpdatePlayerName(_) -> #(model, effect.none())
+    Model(_, _, room_code_input), JoinGame -> #(
+      model,
+      join_game(room_code_input),
+    )
+    Model(_, _, _), UpdatePlayerName(_) -> #(model, effect.none())
     InRoom(player_id, room, _player_name), UpdatePlayerName(player_name) -> #(
       InRoom(player_id, room, player_name),
       effect.none(),
@@ -108,38 +135,25 @@ fn get_route_from_uri(uri: uri.Uri) -> Route {
     |> option.map(uri.parse_query)
     |> option.then(fn(query) {
       case query {
-        Ok([#("room", room_code)]) -> Some(room_code)
+        Ok([#("game", room_code)]) -> Some(room_code)
         _ -> None
       }
     })
   case uri.path_segments(uri.path), room_code {
     [""], _ | [], _ -> Home
-    ["join"], room_code -> Join(room_code)
+    ["play"], room_code -> Play(room_code)
     _, _ -> NotFound
   }
 }
 
 fn on_url_change(uri: uri.Uri) -> Msg {
-  get_route_from_uri(uri) |> OnRouteChange
+  get_route_from_uri(uri) |> OnRouteChange(uri, _)
 }
-
-// fn get_cat() -> effect.Effect(Msg) {
-//   let decoder = dynamic.field("_id", dynamic.string)
-//   let expect = lustre_http.expect_json(decoder, ApiReturnedCat)
-//
-//   lustre_http.get("https://cataas.com/cat?json=true", expect)
-// }
-//
 
 pub fn view(model: Model) -> element.Element(Msg) {
   let content = content(model)
 
-  html.div([], [
-    header(model),
-    // html.button([event.on_click(UserIncrementedCount)], [element.text("+")]),
-    content,
-    // html.button([event.on_click(UserDecrementedCount)], [element.text("-")]),
-  ])
+  html.div([], [header(model), content])
 }
 
 fn link(href, content) {
@@ -154,7 +168,7 @@ fn link(href, content) {
 
 fn header(model: Model) {
   case model {
-    Model(Home, _) ->
+    Model(_, Home, _) ->
       html.h1([attribute.class("text-4xl my-10 text-center")], [
         element.text("A Full Fridge"),
       ])
@@ -167,7 +181,7 @@ fn header(model: Model) {
     //       ]),
     //     ]),
     //   ])
-    Model(Join(Some(_)), _) ->
+    Model(_, Play(Some(_)), _) ->
       html.div([], [
         html.nav([attribute.class("flex items-center")], [
           link("/", [element.text("Home")]),
@@ -176,7 +190,7 @@ fn header(model: Model) {
           element.text("Joining game..."),
         ]),
       ])
-    Model(Join(None), _) ->
+    Model(_, Play(None), _) ->
       html.div([], [
         html.nav([attribute.class("flex items-center")], [
           link("/", [element.text("Home")]),
@@ -192,7 +206,7 @@ fn header(model: Model) {
           element.text("Game: " <> room.room_code),
         ]),
       ])
-    Model(NotFound, _) ->
+    Model(_, NotFound, _) ->
       html.div([], [
         html.nav([attribute.class("flex items-center")], [
           link("/", [element.text("Home")]),
@@ -206,7 +220,7 @@ fn header(model: Model) {
 
 fn content(model: Model) {
   case model {
-    Model(Home, _) ->
+    Model(_, Home, _) ->
       html.div([], [
         html.p([attribute.class("mx-4 text-lg")], [
           element.text("Welcome to "),
@@ -217,7 +231,7 @@ fn content(model: Model) {
           element.text("Start new game"),
         ]),
         // link("/create", [element.text("Start new game")]),
-        link("/join", [element.text("Join a game")]),
+        link("/play", [element.text("Join a game")]),
       ])
     // CreateRoom ->
     //   html.div([attribute.class("flex flex-col m-4")], [
@@ -231,9 +245,9 @@ fn content(model: Model) {
     //       ),
     //     ]),
     //   ])
-    Model(Join(Some(room_code)), _) ->
+    Model(_, Play(Some(room_code)), _) ->
       element.text("Joining room " <> room_code <> "...")
-    Model(Join(None), room_code_input) ->
+    Model(_, Play(None), room_code_input) ->
       html.form(
         [event.on_submit(JoinGame), attribute.class("flex flex-col m-4")],
         [
@@ -284,6 +298,6 @@ fn content(model: Model) {
           ),
         ]),
       ])
-    Model(NotFound, _) | _ -> element.text("Page not found")
+    Model(_, NotFound, _) | _ -> element.text("Page not found")
   }
 }

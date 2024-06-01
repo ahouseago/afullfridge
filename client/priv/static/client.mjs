@@ -444,6 +444,33 @@ function do_concat(loop$lists, loop$acc) {
 function concat(lists) {
   return do_concat(lists, toList([]));
 }
+function do_intersperse(loop$list, loop$separator, loop$acc) {
+  while (true) {
+    let list2 = loop$list;
+    let separator = loop$separator;
+    let acc = loop$acc;
+    if (list2.hasLength(0)) {
+      return reverse(acc);
+    } else {
+      let x = list2.head;
+      let rest$1 = list2.tail;
+      loop$list = rest$1;
+      loop$separator = separator;
+      loop$acc = prepend(x, prepend(separator, acc));
+    }
+  }
+}
+function intersperse(list2, elem) {
+  if (list2.hasLength(0)) {
+    return list2;
+  } else if (list2.hasLength(1)) {
+    return list2;
+  } else {
+    let x = list2.head;
+    let rest$1 = list2.tail;
+    return do_intersperse(rest$1, elem, toList([x]));
+  }
+}
 function do_repeat(loop$a, loop$times, loop$acc) {
   while (true) {
     let a2 = loop$a;
@@ -524,6 +551,9 @@ function nil_error(result) {
 // build/dev/javascript/gleam_stdlib/gleam/string_builder.mjs
 function from_strings(strings) {
   return concat2(strings);
+}
+function concat3(builders) {
+  return concat2(builders);
 }
 function from_string(string3) {
   return identity(string3);
@@ -1550,6 +1580,9 @@ function map_insert(key, value3, map6) {
 function unsafe_percent_decode(string3) {
   return decodeURIComponent((string3 || "").replace("+", " "));
 }
+function percent_encode(string3) {
+  return encodeURIComponent(string3);
+}
 function parse_query(query) {
   try {
     const pairs = [];
@@ -1789,7 +1822,7 @@ function lowercase2(string3) {
 function starts_with2(string3, prefix) {
   return starts_with(string3, prefix);
 }
-function concat3(strings) {
+function concat4(strings) {
   let _pipe = strings;
   let _pipe$1 = from_strings(_pipe);
   return to_string3(_pipe$1);
@@ -1984,6 +2017,21 @@ function parse2(uri_string) {
 function parse_query2(query) {
   return parse_query(query);
 }
+function percent_encode2(value3) {
+  return percent_encode(value3);
+}
+function query_pair(pair) {
+  return from_strings(
+    toList([percent_encode2(pair[0]), "=", percent_encode2(pair[1])])
+  );
+}
+function query_to_string(query) {
+  let _pipe = query;
+  let _pipe$1 = map2(_pipe, query_pair);
+  let _pipe$2 = intersperse(_pipe$1, from_string("&"));
+  let _pipe$3 = concat3(_pipe$2);
+  return to_string3(_pipe$3);
+}
 function do_remove_dot_segments(loop$input, loop$accumulator) {
   while (true) {
     let input2 = loop$input;
@@ -2094,7 +2142,7 @@ function to_string4(uri) {
       return parts$4;
     }
   })();
-  return concat3(parts$5);
+  return concat4(parts$5);
 }
 
 // build/dev/javascript/gleam_stdlib/gleam/bool.mjs
@@ -3359,6 +3407,16 @@ var do_init = (dispatch, options = defaults) => {
     dispatch(uri);
   });
 };
+var do_push = (uri) => {
+  const url = to_string4(uri);
+  console.log(url);
+  window.history.pushState({}, "", url);
+  window.requestAnimationFrame(() => {
+    if (uri.fragment[0]) {
+      document.getElementById(uri.fragment[0])?.scrollIntoView();
+    }
+  });
+};
 var find_anchor = (el2) => {
   if (el2.tagName === "BODY") {
     return null;
@@ -3375,7 +3433,7 @@ var uri_from_url = (url) => {
     /* userinfo */
     new None(),
     /* host     */
-    url.host ? new Some(url.host) : new None(),
+    url.hostname ? new Some(url.hostname) : new None(),
     /* port     */
     url.port ? new Some(Number(url.port)) : new None(),
     /* path     */
@@ -3402,6 +3460,19 @@ function init2(handler) {
               return dispatch(_pipe$1);
             }
           );
+        }
+      );
+    }
+  );
+}
+function push(uri) {
+  return from2(
+    (_) => {
+      return guard(
+        !is_browser(),
+        void 0,
+        () => {
+          return do_push(uri);
         }
       );
     }
@@ -3563,8 +3634,9 @@ function decode_http_response_json(response) {
 
 // build/dev/javascript/client/client.mjs
 var Model = class extends CustomType {
-  constructor(route, room_code_input) {
+  constructor(uri, route, room_code_input) {
     super();
+    this.uri = uri;
     this.route = route;
     this.room_code_input = room_code_input;
   }
@@ -3579,7 +3651,7 @@ var InRoom = class extends CustomType {
 };
 var Home = class extends CustomType {
 };
-var Join = class extends CustomType {
+var Play = class extends CustomType {
   constructor(room_code) {
     super();
     this.room_code = room_code;
@@ -3588,9 +3660,10 @@ var Join = class extends CustomType {
 var NotFound2 = class extends CustomType {
 };
 var OnRouteChange = class extends CustomType {
-  constructor(x0) {
+  constructor(x0, x1) {
     super();
     this[0] = x0;
+    this[1] = x1;
   }
 };
 var StartGame = class extends CustomType {
@@ -3615,6 +3688,20 @@ var UpdatePlayerName = class extends CustomType {
     this[0] = x0;
   }
 };
+function new_uri() {
+  return new Uri(
+    new None(),
+    new None(),
+    new None(),
+    new None(),
+    "",
+    new None(),
+    new None()
+  );
+}
+function relative(path) {
+  return new_uri().withFields({ path });
+}
 function start_game() {
   return get2(
     "http://localhost:3000/createroom",
@@ -3642,22 +3729,33 @@ function update2(model, msg) {
   if (model instanceof Model && msg instanceof StartGame) {
     return [model, start_game()];
   } else if (model instanceof Model && msg instanceof JoinedRoom && msg[0].isOk() && msg[0][0] instanceof RoomResponse) {
+    let uri = model.uri;
     let room = msg[0][0].room;
     let player_id = msg[0][0].player_id;
-    debug(player_id);
-    return [new InRoom(player_id, room, ""), none()];
+    return [
+      new InRoom(player_id, room, ""),
+      push(
+        relative("/play").withFields({
+          query: new Some(
+            query_to_string(toList([["game", room.room_code]]))
+          )
+        })
+      )
+    ];
   } else if (model instanceof Model && msg instanceof JoinedRoom && !msg[0].isOk()) {
     let err = msg[0][0];
     debug(err);
     return [model, none()];
   } else if (model instanceof Model && msg instanceof OnRouteChange) {
     let room_code_input = model.room_code_input;
-    let route = msg[0];
-    return [new Model(route, room_code_input), none()];
+    let uri = msg[0];
+    let route = msg[1];
+    return [new Model(uri, route, room_code_input), none()];
   } else if (model instanceof Model && msg instanceof UpdateRoomCode) {
+    let uri = model.uri;
     let route = model.route;
     let room_code = msg[0];
-    return [new Model(route, room_code), none()];
+    return [new Model(uri, route, room_code), none()];
   } else if (model instanceof Model && msg instanceof JoinGame) {
     let room_code_input = model.room_code_input;
     return [model, join_game(room_code_input)];
@@ -3679,7 +3777,7 @@ function get_route_from_uri(uri) {
     return then$(
       _pipe$1,
       (query) => {
-        if (query.isOk() && query[0].hasLength(1) && query[0].head[0] === "room") {
+        if (query.isOk() && query[0].hasLength(1) && query[0].head[0] === "game") {
           let room_code2 = query[0].head[1];
           return new Some(room_code2);
         } else {
@@ -3693,33 +3791,40 @@ function get_route_from_uri(uri) {
     return new Home();
   } else if ($.hasLength(0)) {
     return new Home();
-  } else if ($.hasLength(1) && $.head === "join") {
+  } else if ($.hasLength(1) && $.head === "play") {
     let room_code$1 = room_code;
-    return new Join(room_code$1);
+    return new Play(room_code$1);
   } else {
     return new NotFound2();
   }
 }
 function on_url_change(uri) {
   let _pipe = get_route_from_uri(uri);
-  return new OnRouteChange(_pipe);
+  return ((_capture) => {
+    return new OnRouteChange(uri, _capture);
+  })(_pipe);
 }
 function init3(_) {
+  let uri = do_initial_uri();
   let $ = (() => {
-    let _pipe = do_initial_uri();
+    let _pipe = uri;
     return map3(_pipe, get_route_from_uri);
   })();
-  if ($.isOk() && $[0] instanceof Join && $[0].room_code instanceof Some) {
+  if (uri.isOk() && $.isOk() && $[0] instanceof Play && $[0].room_code instanceof Some) {
+    let uri$1 = uri[0];
     let room_code = $[0].room_code[0];
     return [
-      new Model(new Join(new Some(room_code)), room_code),
+      new Model(uri$1, new Play(new Some(room_code)), room_code),
       init2(on_url_change)
     ];
-  } else if ($.isOk()) {
+  } else if (uri.isOk() && $.isOk()) {
+    let uri$1 = uri[0];
     let route = $[0];
-    return [new Model(route, ""), init2(on_url_change)];
+    return [new Model(uri$1, route, ""), init2(on_url_change)];
+  } else if (!uri.isOk() && !uri[0]) {
+    return [new Model(relative(""), new Home(), ""), init2(on_url_change)];
   } else {
-    return [new Model(new Home(), ""), init2(on_url_change)];
+    return [new Model(relative(""), new Home(), ""), init2(on_url_change)];
   }
 }
 function link(href2, content2) {
@@ -3737,7 +3842,7 @@ function header(model) {
       toList([class$("text-4xl my-10 text-center")]),
       toList([text("A Full Fridge")])
     );
-  } else if (model instanceof Model && model.route instanceof Join && model.route.room_code instanceof Some) {
+  } else if (model instanceof Model && model.route instanceof Play && model.route.room_code instanceof Some) {
     return div(
       toList([]),
       toList([
@@ -3751,7 +3856,7 @@ function header(model) {
         )
       ])
     );
-  } else if (model instanceof Model && model.route instanceof Join && model.route.room_code instanceof None) {
+  } else if (model instanceof Model && model.route instanceof Play && model.route.room_code instanceof None) {
     return div(
       toList([]),
       toList([
@@ -3812,13 +3917,13 @@ function content(model) {
           toList([on_click(new StartGame())]),
           toList([text("Start new game")])
         ),
-        link("/join", toList([text("Join a game")]))
+        link("/play", toList([text("Join a game")]))
       ])
     );
-  } else if (model instanceof Model && model.route instanceof Join && model.route.room_code instanceof Some) {
+  } else if (model instanceof Model && model.route instanceof Play && model.route.room_code instanceof Some) {
     let room_code = model.route.room_code[0];
     return text("Joining room " + room_code + "...");
-  } else if (model instanceof Model && model.route instanceof Join && model.route.room_code instanceof None) {
+  } else if (model instanceof Model && model.route instanceof Play && model.route.room_code instanceof None) {
     let room_code_input = model.room_code_input;
     return form(
       toList([
