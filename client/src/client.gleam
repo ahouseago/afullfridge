@@ -65,7 +65,7 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
   case uri, uri |> result.map(get_route_from_uri) {
     Ok(uri), Ok(Play(Some(room_code))) -> #(
       Model(uri, Play(Some(room_code)), room_code),
-      modem.init(on_url_change),
+      effect.batch([join_game(room_code), modem.init(on_url_change)]),
     )
     Ok(uri), Ok(route) -> #(Model(uri, route, ""), modem.init(on_url_change))
     Error(Nil), _ | _, Error(Nil) -> #(

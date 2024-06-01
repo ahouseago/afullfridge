@@ -444,6 +444,22 @@ function do_concat(loop$lists, loop$acc) {
 function concat(lists) {
   return do_concat(lists, toList([]));
 }
+function fold(loop$list, loop$initial, loop$fun) {
+  while (true) {
+    let list2 = loop$list;
+    let initial = loop$initial;
+    let fun = loop$fun;
+    if (list2.hasLength(0)) {
+      return initial;
+    } else {
+      let x = list2.head;
+      let rest$1 = list2.tail;
+      loop$list = rest$1;
+      loop$initial = fun(initial, x);
+      loop$fun = fun;
+    }
+  }
+}
 function do_intersperse(loop$list, loop$separator, loop$acc) {
   while (true) {
     let list2 = loop$list;
@@ -2315,6 +2331,18 @@ function from2(effect) {
 function none() {
   return new Effect(toList([]));
 }
+function batch(effects) {
+  return new Effect(
+    fold(
+      effects,
+      toList([]),
+      (b, _use1) => {
+        let a2 = _use1.all;
+        return append(b, a2);
+      }
+    )
+  );
+}
 
 // build/dev/javascript/lustre/lustre/internals/vdom.mjs
 var Text = class extends CustomType {
@@ -3815,7 +3843,7 @@ function init3(_) {
     let room_code = $[0].room_code[0];
     return [
       new Model(uri$1, new Play(new Some(room_code)), room_code),
-      init2(on_url_change)
+      batch(toList([join_game(room_code), init2(on_url_change)]))
     ];
   } else if (uri.isOk() && $.isOk()) {
     let uri$1 = uri[0];
