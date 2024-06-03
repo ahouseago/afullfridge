@@ -29,12 +29,11 @@ type WebsocketConnection(connection_subject) {
   // Before the server has registered the new websocket and given it an ID,
   // it's in an initialising state where the connection to the client has been
   // established but the actor doesn't know who it is yet.
-  Initialising(mist.WebsocketConnection)
+  Initialising
   // Once the actor has been informed of who it is, this contains its state for
   // managing websocket communication.
   WebsocketConnection(
     id: ConnectionId,
-    conn: mist.WebsocketConnection,
     room_code: RoomCode,
   )
 }
@@ -264,7 +263,7 @@ fn on_init(state_subj, player_id, player_name) {
       // TODO: check that the player is in the room before allowing this websocket
       // connection to be set up.
       actor.start(
-        Initialising(conn),
+        Initialising,
         fn(update: WebsocketConnectionUpdate, connection_state) {
           case update {
             SetupConnection(id, room_code) -> {
@@ -275,11 +274,11 @@ fn on_init(state_subj, player_id, player_name) {
                 <> room_code
                 <> ".",
               )
-              actor.continue(WebsocketConnection(id, conn, room_code))
+              actor.continue(WebsocketConnection(id, room_code))
             }
             Request(req) -> {
               case connection_state {
-                WebsocketConnection(id, _, _) -> {
+                WebsocketConnection(id, _) -> {
                   process.send(
                     state_subj,
                     ProcessWebsocketRequest(from: id, message: req),
@@ -299,7 +298,7 @@ fn on_init(state_subj, player_id, player_name) {
             }
             Shutdown -> {
               case connection_state {
-                WebsocketConnection(id, _, room_code) -> {
+                WebsocketConnection(id, room_code) -> {
                   process.send(state_subj, DeleteConnection(id, room_code))
                   io.println(
                     "Connection " <> id <> " left room " <> room_code <> ".",
