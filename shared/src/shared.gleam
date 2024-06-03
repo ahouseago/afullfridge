@@ -1,4 +1,3 @@
-import gleam/dict.{type Dict}
 import gleam/dynamic
 import gleam/json
 import gleam/list
@@ -7,6 +6,9 @@ import gleam/pair
 import gleam/result
 
 pub type PlayerName =
+  String
+
+pub type PlayerId =
   String
 
 pub type RoomCode =
@@ -19,7 +21,7 @@ pub type HttpRequest {
 
 pub type HttpResponse {
   // Returned from successfully creating/joining a room.
-  RoomResponse(room: Room, player_id: Int)
+  RoomResponse(room: Room, player_id: PlayerId)
 }
 
 pub type WebsocketRequest {
@@ -32,21 +34,17 @@ pub type WebsocketRequest {
 pub type WebsocketResponse {
   PlayersInRoom(List(Player))
   WordList(List(String))
-  RoundInfo(
-    leading_player: Player,
-    options: List(String),
-    waiting_for: List(Player),
-  )
+  RoundInfo(Round)
   ServerError(reason: String)
 }
 
 pub type Player {
-  Player(id: Int, name: PlayerName)
+  Player(id: PlayerId, name: PlayerName)
 }
 
 fn player_to_json(player: Player) {
   json.object([
-    #("id", json.int(player.id)),
+    #("id", json.string(player.id)),
     #("name", json.string(player.name)),
   ])
 }
@@ -57,7 +55,7 @@ pub fn player_from_json(
   player
   |> dynamic.decode2(
     Player,
-    dynamic.field("id", dynamic.int),
+    dynamic.field("id", dynamic.string),
     dynamic.field("name", dynamic.string),
   )
 }
@@ -123,7 +121,7 @@ pub fn round_from_json(
 pub type Room {
   Room(
     room_code: RoomCode,
-    players: Dict(Int, Player),
+    players: List(Player),
     word_list: List(String),
     round: Option(Round),
   )
@@ -132,20 +130,20 @@ pub type Room {
 pub fn room_to_json(room: Room) {
   json.object([
     #("roomCode", json.string(room.room_code)),
-    #("players", json.array(dict.values(room.players), of: player_to_json)),
+    #("players", json.array(room.players, of: player_to_json)),
     #("wordList", json.array(room.word_list, of: json.string)),
     #("round", json.nullable(room.round, of: round_to_json)),
   ])
 }
 
-fn player_list_to_dict(
-  player_list: dynamic.Dynamic,
-) -> Result(Dict(Int, Player), List(dynamic.DecodeError)) {
-  use players <- result.map(dynamic.list(player_from_json)(player_list))
-  players
-  |> list.map(fn(player) { #(player.id, player) })
-  |> dict.from_list
-}
+// fn player_list_to_dict(
+//   player_list: dynamic.Dynamic,
+// ) -> Result(Dict(PlayerId, Player), List(dynamic.DecodeError)) {
+//   use players <- result.map(dynamic.list(player_from_json)(player_list))
+//   players
+//   |> list.map(fn(player) { #(player.id, player) })
+//   |> dict.from_list
+// }
 
 pub fn room_from_json(
   room: dynamic.Dynamic,
@@ -154,7 +152,7 @@ pub fn room_from_json(
   |> dynamic.decode4(
     Room,
     dynamic.field("roomCode", dynamic.string),
-    dynamic.field("players", player_list_to_dict),
+    dynamic.field("players", dynamic.list(player_from_json)),
     dynamic.field("wordList", dynamic.list(dynamic.string)),
     dynamic.optional_field("round", round_from_json),
   )
@@ -255,7 +253,7 @@ pub fn encode_http_response(response: HttpResponse) {
         "joinedRoom",
         json.object([
           #("room", room_to_json(room)),
-          #("playerId", json.int(player_id)),
+          #("playerId", json.string(player_id)),
         ]),
       )
     }
@@ -275,14 +273,7 @@ pub fn encode_websocket_response(response: WebsocketResponse) {
         "wordList",
         json.array(from: word_list, of: json.string),
       )
-      RoundInfo(leading_player, options, waiting_for) -> #(
-        "roundInfo",
-        json.object([
-          #("leadingPlayer", player_to_json(leading_player)),
-          #("options", json.array(from: options, of: json.string)),
-          #("waitingFor", json.array(from: waiting_for, of: player_to_json)),
-        ]),
-      )
+      RoundInfo(round) -> #("round", round_to_json(round))
       ServerError(reason) -> #("error", json.string(reason))
     }
     |> pair.map_first(json.string)
@@ -305,7 +296,7 @@ pub fn decode_http_response_json(
       |> dynamic.decode2(
         RoomResponse,
         dynamic.field("room", room_from_json),
-        dynamic.field("playerId", dynamic.int),
+        dynamic.field("playerId", dynamic.string),
       )
     Ok(#(request_type, _)) ->
       Error([dynamic.DecodeError("unknown request type", request_type, [])])
@@ -327,7 +318,7 @@ pub fn decode_http_response(request: String) -> Result(HttpResponse, String) {
       |> dynamic.decode2(
         RoomResponse,
         dynamic.field("room", room_from_json),
-        dynamic.field("playerId", dynamic.int),
+        dynamic.field("playerId", dynamic.string),
       )
     Ok(#(request_type, _)) ->
       Error([dynamic.DecodeError("unknown request type", request_type, [])])
@@ -363,12 +354,7 @@ pub fn decode_websocket_response(
       |> dynamic.decode1(WordList, dynamic.list(of: dynamic.string))
     Ok(#("roundInfo", msg)) ->
       msg
-      |> dynamic.decode3(
-        RoundInfo,
-        dynamic.field("leadingPlayer", player_from_json),
-        dynamic.field("options", dynamic.list(of: dynamic.string)),
-        dynamic.field("waitingFor", dynamic.list(of: player_from_json)),
-      )
+      |> dynamic.decode1(RoundInfo, round_from_json)
     Ok(#("error", msg)) ->
       msg
       |> dynamic.decode1(ServerError, dynamic.string)

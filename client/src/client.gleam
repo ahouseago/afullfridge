@@ -1,5 +1,3 @@
-import gleam/dict
-import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -12,12 +10,19 @@ import lustre/element
 import lustre/element/html
 import lustre/event
 import lustre_http
+import lustre_websocket as ws
 import modem
 import shared
 
 pub type Model {
   Model(uri: uri.Uri, route: Route, room_code_input: String)
-  InRoom(player_id: Int, room: shared.Room, player_name: String)
+  InRoom(
+    ws: Option(ws.WebSocket),
+    player_id: shared.PlayerId,
+    room: shared.Room,
+    player_name: String,
+    round: Option(shared.Round),
+  )
 }
 
 pub type Route {
@@ -29,12 +34,16 @@ pub type Route {
 pub type Msg {
   OnRouteChange(uri.Uri, Route)
 
+  WebSocketEvent(ws.WebSocketEvent)
+  OnWebsocketMessage(shared.WebsocketResponse)
+
   StartGame
   JoinGame
   JoinedRoom(Result(shared.HttpResponse, lustre_http.HttpError))
 
   UpdateRoomCode(String)
   UpdatePlayerName(String)
+  SetPlayerName
 }
 
 pub fn main() {
@@ -80,7 +89,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
     Model(_, _, _), StartGame -> #(model, start_game())
     Model(uri, _, _), JoinedRoom(Ok(shared.RoomResponse(room, player_id))) -> {
       #(
-        InRoom(player_id: player_id, room: room, player_name: ""),
+        InRoom(None, player_id: player_id, room: room, player_name: "", round: None),
         modem.push(
           uri.Uri(
             ..relative("/play"),
@@ -106,11 +115,71 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       join_game(room_code_input),
     )
     Model(_, _, _), UpdatePlayerName(_) -> #(model, effect.none())
-    InRoom(player_id, room, _player_name), UpdatePlayerName(player_name) -> #(
-      InRoom(player_id, room, player_name),
+    Model(_, _, _), _ -> #(model, effect.none())
+    InRoom(ws, player_id, room, _player_name, round), UpdatePlayerName(player_name) -> #(
+      InRoom(ws, player_id, room, player_name, round),
       effect.none(),
     )
-    InRoom(_player_id, _room, _player_name), _ -> #(model, effect.none())
+    InRoom(_ws, player_id, _room, player_name, _round), SetPlayerName -> #(
+      model,
+      ws.init(
+        "ws://localhost:3000/ws/" <> player_id <> "/" <> player_name,
+        WebSocketEvent,
+      ),
+    )
+    InRoom(_ws, player_id, room, player_name, round), WebSocketEvent(ws_event) -> {
+      case ws_event {
+        ws.InvalidUrl -> panic
+        ws.OnOpen(socket) -> #(
+          InRoom(Some(socket), player_id, room, player_name, round),
+          effect.none(),
+        )
+        ws.OnTextMessage(msg) -> handle_ws_message(model, msg)
+        ws.OnBinaryMessage(_msg) -> #(model, effect.none())
+        ws.OnClose(_reason) -> #(
+          InRoom(None, player_id, room, player_name, round),
+          effect.none(),
+        )
+      }
+    }
+    InRoom(_ws, _player_id, _room, _player_name, _round), _ -> #(model, effect.none())
+  }
+}
+
+fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) {
+  case model {
+    Model(_, _, _) -> #(model, effect.none())
+    InRoom(ws, player_id, room, player_name, round) ->
+      case shared.decode_websocket_response(msg) {
+        Ok(shared.PlayersInRoom(player_list)) -> #(
+          InRoom(
+            ws,
+            player_id,
+            room: shared.Room(..room, players: player_list),
+            player_name: player_name,
+            round: round,
+          ),
+          effect.none(),
+        )
+        Ok(shared.WordList(word_list)) -> #(
+          InRoom(
+            ws,
+            player_id,
+            room: shared.Room(..room, word_list: word_list),
+            player_name: player_name,
+            round: round,
+          ),
+          effect.none(),
+        )
+        Ok(shared.RoundInfo(round)) -> #(
+          InRoom(ws, player_id, room, player_name, Some(round)),
+          effect.none(),
+        )
+        Ok(shared.ServerError(_reason)) | Error(_reason) -> #(
+          model,
+          effect.none(),
+        )
+      }
   }
 }
 
@@ -197,7 +266,7 @@ fn header(model: Model) {
         ]),
         html.h1([attribute.class("text-2xl my-5")], [element.text("Join game")]),
       ])
-    InRoom(_, room, _) ->
+    InRoom(_, _, room, _, _) ->
       html.div([], [
         html.nav([attribute.class("flex items-center")], [
           // link("/", [element.text("Leave game")]),
@@ -267,29 +336,35 @@ fn content(model: Model) {
           html.button([attribute.type_("submit")], [element.text("Join")]),
         ],
       )
-    InRoom(player_id, room, player_name) ->
+    InRoom(_ws, player_id, room, player_name, _round) ->
       html.div([attribute.class("flex flex-col m-4")], [
-        html.label([attribute.for("name-input")], [element.text("Name:")]),
-        html.input([
-          attribute.id("name-input"),
-          attribute.placeholder("Enter name..."),
-          event.on_input(UpdatePlayerName),
-          attribute.value(player_name),
-          attribute.type_("text"),
-          attribute.class(
-            "my-2 p-2 border-2 rounded placeholder:text-slate-300",
-          ),
-        ]),
+        html.form(
+          [event.on_submit(SetPlayerName), attribute.class("flex flex-col m-4")],
+          [
+            html.label([attribute.for("name-input")], [element.text("Name:")]),
+            html.input([
+              attribute.id("name-input"),
+              attribute.placeholder("Enter name..."),
+              event.on_input(UpdatePlayerName),
+              attribute.value(player_name),
+              attribute.type_("text"),
+              attribute.class(
+                "my-2 p-2 border-2 rounded placeholder:text-slate-300",
+              ),
+            ]),
+            html.button([attribute.type_("submit")], [element.text("Set name")]),
+          ],
+        ),
         html.div([], [
           html.h2([], [element.text("Players:")]),
           html.ul(
             [],
-            list.map(dict.values(room.players), fn(player) {
+            list.map(room.players, fn(player) {
               let display =
                 case player.name, player.id {
-                  "", id if id == player_id -> int.to_string(id) <> " (you)"
+                  "", id if id == player_id -> id <> " (you)"
                   name, id if id == player_id -> name <> " (you)"
-                  "", id -> int.to_string(id)
+                  "", id -> id
                   name, _ -> name
                 }
                 |> element.text
