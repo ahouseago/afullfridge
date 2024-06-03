@@ -4156,8 +4156,12 @@ function handle_ws_message(model, msg) {
         none()
       ];
     } else if ($.isOk() && $[0] instanceof ServerError) {
+      let reason = $[0].reason;
+      debug(reason);
       return [model, none()];
     } else {
+      let reason = $[0];
+      debug(reason);
       return [model, none()];
     }
   }
@@ -4252,7 +4256,7 @@ function update2(model, msg) {
       throw makeError(
         "panic",
         "client",
-        132,
+        137,
         "update",
         "panic expression evaluated",
         {}
@@ -4463,45 +4467,12 @@ function content(model) {
         )
       ])
     );
-  } else if (model instanceof InRoom) {
+  } else if (model instanceof InRoom && model.ws instanceof Some) {
     let player_id = model.player_id;
     let room = model.room;
-    let player_name = model.player_name;
     return div(
       toList([class$("flex flex-col m-4")]),
       toList([
-        form(
-          toList([
-            on_submit(new SetPlayerName()),
-            class$("flex flex-col m-4")
-          ]),
-          toList([
-            label(
-              toList([for$("name-input")]),
-              toList([text("Name:")])
-            ),
-            input(
-              toList([
-                id("name-input"),
-                placeholder("Enter name..."),
-                on_input(
-                  (var0) => {
-                    return new UpdatePlayerName(var0);
-                  }
-                ),
-                value(player_name),
-                type_("text"),
-                class$(
-                  "my-2 p-2 border-2 rounded placeholder:text-slate-300"
-                )
-              ])
-            ),
-            button(
-              toList([type_("submit")]),
-              toList([text("Set name")])
-            )
-          ])
-        ),
         div(
           toList([]),
           toList([
@@ -4535,6 +4506,45 @@ function content(model) {
                   return li(toList([]), toList([display]));
                 }
               )
+            )
+          ])
+        )
+      ])
+    );
+  } else if (model instanceof InRoom && model.ws instanceof None) {
+    let player_name = model.player_name;
+    return div(
+      toList([class$("flex flex-col m-4")]),
+      toList([
+        form(
+          toList([
+            on_submit(new SetPlayerName()),
+            class$("flex flex-col m-4")
+          ]),
+          toList([
+            label(
+              toList([for$("name-input")]),
+              toList([text("Name:")])
+            ),
+            input(
+              toList([
+                id("name-input"),
+                placeholder("Enter name..."),
+                on_input(
+                  (var0) => {
+                    return new UpdatePlayerName(var0);
+                  }
+                ),
+                value(player_name),
+                type_("text"),
+                class$(
+                  "my-2 p-2 border-2 rounded placeholder:text-slate-300"
+                )
+              ])
+            ),
+            button(
+              toList([type_("submit")]),
+              toList([text("Set name")])
             )
           ])
         )

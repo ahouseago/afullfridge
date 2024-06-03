@@ -359,17 +359,20 @@ fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
             process.send(subject, SetupConnection(id, room_code))
             let rooms = case dict.get(state.rooms, room_code) {
               Ok(room) -> {
-                dict.insert(
-                  state.rooms,
-                  room_code,
+                let room =
                   Room(
                     ..room,
                     players: [
                       Player(id: player_id, name: player_name),
                       ..room.players
                     ],
-                  ),
+                  )
+                broadcast_message(
+                  state.connections,
+                  to: room.players,
+                  message: shared.PlayersInRoom(room.players),
                 )
+                dict.insert(state.rooms, room_code, room)
               }
               Error(_) -> state.rooms
             }

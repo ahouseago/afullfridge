@@ -89,7 +89,13 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
     Model(_, _, _), StartGame -> #(model, start_game())
     Model(uri, _, _), JoinedRoom(Ok(shared.RoomResponse(room, player_id))) -> {
       #(
-        InRoom(None, player_id: player_id, room: room, player_name: "", round: None),
+        InRoom(
+          None,
+          player_id: player_id,
+          room: room,
+          player_name: "",
+          round: None,
+        ),
         modem.push(
           uri.Uri(
             ..relative("/play"),
@@ -116,10 +122,9 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
     )
     Model(_, _, _), UpdatePlayerName(_) -> #(model, effect.none())
     Model(_, _, _), _ -> #(model, effect.none())
-    InRoom(ws, player_id, room, _player_name, round), UpdatePlayerName(player_name) -> #(
-      InRoom(ws, player_id, room, player_name, round),
-      effect.none(),
-    )
+    InRoom(ws, player_id, room, _player_name, round),
+      UpdatePlayerName(player_name)
+    -> #(InRoom(ws, player_id, room, player_name, round), effect.none())
     InRoom(_ws, player_id, _room, player_name, _round), SetPlayerName -> #(
       model,
       ws.init(
@@ -142,7 +147,10 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         )
       }
     }
-    InRoom(_ws, _player_id, _room, _player_name, _round), _ -> #(model, effect.none())
+    InRoom(_ws, _player_id, _room, _player_name, _round), _ -> #(
+      model,
+      effect.none(),
+    )
   }
 }
 
@@ -175,10 +183,10 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
           InRoom(ws, player_id, room, player_name, Some(round)),
           effect.none(),
         )
-        Ok(shared.ServerError(_reason)) | Error(_reason) -> #(
-          model,
-          effect.none(),
-        )
+        Ok(shared.ServerError(reason)) | Error(reason) -> {
+          io.debug(reason)
+          #(model, effect.none())
+        }
       }
   }
 }
@@ -336,7 +344,27 @@ fn content(model: Model) {
           html.button([attribute.type_("submit")], [element.text("Join")]),
         ],
       )
-    InRoom(_ws, player_id, room, player_name, _round) ->
+    InRoom(Some(_), player_id, room, _player_name, _round) ->
+      html.div([attribute.class("flex flex-col m-4")], [
+        html.div([], [
+          html.h2([], [element.text("Players:")]),
+          html.ul(
+            [],
+            list.map(room.players, fn(player) {
+              let display =
+                case player.name, player.id {
+                  "", id if id == player_id -> id <> " (you)"
+                  name, id if id == player_id -> name <> " (you)"
+                  "", id -> id
+                  name, _ -> name
+                }
+                |> element.text
+              html.li([], [display])
+            }),
+          ),
+        ]),
+      ])
+    InRoom(None, _player_id, _room, player_name, _round) ->
       html.div([attribute.class("flex flex-col m-4")], [
         html.form(
           [event.on_submit(SetPlayerName), attribute.class("flex flex-col m-4")],
@@ -355,23 +383,6 @@ fn content(model: Model) {
             html.button([attribute.type_("submit")], [element.text("Set name")]),
           ],
         ),
-        html.div([], [
-          html.h2([], [element.text("Players:")]),
-          html.ul(
-            [],
-            list.map(room.players, fn(player) {
-              let display =
-                case player.name, player.id {
-                  "", id if id == player_id -> id <> " (you)"
-                  name, id if id == player_id -> name <> " (you)"
-                  "", id -> id
-                  name, _ -> name
-                }
-                |> element.text
-              html.li([], [display])
-            }),
-          ),
-        ]),
       ])
     Model(_, NotFound, _) | _ -> element.text("Page not found")
   }
