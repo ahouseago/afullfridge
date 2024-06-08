@@ -40,10 +40,10 @@ var List = class {
     return desired === 0;
   }
   countLength() {
-    let length4 = 0;
+    let length5 = 0;
     for (let _ of this)
-      length4++;
-    return length4;
+      length5++;
+    return length5;
   }
 };
 function prepend(element2, tail) {
@@ -552,17 +552,17 @@ function do_repeat(loop$a, loop$times, loop$acc) {
 function repeat(a2, times) {
   return do_repeat(a2, times, toList([]));
 }
-function key_set(list2, key, value3) {
+function key_set(list2, key2, value3) {
   if (list2.hasLength(0)) {
-    return toList([[key, value3]]);
-  } else if (list2.atLeastLength(1) && isEqual(list2.head[0], key)) {
+    return toList([[key2, value3]]);
+  } else if (list2.atLeastLength(1) && isEqual(list2.head[0], key2)) {
     let k = list2.head[0];
     let rest$1 = list2.tail;
-    return prepend([key, value3], rest$1);
+    return prepend([key2, value3], rest$1);
   } else {
     let first$1 = list2.head;
     let rest$1 = list2.tail;
-    return prepend(first$1, key_set(rest$1, key, value3));
+    return prepend(first$1, key_set(rest$1, key2, value3));
   }
 }
 
@@ -608,6 +608,11 @@ function unwrap2(result, default$) {
 function nil_error(result) {
   return map_error(result, (_) => {
     return void 0;
+  });
+}
+function all(results) {
+  return try_map(results, (x) => {
+    return x;
   });
 }
 
@@ -1036,17 +1041,17 @@ function createNode(shift, key1, val1, key2hash, key2, val2) {
     addedLeaf
   );
 }
-function assoc(root2, shift, hash, key, val, addedLeaf) {
+function assoc(root2, shift, hash, key2, val, addedLeaf) {
   switch (root2.type) {
     case ARRAY_NODE:
-      return assocArray(root2, shift, hash, key, val, addedLeaf);
+      return assocArray(root2, shift, hash, key2, val, addedLeaf);
     case INDEX_NODE:
-      return assocIndex(root2, shift, hash, key, val, addedLeaf);
+      return assocIndex(root2, shift, hash, key2, val, addedLeaf);
     case COLLISION_NODE:
-      return assocCollision(root2, shift, hash, key, val, addedLeaf);
+      return assocCollision(root2, shift, hash, key2, val, addedLeaf);
   }
 }
-function assocArray(root2, shift, hash, key, val, addedLeaf) {
+function assocArray(root2, shift, hash, key2, val, addedLeaf) {
   const idx = mask(hash, shift);
   const node = root2.array[idx];
   if (node === void 0) {
@@ -1054,11 +1059,11 @@ function assocArray(root2, shift, hash, key, val, addedLeaf) {
     return {
       type: ARRAY_NODE,
       size: root2.size + 1,
-      array: cloneAndSet(root2.array, idx, { type: ENTRY, k: key, v: val })
+      array: cloneAndSet(root2.array, idx, { type: ENTRY, k: key2, v: val })
     };
   }
   if (node.type === ENTRY) {
-    if (isEqual(key, node.k)) {
+    if (isEqual(key2, node.k)) {
       if (val === node.v) {
         return root2;
       }
@@ -1067,7 +1072,7 @@ function assocArray(root2, shift, hash, key, val, addedLeaf) {
         size: root2.size,
         array: cloneAndSet(root2.array, idx, {
           type: ENTRY,
-          k: key,
+          k: key2,
           v: val
         })
       };
@@ -1079,11 +1084,11 @@ function assocArray(root2, shift, hash, key, val, addedLeaf) {
       array: cloneAndSet(
         root2.array,
         idx,
-        createNode(shift + SHIFT, node.k, node.v, hash, key, val)
+        createNode(shift + SHIFT, node.k, node.v, hash, key2, val)
       )
     };
   }
-  const n = assoc(node, shift + SHIFT, hash, key, val, addedLeaf);
+  const n = assoc(node, shift + SHIFT, hash, key2, val, addedLeaf);
   if (n === node) {
     return root2;
   }
@@ -1093,13 +1098,13 @@ function assocArray(root2, shift, hash, key, val, addedLeaf) {
     array: cloneAndSet(root2.array, idx, n)
   };
 }
-function assocIndex(root2, shift, hash, key, val, addedLeaf) {
+function assocIndex(root2, shift, hash, key2, val, addedLeaf) {
   const bit = bitpos(hash, shift);
   const idx = index(root2.bitmap, bit);
   if ((root2.bitmap & bit) !== 0) {
     const node = root2.array[idx];
     if (node.type !== ENTRY) {
-      const n = assoc(node, shift + SHIFT, hash, key, val, addedLeaf);
+      const n = assoc(node, shift + SHIFT, hash, key2, val, addedLeaf);
       if (n === node) {
         return root2;
       }
@@ -1110,7 +1115,7 @@ function assocIndex(root2, shift, hash, key, val, addedLeaf) {
       };
     }
     const nodeKey = node.k;
-    if (isEqual(key, nodeKey)) {
+    if (isEqual(key2, nodeKey)) {
       if (val === node.v) {
         return root2;
       }
@@ -1119,7 +1124,7 @@ function assocIndex(root2, shift, hash, key, val, addedLeaf) {
         bitmap: root2.bitmap,
         array: cloneAndSet(root2.array, idx, {
           type: ENTRY,
-          k: key,
+          k: key2,
           v: val
         })
       };
@@ -1131,7 +1136,7 @@ function assocIndex(root2, shift, hash, key, val, addedLeaf) {
       array: cloneAndSet(
         root2.array,
         idx,
-        createNode(shift + SHIFT, nodeKey, node.v, hash, key, val)
+        createNode(shift + SHIFT, nodeKey, node.v, hash, key2, val)
       )
     };
   } else {
@@ -1139,7 +1144,7 @@ function assocIndex(root2, shift, hash, key, val, addedLeaf) {
     if (n >= MAX_INDEX_NODE) {
       const nodes = new Array(32);
       const jdx = mask(hash, shift);
-      nodes[jdx] = assocIndex(EMPTY, shift + SHIFT, hash, key, val, addedLeaf);
+      nodes[jdx] = assocIndex(EMPTY, shift + SHIFT, hash, key2, val, addedLeaf);
       let j = 0;
       let bitmap = root2.bitmap;
       for (let i = 0; i < 32; i++) {
@@ -1157,7 +1162,7 @@ function assocIndex(root2, shift, hash, key, val, addedLeaf) {
     } else {
       const newArray = spliceIn(root2.array, idx, {
         type: ENTRY,
-        k: key,
+        k: key2,
         v: val
       });
       addedLeaf.val = true;
@@ -1169,9 +1174,9 @@ function assocIndex(root2, shift, hash, key, val, addedLeaf) {
     }
   }
 }
-function assocCollision(root2, shift, hash, key, val, addedLeaf) {
+function assocCollision(root2, shift, hash, key2, val, addedLeaf) {
   if (hash === root2.hash) {
-    const idx = collisionIndexOf(root2, key);
+    const idx = collisionIndexOf(root2, key2);
     if (idx !== -1) {
       const entry = root2.array[idx];
       if (entry.v === val) {
@@ -1180,7 +1185,7 @@ function assocCollision(root2, shift, hash, key, val, addedLeaf) {
       return {
         type: COLLISION_NODE,
         hash,
-        array: cloneAndSet(root2.array, idx, { type: ENTRY, k: key, v: val })
+        array: cloneAndSet(root2.array, idx, { type: ENTRY, k: key2, v: val })
       };
     }
     const size = root2.array.length;
@@ -1188,7 +1193,7 @@ function assocCollision(root2, shift, hash, key, val, addedLeaf) {
     return {
       type: COLLISION_NODE,
       hash,
-      array: cloneAndSet(root2.array, size, { type: ENTRY, k: key, v: val })
+      array: cloneAndSet(root2.array, size, { type: ENTRY, k: key2, v: val })
     };
   }
   return assoc(
@@ -1199,45 +1204,45 @@ function assocCollision(root2, shift, hash, key, val, addedLeaf) {
     },
     shift,
     hash,
-    key,
+    key2,
     val,
     addedLeaf
   );
 }
-function collisionIndexOf(root2, key) {
+function collisionIndexOf(root2, key2) {
   const size = root2.array.length;
   for (let i = 0; i < size; i++) {
-    if (isEqual(key, root2.array[i].k)) {
+    if (isEqual(key2, root2.array[i].k)) {
       return i;
     }
   }
   return -1;
 }
-function find(root2, shift, hash, key) {
+function find(root2, shift, hash, key2) {
   switch (root2.type) {
     case ARRAY_NODE:
-      return findArray(root2, shift, hash, key);
+      return findArray(root2, shift, hash, key2);
     case INDEX_NODE:
-      return findIndex(root2, shift, hash, key);
+      return findIndex(root2, shift, hash, key2);
     case COLLISION_NODE:
-      return findCollision(root2, key);
+      return findCollision(root2, key2);
   }
 }
-function findArray(root2, shift, hash, key) {
+function findArray(root2, shift, hash, key2) {
   const idx = mask(hash, shift);
   const node = root2.array[idx];
   if (node === void 0) {
     return void 0;
   }
   if (node.type !== ENTRY) {
-    return find(node, shift + SHIFT, hash, key);
+    return find(node, shift + SHIFT, hash, key2);
   }
-  if (isEqual(key, node.k)) {
+  if (isEqual(key2, node.k)) {
     return node;
   }
   return void 0;
 }
-function findIndex(root2, shift, hash, key) {
+function findIndex(root2, shift, hash, key2) {
   const bit = bitpos(hash, shift);
   if ((root2.bitmap & bit) === 0) {
     return void 0;
@@ -1245,31 +1250,31 @@ function findIndex(root2, shift, hash, key) {
   const idx = index(root2.bitmap, bit);
   const node = root2.array[idx];
   if (node.type !== ENTRY) {
-    return find(node, shift + SHIFT, hash, key);
+    return find(node, shift + SHIFT, hash, key2);
   }
-  if (isEqual(key, node.k)) {
+  if (isEqual(key2, node.k)) {
     return node;
   }
   return void 0;
 }
-function findCollision(root2, key) {
-  const idx = collisionIndexOf(root2, key);
+function findCollision(root2, key2) {
+  const idx = collisionIndexOf(root2, key2);
   if (idx < 0) {
     return void 0;
   }
   return root2.array[idx];
 }
-function without(root2, shift, hash, key) {
+function without(root2, shift, hash, key2) {
   switch (root2.type) {
     case ARRAY_NODE:
-      return withoutArray(root2, shift, hash, key);
+      return withoutArray(root2, shift, hash, key2);
     case INDEX_NODE:
-      return withoutIndex(root2, shift, hash, key);
+      return withoutIndex(root2, shift, hash, key2);
     case COLLISION_NODE:
-      return withoutCollision(root2, key);
+      return withoutCollision(root2, key2);
   }
 }
-function withoutArray(root2, shift, hash, key) {
+function withoutArray(root2, shift, hash, key2) {
   const idx = mask(hash, shift);
   const node = root2.array[idx];
   if (node === void 0) {
@@ -1277,11 +1282,11 @@ function withoutArray(root2, shift, hash, key) {
   }
   let n = void 0;
   if (node.type === ENTRY) {
-    if (!isEqual(node.k, key)) {
+    if (!isEqual(node.k, key2)) {
       return root2;
     }
   } else {
-    n = without(node, shift + SHIFT, hash, key);
+    n = without(node, shift + SHIFT, hash, key2);
     if (n === node) {
       return root2;
     }
@@ -1330,7 +1335,7 @@ function withoutArray(root2, shift, hash, key) {
     array: cloneAndSet(root2.array, idx, n)
   };
 }
-function withoutIndex(root2, shift, hash, key) {
+function withoutIndex(root2, shift, hash, key2) {
   const bit = bitpos(hash, shift);
   if ((root2.bitmap & bit) === 0) {
     return root2;
@@ -1338,7 +1343,7 @@ function withoutIndex(root2, shift, hash, key) {
   const idx = index(root2.bitmap, bit);
   const node = root2.array[idx];
   if (node.type !== ENTRY) {
-    const n = without(node, shift + SHIFT, hash, key);
+    const n = without(node, shift + SHIFT, hash, key2);
     if (n === node) {
       return root2;
     }
@@ -1358,7 +1363,7 @@ function withoutIndex(root2, shift, hash, key) {
       array: spliceOut(root2.array, idx)
     };
   }
-  if (isEqual(key, node.k)) {
+  if (isEqual(key2, node.k)) {
     if (root2.bitmap === bit) {
       return void 0;
     }
@@ -1370,8 +1375,8 @@ function withoutIndex(root2, shift, hash, key) {
   }
   return root2;
 }
-function withoutCollision(root2, key) {
-  const idx = collisionIndexOf(root2, key);
+function withoutCollision(root2, key2) {
+  const idx = collisionIndexOf(root2, key2);
   if (idx < 0) {
     return root2;
   }
@@ -1446,11 +1451,11 @@ var Dict = class _Dict {
    * @param {NotFound} notFound
    * @returns {NotFound | V}
    */
-  get(key, notFound) {
+  get(key2, notFound) {
     if (this.root === void 0) {
       return notFound;
     }
-    const found = find(this.root, 0, getHash(key), key);
+    const found = find(this.root, 0, getHash(key2), key2);
     if (found === void 0) {
       return notFound;
     }
@@ -1461,10 +1466,10 @@ var Dict = class _Dict {
    * @param {V} val
    * @returns {Dict<K,V>}
    */
-  set(key, val) {
+  set(key2, val) {
     const addedLeaf = { val: false };
     const root2 = this.root === void 0 ? EMPTY : this.root;
-    const newRoot = assoc(root2, 0, getHash(key), key, val, addedLeaf);
+    const newRoot = assoc(root2, 0, getHash(key2), key2, val, addedLeaf);
     if (newRoot === this.root) {
       return this;
     }
@@ -1474,11 +1479,11 @@ var Dict = class _Dict {
    * @param {K} key
    * @returns {Dict<K,V>}
    */
-  delete(key) {
+  delete(key2) {
     if (this.root === void 0) {
       return this;
     }
-    const newRoot = without(this.root, 0, getHash(key), key);
+    const newRoot = without(this.root, 0, getHash(key2), key2);
     if (newRoot === this.root) {
       return this;
     }
@@ -1491,11 +1496,11 @@ var Dict = class _Dict {
    * @param {K} key
    * @returns {boolean}
    */
-  has(key) {
+  has(key2) {
     if (this.root === void 0) {
       return false;
     }
-    return find(this.root, 0, getHash(key), key) !== void 0;
+    return find(this.root, 0, getHash(key2), key2) !== void 0;
   }
   /**
    * @returns {[K,V][]}
@@ -1646,8 +1651,8 @@ function regex_scan(regex, string3) {
   });
   return List.fromArray(matches);
 }
-function map_get(map6, key) {
-  const value3 = map6.get(key, NOT_FOUND);
+function map_get(map6, key2) {
+  const value3 = map6.get(key2, NOT_FOUND);
   if (value3 === NOT_FOUND) {
     return new Error(Nil);
   }
@@ -1663,10 +1668,10 @@ function parse_query(query) {
   try {
     const pairs = [];
     for (const section of query.split("&")) {
-      const [key, value3] = section.split("=");
-      if (!key)
+      const [key2, value3] = section.split("=");
+      if (!key2)
         continue;
-      pairs.push([unsafe_percent_decode(key), unsafe_percent_decode(value3)]);
+      pairs.push([unsafe_percent_decode(key2), unsafe_percent_decode(value3)]);
     }
     return new Ok(List.fromArray(pairs));
   } catch {
@@ -1796,10 +1801,10 @@ function inspect(v) {
 function inspectDict(map6) {
   let body = "dict.from_list([";
   let first2 = true;
-  map6.forEach((value3, key) => {
+  map6.forEach((value3, key2) => {
     if (!first2)
       body = body + ", ";
-    body = body + "#(" + inspect(key) + ", " + inspect(value3) + ")";
+    body = body + "#(" + inspect(key2) + ", " + inspect(value3) + ")";
     first2 = false;
   });
   return body + "])";
@@ -2404,9 +2409,9 @@ function array2(entries, inner_type) {
 
 // build/dev/javascript/lustre/lustre/effect.mjs
 var Effect = class extends CustomType {
-  constructor(all) {
+  constructor(all2) {
     super();
-    this.all = all;
+    this.all = all2;
   }
 };
 function from2(effect) {
@@ -2438,9 +2443,9 @@ var Text = class extends CustomType {
   }
 };
 var Element = class extends CustomType {
-  constructor(key, namespace, tag, attrs, children, self_closing, void$) {
+  constructor(key2, namespace, tag, attrs, children, self_closing, void$) {
     super();
-    this.key = key;
+    this.key = key2;
     this.namespace = namespace;
     this.tag = tag;
     this.attrs = attrs;
@@ -2770,9 +2775,9 @@ function getKeyedChildren(el2) {
   if (el2) {
     for (const child of el2.children) {
       iterateElement(child, (currElement) => {
-        const key = currElement?.key || currElement?.getAttribute?.("data-lustre-key");
-        if (key)
-          keyedChildren.set(key, currElement);
+        const key2 = currElement?.key || currElement?.getAttribute?.("data-lustre-key");
+        if (key2)
+          keyedChildren.set(key2, currElement);
       });
     }
   }
@@ -3183,8 +3188,8 @@ function from_uri(uri) {
     }
   );
 }
-function set_header(request, key, value3) {
-  let headers = key_set(request.headers, lowercase2(key), value3);
+function set_header(request, key2, value3) {
+  let headers = key_set(request.headers, lowercase2(key2), value3);
   return request.withFields({ headers });
 }
 function set_body(req, body) {
@@ -3795,6 +3800,37 @@ function push(uri) {
   );
 }
 
+// build/dev/javascript/plinth/storage_ffi.mjs
+function localStorage() {
+  try {
+    if (globalThis.Storage && globalThis.localStorage instanceof globalThis.Storage) {
+      return new Ok(globalThis.localStorage);
+    } else {
+      return new Error(null);
+    }
+  } catch {
+    return new Error(null);
+  }
+}
+function getItem(storage, keyName) {
+  return null_or(storage.getItem(keyName));
+}
+function setItem(storage, keyName, keyValue) {
+  try {
+    storage.setItem(keyName, keyValue);
+    return new Ok(null);
+  } catch {
+    return new Error(null);
+  }
+}
+function null_or(val) {
+  if (val !== null) {
+    return new Ok(val);
+  } else {
+    return new Error(null);
+  }
+}
+
 // build/dev/javascript/shared/shared.mjs
 var CreateRoomRequest = class extends CustomType {
 };
@@ -3926,9 +3962,21 @@ function encode_http_request(request) {
     let _pipe = (() => {
       if (request instanceof CreateRoomRequest) {
         return ["createRoom", null$()];
-      } else {
+      } else if (request instanceof JoinRoomRequest) {
         let room_code = request.room_code;
         return ["joinRoom", string2(room_code)];
+      } else {
+        let room_code = request.room_code;
+        let player_id = request.connection_id;
+        return [
+          "reconnect",
+          object2(
+            toList([
+              ["roomCode", string2(room_code)],
+              ["playerId", string2(player_id)]
+            ])
+          )
+        ];
       }
     })();
     return map_first(_pipe, string2);
@@ -4331,6 +4379,20 @@ function update2(model, msg) {
   } else if (model instanceof Disconnected && msg instanceof SetPlayerName) {
     let player_id = model.player_id;
     let player_name = model.player_name;
+    let $ = (() => {
+      let _pipe = localStorage();
+      return try$(
+        _pipe,
+        (local_storage) => {
+          return all(
+            toList([
+              setItem(local_storage, "connection_id", player_id),
+              setItem(local_storage, "player_name", player_name)
+            ])
+          );
+        }
+      );
+    })();
     return [
       model,
       init2(
@@ -4349,7 +4411,7 @@ function update2(model, msg) {
       throw makeError(
         "panic",
         "client",
-        150,
+        181,
         "update",
         "panic expression evaluated",
         {}
@@ -4387,7 +4449,7 @@ function update2(model, msg) {
       throw makeError(
         "panic",
         "client",
-        150,
+        181,
         "update",
         "panic expression evaluated",
         {}
@@ -4471,10 +4533,47 @@ function init4(_) {
   if (uri.isOk() && $.isOk() && $[0] instanceof Play && $[0].room_code instanceof Some) {
     let uri$1 = uri[0];
     let room_code = $[0].room_code[0];
-    return [
-      new NotInRoom(uri$1, new Play(new Some(room_code)), room_code),
-      batch(toList([join_game(room_code), init3(on_url_change)]))
-    ];
+    let rejoin = (() => {
+      let _pipe = localStorage();
+      return try$(
+        _pipe,
+        (local_storage) => {
+          return try$(
+            getItem(local_storage, "connection_id"),
+            (id2) => {
+              return map3(
+                getItem(local_storage, "player_name"),
+                (name) => {
+                  return [
+                    id2,
+                    name,
+                    init2(
+                      "ws://localhost:3000/ws/" + id2 + "/" + name,
+                      (var0) => {
+                        return new WebSocketEvent(var0);
+                      }
+                    )
+                  ];
+                }
+              );
+            }
+          );
+        }
+      );
+    })();
+    if (rejoin.isOk()) {
+      let id2 = rejoin[0][0];
+      let name = rejoin[0][1];
+      let msg = rejoin[0][2];
+      return [new Disconnected(id2, room_code, name), msg];
+    } else {
+      return [
+        new NotInRoom(uri$1, new Play(new Some(room_code)), room_code),
+        batch(
+          toList([join_game(room_code), init3(on_url_change)])
+        )
+      ];
+    }
   } else if (uri.isOk() && $.isOk()) {
     let uri$1 = uri[0];
     let route = $[0];
@@ -4750,7 +4849,7 @@ function main() {
     throw makeError(
       "assignment_no_match",
       "client",
-      58,
+      59,
       "main",
       "Assignment pattern did not match",
       { value: $ }

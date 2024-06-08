@@ -4,6 +4,7 @@
 packages = [
   { name = "argv", version = "1.0.2", build_tools = ["gleam"], requirements = [], otp_app = "argv", source = "hex", outer_checksum = "BA1FF0929525DEBA1CE67256E5ADF77A7CDDFE729E3E3F57A5BDCAA031DED09D" },
   { name = "birl", version = "1.7.0", build_tools = ["gleam"], requirements = ["gleam_stdlib", "ranger"], otp_app = "birl", source = "hex", outer_checksum = "B1FA529E7BE3FF12CADF32814AB8EC7294E74CEDEE8CC734505707B929A98985" },
+  { name = "conversation", version = "1.4.3", build_tools = ["gleam"], requirements = ["gleam_http", "gleam_javascript", "gleam_stdlib"], otp_app = "conversation", source = "hex", outer_checksum = "908B46F60444442785A495197D482558AD8B849C3714A38FAA1940358CC8CCCD" },
   { name = "exception", version = "2.0.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "exception", source = "hex", outer_checksum = "F5580D584F16A20B7FCDCABF9E9BE9A2C1F6AC4F9176FA6DD0B63E3B20D450AA" },
   { name = "filepath", version = "1.0.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "filepath", source = "hex", outer_checksum = "EFB6FF65C98B2A16378ABC3EE2B14124168C0CE5201553DE652E2644DCFDB594" },
   { name = "fs", version = "8.6.1", build_tools = ["rebar3"], requirements = [], otp_app = "fs", source = "hex", outer_checksum = "61EA2BDAEDAE4E2024D0D25C63E44DCCF65622D4402DB4A2DF12868D1546503F" },
@@ -33,6 +34,7 @@ packages = [
   { name = "marceau", version = "1.1.0", build_tools = ["gleam"], requirements = [], otp_app = "marceau", source = "hex", outer_checksum = "1AAD727A30BE0F95562C3403BB9B27C823797AD90037714255EEBF617B1CDA81" },
   { name = "mist", version = "1.2.0", build_tools = ["gleam"], requirements = ["birl", "gleam_erlang", "gleam_http", "gleam_otp", "gleam_stdlib", "glisten", "gramps", "hpack_erl", "logging"], otp_app = "mist", source = "hex", outer_checksum = "109B4D64E68C104CC23BB3CC5441ECD479DD7444889DA01113B75C6AF0F0E17B" },
   { name = "modem", version = "1.1.0", build_tools = ["gleam"], requirements = ["gleam_stdlib", "lustre"], otp_app = "modem", source = "hex", outer_checksum = "4C6E448089B09A57C179455D44526A717E4E217D4000B91201617FD2D9F18E68" },
+  { name = "plinth", version = "0.4.1", build_tools = ["gleam"], requirements = ["conversation", "gleam_javascript", "gleam_json", "gleam_stdlib"], otp_app = "plinth", source = "hex", outer_checksum = "D2D1B2CDD205093145335A04AF3C7393592DAD89A5D0D280F62E0A78F44CE433" },
   { name = "ranger", version = "1.2.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "ranger", source = "hex", outer_checksum = "1566C272B1D141B3BBA38B25CB761EF56E312E79EC0E2DFD4D3C19FB0CC1F98C" },
   { name = "repeatedly", version = "2.1.1", build_tools = ["gleam"], requirements = [], otp_app = "repeatedly", source = "hex", outer_checksum = "38808C3EC382B0CD981336D5879C24ECB37FCB9C1D1BD128F7A80B0F74404D79" },
   { name = "shared", version = "1.0.0", build_tools = ["gleam"], requirements = ["gleam_json", "gleam_stdlib"], source = "local", path = "../shared" },
@@ -52,5 +54,6 @@ lustre = { version = ">= 4.2.4 and < 5.0.0" }
 lustre_dev_tools = { version = ">= 1.3.2 and < 2.0.0" }
 lustre_http = { version = ">= 0.5.2 and < 1.0.0" }
 lustre_websocket = { version = ">= 0.7.6 and < 1.0.0" }
-modem = { version = ">= 1.1.0 and < 2.0.0"}
+modem = { version = ">= 1.1.0 and < 2.0.0" }
+plinth = { version = ">= 0.4.1 and < 1.0.0"}
 shared = { path = "../shared" }

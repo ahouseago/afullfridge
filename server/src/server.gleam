@@ -54,7 +54,6 @@ type Message {
 // Connect(player_id, name) -> looks up the player_id in state.players to get
 //   the room to connect them to, then adds them to that room.
 
-
 // Messages sent to each websocket actor to update its state or for
 // communicating over its websocket.
 type WebsocketConnectionUpdate {
@@ -376,10 +375,33 @@ fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
             ),
           )
         }
-        Ok(ConnectedPlayer(_id, _room_code, _name)) | Error(Nil) -> {
-          io.println(
-            "websocket connection set up by connected player"
+        Ok(ConnectedPlayer(id, room_code, player_name)) -> {
+          let rooms = case dict.get(state.rooms, room_code) {
+            Ok(room) -> {
+              let room =
+                Room(
+                  ..room,
+                  players: [Player(id: id, name: player_name), ..room.players],
+                )
+              broadcast_message(
+                state.connections,
+                to: room.players,
+                message: shared.PlayersInRoom(room.players),
+              )
+              send_fn(shared.InitialRoomState(room))
+              dict.insert(state.rooms, room_code, room)
+            }
+            Error(_) -> state.rooms
+          }
+          actor.continue(
+            State(
+              ..state,
+              rooms: rooms,
+            ),
           )
+        }
+        Error(Nil) -> {
+          io.println("found error when getting player for new connection")
           actor.continue(state)
         }
       }
@@ -390,16 +412,19 @@ fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
         |> result.map(fn(player) { player.room_code })
         |> result.try(fn(room_code) { dict.get(state.rooms, room_code) })
         |> result.try(fn(room) {
-          Ok(dict.insert(
-            state.rooms,
-            room.room_code,
+          let room =
             Room(
               ..room,
               players: list.filter(room.players, fn(player) {
                 player.id != connection_id
               }),
-            ),
-          ))
+            )
+          broadcast_message(
+            state.connections,
+            room.players,
+            shared.PlayersInRoom(room.players),
+          )
+          Ok(dict.insert(state.rooms, room.room_code, room))
         })
         |> result.unwrap(state.rooms)
       actor.continue(

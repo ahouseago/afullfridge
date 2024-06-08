@@ -12,6 +12,7 @@ import lustre/event
 import lustre_http
 import lustre_websocket as ws
 import modem
+import plinth/javascript/storage
 import shared
 
 pub type Model {
@@ -79,10 +80,30 @@ fn relative(path: String) -> uri.Uri {
 fn init(_flags) -> #(Model, effect.Effect(Msg)) {
   let uri = modem.initial_uri()
   case uri, uri |> result.map(get_route_from_uri) {
-    Ok(uri), Ok(Play(Some(room_code))) -> #(
-      NotInRoom(uri, Play(Some(room_code)), room_code),
-      effect.batch([join_game(room_code), modem.init(on_url_change)]),
-    )
+    Ok(uri), Ok(Play(Some(room_code))) -> {
+      let rejoin =
+        storage.local()
+        |> result.try(fn(local_storage) {
+          use id <- result.try(storage.get_item(local_storage, "connection_id"))
+          use name <- result.map(storage.get_item(local_storage, "player_name"))
+
+          #(
+            id,
+            name,
+            ws.init(
+              "ws://localhost:3000/ws/" <> id <> "/" <> name,
+              WebSocketEvent,
+            ),
+          )
+        })
+      case rejoin {
+        Ok(#(id, name, msg)) -> #(Disconnected(id, room_code, name), msg)
+        Error(_) -> #(
+          NotInRoom(uri, Play(Some(room_code)), room_code),
+          effect.batch([join_game(room_code), modem.init(on_url_change)]),
+        )
+      }
+    }
     Ok(uri), Ok(route) -> #(
       NotInRoom(uri, route, ""),
       modem.init(on_url_change),
@@ -135,13 +156,23 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
     Disconnected(player_id, room_code, _player_name),
       UpdatePlayerName(player_name)
     -> #(Disconnected(player_id, room_code, player_name), effect.none())
-    Disconnected(player_id, _room_code, player_name), SetPlayerName -> #(
-      model,
-      ws.init(
-        "ws://localhost:3000/ws/" <> player_id <> "/" <> player_name,
-        WebSocketEvent,
-      ),
-    )
+    Disconnected(player_id, _room_code, player_name), SetPlayerName -> {
+      let _ =
+        storage.local()
+        |> result.try(fn(local_storage) {
+          result.all([
+            storage.set_item(local_storage, "connection_id", player_id),
+            storage.set_item(local_storage, "player_name", player_name),
+          ])
+        })
+      #(
+        model,
+        ws.init(
+          "ws://localhost:3000/ws/" <> player_id <> "/" <> player_name,
+          WebSocketEvent,
+        ),
+      )
+    }
     Disconnected(player_id, room_code, player_name), WebSocketEvent(ws_event)
     | Connected(player_id, room_code, player_name, _, _, _),
       WebSocketEvent(ws_event)
