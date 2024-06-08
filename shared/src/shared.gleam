@@ -21,7 +21,7 @@ pub type HttpRequest {
 
 pub type HttpResponse {
   // Returned from successfully creating/joining a room.
-  RoomResponse(room: Room, player_id: PlayerId)
+  RoomResponse(room_code: RoomCode, player_id: PlayerId)
 }
 
 pub type WebsocketRequest {
@@ -32,6 +32,8 @@ pub type WebsocketRequest {
 }
 
 pub type WebsocketResponse {
+  // Sent after connecting to a room.
+  InitialRoomState(Room)
   PlayersInRoom(List(Player))
   WordList(List(String))
   RoundInfo(Round)
@@ -92,7 +94,7 @@ pub type Round {
   )
 }
 
-pub fn round_to_json(round: Round) {
+pub fn round_to_json(round: Round) -> json.Json {
   json.object([
     #("words", json.array(round.words, of: json.string)),
     #("leadingPlayer", player_with_preferences_to_json(round.leading_player)),
@@ -127,7 +129,7 @@ pub type Room {
   )
 }
 
-pub fn room_to_json(room: Room) {
+pub fn room_to_json(room: Room) -> json.Json {
   json.object([
     #("roomCode", json.string(room.room_code)),
     #("players", json.array(room.players, of: player_to_json)),
@@ -249,10 +251,10 @@ pub fn decode_websocket_request(
 pub fn encode_http_response(response: HttpResponse) {
   let #(t, message) =
     case response {
-      RoomResponse(room, player_id) -> #(
+      RoomResponse(room_code, player_id) -> #(
         "joinedRoom",
         json.object([
-          #("room", room_to_json(room)),
+          #("roomCode", json.string(room_code)),
           #("playerId", json.string(player_id)),
         ]),
       )
@@ -265,6 +267,7 @@ pub fn encode_http_response(response: HttpResponse) {
 pub fn encode_websocket_response(response: WebsocketResponse) {
   let #(t, message) =
     case response {
+      InitialRoomState(room) -> #("room", room_to_json(room))
       PlayersInRoom(players) -> #(
         "playersInRoom",
         json.array(from: players, of: player_to_json),
@@ -295,7 +298,7 @@ pub fn decode_http_response_json(
       msg
       |> dynamic.decode2(
         RoomResponse,
-        dynamic.field("room", room_from_json),
+        dynamic.field("roomCode", dynamic.string),
         dynamic.field("playerId", dynamic.string),
       )
     Ok(#(request_type, _)) ->
@@ -317,7 +320,7 @@ pub fn decode_http_response(request: String) -> Result(HttpResponse, String) {
       msg
       |> dynamic.decode2(
         RoomResponse,
-        dynamic.field("room", room_from_json),
+        dynamic.field("roomCode", dynamic.string),
         dynamic.field("playerId", dynamic.string),
       )
     Ok(#(request_type, _)) ->
@@ -346,6 +349,8 @@ pub fn decode_websocket_response(
   let response_with_type = json.decode(text, type_decoder)
 
   case response_with_type {
+    Ok(#("room", msg)) ->
+      msg |> dynamic.decode1(InitialRoomState, room_from_json)
     Ok(#("playersInRoom", msg)) ->
       msg
       |> dynamic.decode1(PlayersInRoom, dynamic.list(of: player_from_json))

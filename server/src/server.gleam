@@ -8,7 +8,7 @@ import gleam/http/response
 import gleam/int
 import gleam/io
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/result
 import gleam/string
@@ -25,46 +25,41 @@ type ConnectionId =
 type ConnectionSubject =
   Subject(WebsocketConnectionUpdate)
 
-type WebsocketConnection(connection_subject) {
-  // Before the server has registered the new websocket and given it an ID,
-  // it's in an initialising state where the connection to the client has been
-  // established but the actor doesn't know who it is yet.
-  Initialising
-  // Once the actor has been informed of who it is, this contains its state for
-  // managing websocket communication.
-  WebsocketConnection(
-    id: ConnectionId,
-    room_code: RoomCode,
-  )
+type WebsocketConnection {
+  WebsocketConnection(id: ConnectionId)
 }
 
+// These messages are the ways to communicate with the game state actor.
 type Message {
   NewConnection(
-    connection_subject: ConnectionSubject,
     player_id: ConnectionId,
+    send_message: fn(shared.WebsocketResponse) -> Nil,
     player_name: PlayerName,
   )
-  DeleteConnection(ConnectionId, room_code: RoomCode)
+  DeleteConnection(ConnectionId)
   ProcessWebsocketRequest(from: ConnectionId, message: shared.WebsocketRequest)
 
   GetRoom(reply_with: Subject(Result(Room, Nil)), room_code: RoomCode)
-  // GetPlayer(
-  //   reqly_with: Subject(Result(PlayerConnection, Nil)),
-  //   // TODO: maybe this is room code + player name
-  //   id: ConnectionId,
-  // )
-  CreateRoom(reply_with: Subject(Result(#(Room, ConnectionId), Nil)))
+  CreateRoom(reply_with: Subject(Result(#(RoomCode, ConnectionId), Nil)))
   AddPlayerToRoom(
-    reply_with: Subject(Result(#(Room, ConnectionId), String)),
+    reply_with: Subject(Result(ConnectionId, String)),
     room_code: RoomCode,
   )
 }
+
+// Handling new connections:
+// CreateRoom -> Generates a room with no players in state.rooms
+// JoinRoom(room_code) -> creates a player with an id, creates a disconnected
+//   player in state.players with the room code. Returns the player_id
+// Connect(player_id, name) -> looks up the player_id in state.players to get
+//   the room to connect them to, then adds them to that room.
+
 
 // Messages sent to each websocket actor to update its state or for
 // communicating over its websocket.
 type WebsocketConnectionUpdate {
   // Sent once set up so the websocket connection actor can set its internal state.
-  SetupConnection(id: ConnectionId, room_code: RoomCode)
+  // SetupConnection(id: ConnectionId, room_code: RoomCode)
   // Sent to the actor from the state manager, which is then sent over the websocket.
   Request(shared.WebsocketRequest)
   // Sent to the actor to pass on to the state manager.
@@ -73,25 +68,18 @@ type WebsocketConnectionUpdate {
   Shutdown
 }
 
-type PlayerWithSubject(connection_subject) {
+type PlayerConnection {
   // Before the websocket has been established
   DisconnectedPlayer(id: ConnectionId, room_code: RoomCode)
-  ConnectedPlayer(
-    id: ConnectionId,
-    name: PlayerName,
-    room_code: RoomCode,
-    connection_subject: connection_subject,
-  )
+  ConnectedPlayer(id: ConnectionId, room_code: RoomCode, name: PlayerName)
 }
-
-type PlayerConnection =
-  PlayerWithSubject(ConnectionSubject)
 
 type StateWithSubject(connection_subject) {
   State(
     next_id: Int,
+    players: Dict(ConnectionId, PlayerConnection),
     rooms: Dict(RoomCode, Room),
-    connections: Dict(ConnectionId, PlayerWithSubject(connection_subject)),
+    connections: Dict(ConnectionId, fn(shared.WebsocketResponse) -> Nil),
   )
 }
 
@@ -134,7 +122,12 @@ pub fn main() {
   // These values are for the Websocket process initialized below
   let assert Ok(state_subject) =
     actor.start(
-      State(next_id: 0, rooms: dict.new(), connections: dict.new()),
+      State(
+        next_id: 0,
+        players: dict.new(),
+        rooms: dict.new(),
+        connections: dict.new(),
+      ),
       handle_message,
     )
 
@@ -156,9 +149,7 @@ pub fn main() {
               mist.websocket(
                 request: req,
                 on_init: on_init(state_subject, player_id, player_name),
-                on_close: fn(ws_conn_subject) {
-                  process.send(ws_conn_subject, Shutdown)
-                },
+                on_close: fn(websocket) { process.send(websocket, Shutdown) },
                 handler: handle_ws_message,
               )
             ["createroom"] ->
@@ -230,22 +221,24 @@ fn handle_join_request(
       process.try_call(state_subject, GetRoom(_, room_code), 5)
       |> result.map_error(fn(_) { not_found() })
       |> result.try(fn(_room) {
-        use join_room_call <- result.try(
+        use join_room <- result.try(
           process.try_call(state_subject, AddPlayerToRoom(_, room_code), 2)
           |> result.map_error(fn(_call_error) {
             internal_error("adding player to room")
           }),
         )
-        use join_room <- result.map(
-          join_room_call
+        use connection_id <- result.map(
+          join_room
           |> result.map_error(fn(reason) { internal_error(reason) }),
         )
-        let #(room, player_id) = join_room
         response.new(200)
         |> response.set_body(
           mist.Bytes(
             bytes_builder.from_string(
-              shared.encode_http_response(shared.RoomResponse(room, player_id)),
+              shared.encode_http_response(shared.RoomResponse(
+                room_code,
+                connection_id,
+              )),
             ),
           ),
         )
@@ -256,55 +249,39 @@ fn handle_join_request(
   }
 }
 
-fn on_init(state_subj, player_id, player_name) {
-  fn(conn) {
-    let selector = process.new_selector()
+fn on_init(
+  game: Subject(Message),
+  connection_id: ConnectionId,
+  player_name: String,
+) {
+  fn(_conn: mist.WebsocketConnection) -> #(
+    Subject(WebsocketConnectionUpdate),
+    Option(process.Selector(shared.WebsocketResponse)),
+  ) {
+    let self = process.new_subject()
     let assert Ok(connection_subject) =
-      // TODO: check that the player is in the room before allowing this websocket
-      // connection to be set up.
       actor.start(
-        Initialising,
-        fn(update: WebsocketConnectionUpdate, connection_state) {
+        WebsocketConnection(connection_id),
+        fn(update, connection_state) {
           case update {
-            SetupConnection(id, room_code) -> {
-              io.println(
-                "New connection: "
-                <> id
-                <> " has connected to room "
-                <> room_code
-                <> ".",
-              )
-              actor.continue(WebsocketConnection(id, room_code))
-            }
             Request(req) -> {
-              case connection_state {
-                WebsocketConnection(id, _) -> {
-                  process.send(
-                    state_subj,
-                    ProcessWebsocketRequest(from: id, message: req),
-                  )
-                  actor.continue(connection_state)
-                }
-                _ -> actor.continue(connection_state)
-              }
+              let WebsocketConnection(id) = connection_state
+              process.send(
+                game,
+                ProcessWebsocketRequest(from: id, message: req),
+              )
+              actor.continue(connection_state)
             }
-            Response(outgoing_message) -> {
-              let assert Ok(_) =
-                mist.send_text_frame(
-                  conn,
-                  shared.encode_websocket_response(outgoing_message),
-                )
+            Response(resp) -> {
+              process.send(self, resp)
               actor.continue(connection_state)
             }
             Shutdown -> {
               case connection_state {
-                WebsocketConnection(id, room_code) -> {
-                  process.send(state_subj, DeleteConnection(id, room_code))
-                  io.println(
-                    "Connection " <> id <> " left room " <> room_code <> ".",
-                  )
+                WebsocketConnection(id) -> {
+                  process.send(game, DeleteConnection(id))
+                  io.println("Player " <> id <> " disconnected.")
                 }
-                _ -> Nil
               }
               actor.Stop(process.Normal)
             }
@@ -313,34 +290,42 @@ fn on_init(state_subj, player_id, player_name) {
       )
 
     process.send(
-      state_subj,
-      NewConnection(connection_subject, player_id, player_name),
+      game,
+      NewConnection(connection_id, process.send(self, _), player_name),
     )
 
-    #(connection_subject, Some(selector))
+    #(
+      connection_subject,
+      Some(process.selecting(process.new_selector(), self, fn(a) { a })),
+    )
   }
 }
 
-fn handle_ws_message(ws_conn_subject, conn, message) {
+fn handle_ws_message(
+  websocket: Subject(WebsocketConnectionUpdate),
+  conn: mist.WebsocketConnection,
+  message: mist.WebsocketMessage(shared.WebsocketResponse),
+) {
   case message {
-    mist.Text("ping") -> {
-      let assert Ok(_) = mist.send_text_frame(conn, "pong")
-      actor.continue(ws_conn_subject)
-    }
     mist.Text(text) -> {
       io.println("Received request: " <> text)
       let req = shared.decode_websocket_request(text)
       case req {
-        Ok(req) -> process.send(ws_conn_subject, Request(req))
+        Ok(req) -> process.send(websocket, Request(req))
         Error(err) -> {
           let _ = mist.send_text_frame(conn, "invalid request: " <> err)
           io.println("invalid request: " <> err)
         }
       }
-      actor.continue(ws_conn_subject)
+      actor.continue(websocket)
     }
-    mist.Binary(_) | mist.Custom(_) -> {
-      actor.continue(ws_conn_subject)
+    mist.Custom(response) -> {
+      let assert Ok(_) =
+        mist.send_text_frame(conn, shared.encode_websocket_response(response))
+      actor.continue(websocket)
+    }
+    mist.Binary(_) -> {
+      actor.continue(websocket)
     }
     mist.Closed | mist.Shutdown -> actor.Stop(process.Normal)
   }
@@ -348,65 +333,75 @@ fn handle_ws_message(ws_conn_subject, conn, message) {
 
 fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
   case msg {
-    NewConnection(subject, player_id, player_name) -> {
-      dict.get(state.connections, player_id)
-      |> result.map(fn(player) {
-        case player {
-          ConnectedPlayer(_id, _name, _room_code, _conn) ->
-            actor.continue(state)
-          DisconnectedPlayer(id, room_code) -> {
-            process.send(subject, SetupConnection(id, room_code))
-            let rooms = case dict.get(state.rooms, room_code) {
-              Ok(room) -> {
-                let room =
-                  Room(
-                    ..room,
-                    players: [
-                      Player(id: player_id, name: player_name),
-                      ..room.players
-                    ],
-                  )
-                broadcast_message(
-                  state.connections,
-                  to: room.players,
-                  message: shared.PlayersInRoom(room.players),
-                )
-                dict.insert(state.rooms, room_code, room)
-              }
-              Error(_) -> state.rooms
-            }
-            actor.continue(
-              State(
-                ..state,
-                rooms: rooms,
-                connections: dict.insert(
-                  state.connections,
-                  player_id,
-                  ConnectedPlayer(player_id, player_name, room_code, subject),
-                ),
-              ),
+    NewConnection(connection_id, send_fn, player_name) -> {
+      case dict.get(state.players, connection_id) {
+        Ok(DisconnectedPlayer(id, room_code)) -> {
+          io.println(
+            "player "
+            <> id
+            <> " set up websocket connection in room "
+            <> room_code
+            <> ".",
+          )
+          let connections = dict.insert(state.connections, id, send_fn)
+          let players =
+            dict.insert(
+              state.players,
+              id,
+              ConnectedPlayer(id, room_code, player_name),
             )
+          let rooms = case dict.get(state.rooms, room_code) {
+            Ok(room) -> {
+              let room =
+                Room(
+                  ..room,
+                  players: [Player(id: id, name: player_name), ..room.players],
+                )
+              broadcast_message(
+                state.connections,
+                to: room.players,
+                message: shared.PlayersInRoom(room.players),
+              )
+              send_fn(shared.InitialRoomState(room))
+              dict.insert(state.rooms, room_code, room)
+            }
+            Error(_) -> state.rooms
           }
+          actor.continue(
+            State(
+              ..state,
+              players: players,
+              rooms: rooms,
+              connections: connections,
+            ),
+          )
         }
-      })
-      |> result.unwrap(actor.continue(state))
+        Ok(ConnectedPlayer(_id, _room_code, _name)) | Error(Nil) -> {
+          io.println(
+            "websocket connection set up by connected player"
+          )
+          actor.continue(state)
+        }
+      }
     }
-    DeleteConnection(connection_id, room_code) -> {
-      let rooms = case dict.get(state.rooms, room_code) {
-        Ok(room) -> {
-          dict.insert(
+    DeleteConnection(connection_id) -> {
+      let rooms =
+        dict.get(state.players, connection_id)
+        |> result.map(fn(player) { player.room_code })
+        |> result.try(fn(room_code) { dict.get(state.rooms, room_code) })
+        |> result.try(fn(room) {
+          Ok(dict.insert(
             state.rooms,
-            room_code,
+            room.room_code,
             Room(
               ..room,
               players: list.filter(room.players, fn(player) {
                 player.id != connection_id
               }),
             ),
-          )
-        }
-        Error(_) -> state.rooms
-      }
+          ))
+        })
+        |> result.unwrap(state.rooms)
       actor.continue(
         State(
           ..state,
@@ -423,24 +418,18 @@ fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
     }
     CreateRoom(subj) -> {
       let #(state, connection_id) = get_next_id(state)
+      // TODO: make room codes that aren't just incrementing integers.
       let room_code =
         dict.size(state.rooms)
         |> int.to_string
-      let connection =
-        DisconnectedPlayer(id: connection_id, room_code: room_code)
-      let player = Player(id: connection_id, name: "")
+      let player = DisconnectedPlayer(id: connection_id, room_code: room_code)
       let room =
-        Room(
-          room_code: room_code,
-          players: [player],
-          word_list: [],
-          round: None,
-        )
-      actor.send(subj, Ok(#(room, connection_id)))
+        Room(room_code: room_code, players: [], word_list: [], round: None)
+      actor.send(subj, Ok(#(room_code, connection_id)))
       actor.continue(
         State(
           ..state,
-          connections: dict.insert(state.connections, connection_id, connection),
+          players: dict.insert(state.players, connection_id, player),
           rooms: dict.insert(state.rooms, room_code, room),
         ),
       )
@@ -452,27 +441,19 @@ fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
       }
       actor.continue(state)
     }
-    // GetPlayer(subj, id) -> todo
     AddPlayerToRoom(subj, room_code) -> {
       result.map(dict.get(state.rooms, room_code), fn(room) {
         let #(state, connection_id) = get_next_id(state)
-        let connection =
+        let player_connection =
           DisconnectedPlayer(id: connection_id, room_code: room_code)
-        let player = Player(id: connection_id, name: "")
-        let room = Room(..room, players: [player, ..room.players])
-        broadcast_message(
-          state.connections,
-          to: room.players,
-          message: shared.PlayersInRoom(room.players),
-        )
-        actor.send(subj, Ok(#(room, connection_id)))
+        actor.send(subj, Ok(connection_id))
         actor.continue(
           State(
             ..state,
-            connections: dict.insert(
-              state.connections,
+            players: dict.insert(
+              state.players,
               connection_id,
-              connection,
+              player_connection,
             ),
             rooms: dict.insert(state.rooms, room_code, room),
           ),
@@ -484,26 +465,13 @@ fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
 }
 
 fn broadcast_message(
-  connections: Dict(
-    ConnectionId,
-    PlayerWithSubject(Subject(WebsocketConnectionUpdate)),
-  ),
+  connections: Dict(ConnectionId, fn(shared.WebsocketResponse) -> Nil),
   to players: List(Player),
   message msg: shared.WebsocketResponse,
 ) {
   use player <- list.each(players)
-  use connection <- result.map(dict.get(connections, player.id))
-  case connection {
-    DisconnectedPlayer(_, _) -> Nil
-    ConnectedPlayer(_, _, _, subject) -> actor.send(subject, Response(msg))
-  }
-}
-
-fn get_player_room_code(player: PlayerWithSubject(a)) {
-  case player {
-    ConnectedPlayer(_id, _name, room_code, _conn) -> room_code
-    DisconnectedPlayer(_id, room_code) -> room_code
-  }
+  use send_fn <- result.map(dict.get(connections, player.id))
+  send_fn(msg)
 }
 
 fn handle_websocket_request(
@@ -511,8 +479,8 @@ fn handle_websocket_request(
   from: ConnectionId,
   request: shared.WebsocketRequest,
 ) -> Result(State, Nil) {
-  use player <- result.map(dict.get(state.connections, from))
-  let room_code = get_player_room_code(player)
+  use player <- result.map(dict.get(state.players, from))
+  let room_code = player.room_code
   case request {
     AddWord(word) -> {
       let new_state = add_word_to_room(state, room_code, word)
@@ -537,15 +505,8 @@ fn handle_websocket_request(
 fn list_words(state: State, room_code: RoomCode) {
   use room <- result.map(dict.get(state.rooms, room_code))
   use player <- list.each(room.players)
-  use conn <- result.map(dict.get(state.connections, player.id))
-  case conn {
-    ConnectedPlayer(_, _, _, connection_subject) ->
-      process.send(
-        connection_subject,
-        Response(shared.WordList(room.word_list)),
-      )
-    _ -> Nil
-  }
+  use send_fn <- result.map(dict.get(state.connections, player.id))
+  send_fn(shared.WordList(room.word_list))
 }
 
 fn add_word_to_room(state: State, room_code: RoomCode, word: String) {
@@ -565,7 +526,7 @@ fn submit_words(
   player: PlayerConnection,
   ordered_words: List(String),
 ) {
-  use room <- result.map(dict.get(state.rooms, get_player_room_code(player)))
+  use room <- result.map(dict.get(state.rooms, player.room_code))
   use round <- option.map(room.round)
 
   let lists_equal = list.sort(ordered_words, string.compare) == round.words
@@ -573,16 +534,13 @@ fn submit_words(
 
   let new_round = case lists_equal, is_leading {
     False, _ -> {
-      case player {
-        ConnectedPlayer(_, _, _, connection_subject) ->
-          process.send(
-            connection_subject,
-            Response(shared.ServerError(
-              "submitted words don't match the word list",
-            )),
-          )
-        _ -> Nil
-      }
+      let _ =
+        dict.get(state.connections, player.id)
+        |> result.map(fn(send_fn) {
+          send_fn(shared.ServerError(
+            "submitted words don't match the word list",
+          ))
+        })
       round
     }
     True, True -> {
@@ -605,7 +563,7 @@ fn submit_words(
     ..state,
     rooms: dict.insert(
       state.rooms,
-      get_player_room_code(player),
+      player.room_code,
       Room(..room, round: Some(new_round)),
     ),
   )
