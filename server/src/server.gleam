@@ -394,13 +394,7 @@ fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
             }
             Error(_) -> state.rooms
           }
-          actor.continue(
-            State(
-              ..state,
-              rooms: rooms,
-              connections: connections,
-            ),
-          )
+          actor.continue(State(..state, rooms: rooms, connections: connections))
         }
         Error(Nil) -> {
           io.println("found error when getting player for new connection")
@@ -519,7 +513,21 @@ fn handle_websocket_request(
       state
     }
     StartRound -> {
-      state
+      let new_state = result.map(dict.get(state.rooms, room_code), fn(room) {
+        // Starting a round means:
+        // - picking 5 words randomly (how do I do random things?)
+        let words = room.word_list |> list.shuffle |> list.take(5)
+        // - picking a player to start
+        let assert [leading_player, ..other_players] = room.players |> list.map(fn(player) { #(player, []) })
+        let round = shared.Round(words, leading_player, other_players)
+
+        let room = Room(..room, round: Some(round))
+
+        // - sending round info to clients
+        broadcast_message(state.connections, room.players, shared.RoundInfo(round))
+        State(..state, rooms: dict.insert(state.rooms, room_code, room))
+      })
+      result.unwrap(new_state, state)
     }
     SubmitOrderedWords(ordered_words) -> {
       submit_words(state, player, ordered_words)
@@ -531,7 +539,11 @@ fn handle_websocket_request(
 
 fn list_words(state: State, room_code: RoomCode) {
   use room <- result.map(dict.get(state.rooms, room_code))
-  broadcast_message(state.connections, room.players, shared.WordList(room.word_list))
+  broadcast_message(
+    state.connections,
+    room.players,
+    shared.WordList(room.word_list),
+  )
 }
 
 fn add_word_to_room(state: State, room_code: RoomCode, word: String) {

@@ -9,6 +9,10 @@ import lustre/effect
 import lustre/element
 import lustre/element/html
 import lustre/event
+import lustre/ui
+import lustre/ui/button
+import lustre/ui/input
+import lustre/ui/util/styles
 import lustre_http
 import lustre_websocket as ws
 import modem
@@ -54,6 +58,7 @@ pub type Msg {
   SetPlayerName
   UpdateAddWordInput(String)
   AddWord
+  StartRound
 }
 
 pub fn main() {
@@ -225,11 +230,26 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       room,
       round,
       _add_word_input,
-    ), UpdateAddWordInput(value) -> {
+    ),
+      UpdateAddWordInput(value)
+    -> {
       #(
         Connected(player_id, room_code, player_name, ws, room, round, value),
         effect.none(),
       )
+    }
+    Connected(
+      _player_id,
+      _room_code,
+      _player_name,
+      ws,
+      _room,
+      _round,
+      _add_word_input,
+    ),
+      StartRound
+    -> {
+      #(model, ws.send(ws, shared.encode_request(shared.StartRound)))
     }
     Connected(_player_id, _room_code, _player_name, _ws, _room, _round, _), _
     | Disconnected(_player_id, _room, _player_name), _
@@ -257,7 +277,7 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
             player_name: player_name,
             ws: ws,
             room: Some(room),
-            round: round,
+            round: option.or(room.round, round),
             add_word_input: add_word_input,
           ),
           effect.none(),
@@ -357,7 +377,7 @@ fn on_url_change(uri: uri.Uri) -> Msg {
 pub fn view(model: Model) -> element.Element(Msg) {
   let content = content(model)
 
-  html.div([], [header(model), content])
+  html.div([], [styles.elements(), header(model), content])
 }
 
 fn link(href, content) {
@@ -422,7 +442,7 @@ fn content(model: Model) {
           html.span([], [element.text("A Full Fridge")]),
           element.text(", a game about preferences best played with friends."),
         ]),
-        html.button([event.on_click(StartGame)], [
+        button.button([event.on_click(StartGame)], [
           element.text("Start new game"),
         ]),
         link("/play", [element.text("Join a game")]),
@@ -436,7 +456,7 @@ fn content(model: Model) {
           html.label([attribute.for("room-code-input")], [
             element.text("Enter game code:"),
           ]),
-          html.input([
+          input.input([
             attribute.id("room-code-input"),
             attribute.placeholder("glittering-intelligent-iguana"),
             attribute.type_("text"),
@@ -446,19 +466,53 @@ fn content(model: Model) {
             event.on_input(UpdateRoomCode),
             attribute.value(room_code_input),
           ]),
-          html.button([attribute.type_("submit")], [element.text("Join")]),
+          button.button([attribute.type_("submit")], [element.text("Join")]),
         ],
       )
+    Connected(
+      _player_id,
+      _room_code,
+      _player_name,
+      _ws,
+      Some(_room),
+      Some(round),
+      _add_word_input,
+    ) ->
+      html.div([attribute.class("flex flex-col m-4")], [
+        html.div([], [
+          html.h2([], [
+            element.text({ round.leading_player.0 }.name <> " is choosing"),
+          ]),
+        ]),
+        ui.prose([], [
+          html.h2([], [element.text("Words:")]),
+          ui.group(
+            [],
+            list.map(round.words, fn(word) {
+              ui.button([], [element.text(word)])
+            }),
+          ),
+          // html.ul(
+        //   [],
+        //   list.map(round.words, fn(word) { html.li([], [element.text(word)]) }),
+        // ),
+        ]),
+      ])
     Connected(
       player_id,
       _room_code,
       _player_name,
       _ws,
       Some(room),
-      _round,
+      None,
       add_word_input,
     ) ->
       html.div([attribute.class("flex flex-col m-4")], [
+        html.div([], [
+          button.button([event.on_click(StartRound)], [
+            element.text("Start game"),
+          ]),
+        ]),
         html.div([], [
           html.h2([], [element.text("Players:")]),
           html.ul(
@@ -480,7 +534,7 @@ fn content(model: Model) {
           html.label([attribute.for("add-word-input")], [
             element.text("Add word to list"),
           ]),
-          html.input([
+          input.input([
             attribute.id("add-word-input"),
             attribute.type_("text"),
             attribute.class(
@@ -489,7 +543,7 @@ fn content(model: Model) {
             event.on_input(UpdateAddWordInput),
             attribute.value(add_word_input),
           ]),
-          html.button([attribute.type_("submit")], [element.text("Add")]),
+          button.button([attribute.type_("submit")], [element.text("Add")]),
         ]),
         html.div([], [
           html.h2([], [element.text("Words:")]),
@@ -507,7 +561,7 @@ fn content(model: Model) {
           [event.on_submit(SetPlayerName), attribute.class("flex flex-col m-4")],
           [
             html.label([attribute.for("name-input")], [element.text("Name:")]),
-            html.input([
+            input.input([
               attribute.id("name-input"),
               attribute.placeholder("Enter name..."),
               event.on_input(UpdatePlayerName),
@@ -517,7 +571,9 @@ fn content(model: Model) {
                 "my-2 p-2 border-2 rounded placeholder:text-slate-300",
               ),
             ]),
-            html.button([attribute.type_("submit")], [element.text("Set name")]),
+            button.button([attribute.type_("submit")], [
+              element.text("Set name"),
+            ]),
           ],
         ),
       ])
