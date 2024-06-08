@@ -376,6 +376,7 @@ fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
           )
         }
         Ok(ConnectedPlayer(id, room_code, player_name)) -> {
+          let connections = dict.insert(state.connections, id, send_fn)
           let rooms = case dict.get(state.rooms, room_code) {
             Ok(room) -> {
               let room =
@@ -397,6 +398,7 @@ fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
             State(
               ..state,
               rooms: rooms,
+              connections: connections,
             ),
           )
         }
