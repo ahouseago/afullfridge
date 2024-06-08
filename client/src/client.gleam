@@ -29,6 +29,7 @@ pub type Model {
     ws: ws.WebSocket,
     room: Option(shared.Room),
     round: Option(shared.Round),
+    add_word_input: String,
   )
 }
 
@@ -51,6 +52,7 @@ pub type Msg {
   UpdateRoomCode(String)
   UpdatePlayerName(String)
   SetPlayerName
+  UpdateAddWordInput(String)
   AddWord
 }
 
@@ -174,7 +176,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       )
     }
     Disconnected(player_id, room_code, player_name), WebSocketEvent(ws_event)
-    | Connected(player_id, room_code, player_name, _, _, _),
+    | Connected(player_id, room_code, player_name, _, _, _, _),
       WebSocketEvent(ws_event)
     -> {
       case ws_event {
@@ -187,6 +189,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
             ws: socket,
             room: None,
             round: None,
+            add_word_input: "",
           ),
           effect.none(),
         )
@@ -198,10 +201,37 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         )
       }
     }
-    Connected(_player_id, _room_code, _player_name, ws, _room, _round), AddWord -> {
-      #(model, ws.send(ws, shared.encode_request(shared.AddWord("something"))))
+    Connected(
+      player_id,
+      room_code,
+      player_name,
+      ws,
+      room,
+      round,
+      add_word_input,
+    ),
+      AddWord
+    -> {
+      #(
+        Connected(player_id, room_code, player_name, ws, room, round, ""),
+        ws.send(ws, shared.encode_request(shared.AddWord(add_word_input))),
+      )
     }
-    Connected(_player_id, _room_code, _player_name, _ws, _room, _round), _
+    Connected(
+      player_id,
+      room_code,
+      player_name,
+      ws,
+      room,
+      round,
+      _add_word_input,
+    ), UpdateAddWordInput(value) -> {
+      #(
+        Connected(player_id, room_code, player_name, ws, room, round, value),
+        effect.none(),
+      )
+    }
+    Connected(_player_id, _room_code, _player_name, _ws, _room, _round, _), _
     | Disconnected(_player_id, _room, _player_name), _
     -> #(model, effect.none())
   }
@@ -210,7 +240,15 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
 fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) {
   case model {
     NotInRoom(_, _, _) | Disconnected(_, _, _) -> #(model, effect.none())
-    Connected(player_id, room_code, player_name, ws, room, round) ->
+    Connected(
+      player_id,
+      room_code,
+      player_name,
+      ws,
+      room,
+      round,
+      add_word_input,
+    ) ->
       case shared.decode_websocket_response(msg) {
         Ok(shared.InitialRoomState(room)) -> #(
           Connected(
@@ -220,6 +258,7 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
             ws: ws,
             room: Some(room),
             round: round,
+            add_word_input: add_word_input,
           ),
           effect.none(),
         )
@@ -236,6 +275,7 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
               ws: ws,
               room: room,
               round: round,
+              add_word_input: add_word_input,
             ),
             effect.none(),
           )
@@ -253,6 +293,7 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
               ws: ws,
               room: room,
               round: round,
+              add_word_input: add_word_input,
             ),
             effect.none(),
           )
@@ -265,6 +306,7 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
             ws: ws,
             room: room,
             round: Some(round),
+            add_word_input: add_word_input,
           ),
           effect.none(),
         )
@@ -350,7 +392,7 @@ fn header(model: Model) {
         ]),
         html.h1([attribute.class("text-2xl my-5")], [element.text("Join game")]),
       ])
-    Connected(_, room_code, _, _, _, _) | Disconnected(_, room_code, _) ->
+    Connected(_, room_code, _, _, _, _, _) | Disconnected(_, room_code, _) ->
       html.div([], [
         html.nav([attribute.class("flex items-center")], [
           // link("/", [element.text("Leave game")]),
@@ -407,7 +449,15 @@ fn content(model: Model) {
           html.button([attribute.type_("submit")], [element.text("Join")]),
         ],
       )
-    Connected(player_id, _room_code, _player_name, _ws, Some(room), _round) ->
+    Connected(
+      player_id,
+      _room_code,
+      _player_name,
+      _ws,
+      Some(room),
+      _round,
+      add_word_input,
+    ) ->
       html.div([attribute.class("flex flex-col m-4")], [
         html.div([], [
           html.h2([], [element.text("Players:")]),
@@ -423,6 +473,30 @@ fn content(model: Model) {
                 }
                 |> element.text
               html.li([], [display])
+            }),
+          ),
+        ]),
+        html.form([event.on_submit(AddWord)], [
+          html.label([attribute.for("add-word-input")], [
+            element.text("Add word to list"),
+          ]),
+          html.input([
+            attribute.id("add-word-input"),
+            attribute.type_("text"),
+            attribute.class(
+              "my-2 p-2 border-2 rounded placeholder:text-slate-300 placeholder:tracking-widest font-mono",
+            ),
+            event.on_input(UpdateAddWordInput),
+            attribute.value(add_word_input),
+          ]),
+          html.button([attribute.type_("submit")], [element.text("Add")]),
+        ]),
+        html.div([], [
+          html.h2([], [element.text("Words:")]),
+          html.ul(
+            [],
+            list.map(room.word_list, fn(word) {
+              html.li([], [element.text(word)])
             }),
           ),
         ]),
@@ -447,13 +521,12 @@ fn content(model: Model) {
           ],
         ),
       ])
-    Connected(_player_id, room_code, player_name, _ws, None, _round) -> {
+    Connected(_player_id, room_code, player_name, _ws, None, _round, _) -> {
       html.div([attribute.class("flex flex-col m-4")], [
         html.div([], [
           html.h2([], [element.text(player_name)]),
           element.text("Connecting to room " <> room_code <> "..."),
         ]),
-        html.button([event.on_click(AddWord)], [element.text("Add word")]),
       ])
     }
     NotInRoom(_, NotFound, _) | _ -> element.text("Page not found")

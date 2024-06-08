@@ -529,9 +529,7 @@ fn handle_websocket_request(
 
 fn list_words(state: State, room_code: RoomCode) {
   use room <- result.map(dict.get(state.rooms, room_code))
-  use player <- list.each(room.players)
-  use send_fn <- result.map(dict.get(state.connections, player.id))
-  send_fn(shared.WordList(room.word_list))
+  broadcast_message(state.connections, room.players, shared.WordList(room.word_list))
 }
 
 fn add_word_to_room(state: State, room_code: RoomCode, word: String) {

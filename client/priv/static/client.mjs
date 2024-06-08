@@ -3962,21 +3962,9 @@ function encode_http_request(request) {
     let _pipe = (() => {
       if (request instanceof CreateRoomRequest) {
         return ["createRoom", null$()];
-      } else if (request instanceof JoinRoomRequest) {
-        let room_code = request.room_code;
-        return ["joinRoom", string2(room_code)];
       } else {
         let room_code = request.room_code;
-        let player_id = request.connection_id;
-        return [
-          "reconnect",
-          object2(
-            toList([
-              ["roomCode", string2(room_code)],
-              ["playerId", string2(player_id)]
-            ])
-          )
-        ];
+        return ["joinRoom", string2(room_code)];
       }
     })();
     return map_first(_pipe, string2);
@@ -4165,7 +4153,7 @@ var Disconnected = class extends CustomType {
   }
 };
 var Connected = class extends CustomType {
-  constructor(player_id, room_code, player_name, ws, room, round3) {
+  constructor(player_id, room_code, player_name, ws, room, round3, add_word_input) {
     super();
     this.player_id = player_id;
     this.room_code = room_code;
@@ -4173,6 +4161,7 @@ var Connected = class extends CustomType {
     this.ws = ws;
     this.room = room;
     this.round = round3;
+    this.add_word_input = add_word_input;
   }
 };
 var Home = class extends CustomType {
@@ -4222,6 +4211,12 @@ var UpdatePlayerName = class extends CustomType {
 };
 var SetPlayerName = class extends CustomType {
 };
+var UpdateAddWordInput = class extends CustomType {
+  constructor(x0) {
+    super();
+    this[0] = x0;
+  }
+};
 var AddWord2 = class extends CustomType {
 };
 function new_uri() {
@@ -4250,6 +4245,7 @@ function handle_ws_message(model, msg) {
     let ws = model.ws;
     let room = model.room;
     let round3 = model.round;
+    let add_word_input = model.add_word_input;
     let $ = decode_websocket_response(msg);
     if ($.isOk() && $[0] instanceof InitialRoomState) {
       let room$1 = $[0][0];
@@ -4260,7 +4256,8 @@ function handle_ws_message(model, msg) {
           player_name,
           ws,
           new Some(room$1),
-          round3
+          round3,
+          add_word_input
         ),
         none()
       ];
@@ -4273,7 +4270,15 @@ function handle_ws_message(model, msg) {
         }
       );
       return [
-        new Connected(player_id, room_code, player_name, ws, room$1, round3),
+        new Connected(
+          player_id,
+          room_code,
+          player_name,
+          ws,
+          room$1,
+          round3,
+          add_word_input
+        ),
         none()
       ];
     } else if ($.isOk() && $[0] instanceof WordList) {
@@ -4285,7 +4290,15 @@ function handle_ws_message(model, msg) {
         }
       );
       return [
-        new Connected(player_id, room_code, player_name, ws, room$1, round3),
+        new Connected(
+          player_id,
+          room_code,
+          player_name,
+          ws,
+          room$1,
+          round3,
+          add_word_input
+        ),
         none()
       ];
     } else if ($.isOk() && $[0] instanceof RoundInfo) {
@@ -4297,7 +4310,8 @@ function handle_ws_message(model, msg) {
           player_name,
           ws,
           room,
-          new Some(round$1)
+          new Some(round$1),
+          add_word_input
         ),
         none()
       ];
@@ -4411,7 +4425,7 @@ function update2(model, msg) {
       throw makeError(
         "panic",
         "client",
-        181,
+        183,
         "update",
         "panic expression evaluated",
         {}
@@ -4425,7 +4439,8 @@ function update2(model, msg) {
           player_name,
           socket,
           new None(),
-          new None()
+          new None(),
+          ""
         ),
         none()
       ];
@@ -4449,7 +4464,7 @@ function update2(model, msg) {
       throw makeError(
         "panic",
         "client",
-        181,
+        183,
         "update",
         "panic expression evaluated",
         {}
@@ -4463,7 +4478,8 @@ function update2(model, msg) {
           player_name,
           socket,
           new None(),
-          new None()
+          new None(),
+          ""
         ),
         none()
       ];
@@ -4479,10 +4495,28 @@ function update2(model, msg) {
       ];
     }
   } else if (model instanceof Connected && msg instanceof AddWord2) {
+    let player_id = model.player_id;
+    let room_code = model.room_code;
+    let player_name = model.player_name;
     let ws = model.ws;
+    let room = model.room;
+    let round3 = model.round;
+    let add_word_input = model.add_word_input;
     return [
-      model,
-      send2(ws, encode_request(new AddWord("something")))
+      new Connected(player_id, room_code, player_name, ws, room, round3, ""),
+      send2(ws, encode_request(new AddWord(add_word_input)))
+    ];
+  } else if (model instanceof Connected && msg instanceof UpdateAddWordInput) {
+    let player_id = model.player_id;
+    let room_code = model.room_code;
+    let player_name = model.player_name;
+    let ws = model.ws;
+    let room = model.room;
+    let round3 = model.round;
+    let value3 = msg[0];
+    return [
+      new Connected(player_id, room_code, player_name, ws, room, round3, value3),
+      none()
     ];
   } else if (model instanceof Connected) {
     return [model, none()];
@@ -4733,6 +4767,7 @@ function content(model) {
   } else if (model instanceof Connected && model.room instanceof Some) {
     let player_id = model.player_id;
     let room = model.room[0];
+    let add_word_input = model.add_word_input;
     return div(
       toList([class$("flex flex-col m-4")]),
       toList([
@@ -4767,6 +4802,49 @@ function content(model) {
                     return text(_pipe);
                   })();
                   return li(toList([]), toList([display]));
+                }
+              )
+            )
+          ])
+        ),
+        form(
+          toList([on_submit(new AddWord2())]),
+          toList([
+            label(
+              toList([for$("add-word-input")]),
+              toList([text("Add word to list")])
+            ),
+            input(
+              toList([
+                id("add-word-input"),
+                type_("text"),
+                class$(
+                  "my-2 p-2 border-2 rounded placeholder:text-slate-300 placeholder:tracking-widest font-mono"
+                ),
+                on_input(
+                  (var0) => {
+                    return new UpdateAddWordInput(var0);
+                  }
+                ),
+                value(add_word_input)
+              ])
+            ),
+            button(
+              toList([type_("submit")]),
+              toList([text("Add")])
+            )
+          ])
+        ),
+        div(
+          toList([]),
+          toList([
+            h2(toList([]), toList([text("Words:")])),
+            ul(
+              toList([]),
+              map2(
+                room.word_list,
+                (word) => {
+                  return li(toList([]), toList([text(word)]));
                 }
               )
             )
@@ -4825,10 +4903,6 @@ function content(model) {
             h2(toList([]), toList([text(player_name)])),
             text("Connecting to room " + room_code + "...")
           ])
-        ),
-        button(
-          toList([on_click(new AddWord2())]),
-          toList([text("Add word")])
         )
       ])
     );
@@ -4849,7 +4923,7 @@ function main() {
     throw makeError(
       "assignment_no_match",
       "client",
-      59,
+      61,
       "main",
       "Assignment pattern did not match",
       { value: $ }
