@@ -32,9 +32,13 @@ pub type Model {
     player_name: String,
     ws: ws.WebSocket,
     room: Option(shared.Room),
-    round: Option(shared.Round),
+    round: Option(RoundState),
     add_word_input: String,
   )
+}
+
+pub type RoundState {
+  RoundState(round: shared.Round, ordered_words: List(String))
 }
 
 pub type Route {
@@ -59,6 +63,7 @@ pub type Msg {
   UpdateAddWordInput(String)
   AddWord
   StartRound
+  AddNextPreferedWord(String)
 }
 
 pub fn main() {
@@ -251,6 +256,39 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
     -> {
       #(model, ws.send(ws, shared.encode_request(shared.StartRound)))
     }
+    Connected(
+      player_id,
+      room_code,
+      player_name,
+      ws,
+      room,
+      Some(round_state),
+      add_word_input,
+    ),
+      AddNextPreferedWord(word)
+    -> {
+      #(
+        Connected(
+          player_id,
+          room_code,
+          player_name,
+          ws,
+          room,
+          Some(
+            RoundState(
+              ..round_state,
+              ordered_words: [
+                word,
+                ..round_state.ordered_words
+                |> list.filter(fn(existing_word) { existing_word != word })
+              ],
+            ),
+          ),
+          add_word_input,
+        ),
+        effect.none(),
+      )
+    }
     Connected(_player_id, _room_code, _player_name, _ws, _room, _round, _), _
     | Disconnected(_player_id, _room, _player_name), _
     -> #(model, effect.none())
@@ -266,7 +304,7 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
       player_name,
       ws,
       room,
-      round,
+      round_state,
       add_word_input,
     ) ->
       case shared.decode_websocket_response(msg) {
@@ -277,7 +315,13 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
             player_name: player_name,
             ws: ws,
             room: Some(room),
-            round: option.or(room.round, round),
+            round: option.or(
+              room.round
+                |> option.map(fn(round) {
+                  RoundState(round: round, ordered_words: [])
+                }),
+              round_state,
+            ),
             add_word_input: add_word_input,
           ),
           effect.none(),
@@ -294,7 +338,7 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
               player_name: player_name,
               ws: ws,
               room: room,
-              round: round,
+              round: round_state,
               add_word_input: add_word_input,
             ),
             effect.none(),
@@ -312,7 +356,7 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
               player_name: player_name,
               ws: ws,
               room: room,
-              round: round,
+              round: round_state,
               add_word_input: add_word_input,
             ),
             effect.none(),
@@ -325,7 +369,12 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
             player_name: player_name,
             ws: ws,
             room: room,
-            round: Some(round),
+            round: round_state
+              |> option.map(fn(round_state) {
+                RoundState(..round_state, round: round)
+              })
+              |> option.unwrap(RoundState(round, []))
+              |> Some,
             add_word_input: add_word_input,
           ),
           effect.none(),
@@ -475,27 +524,32 @@ fn content(model: Model) {
       _player_name,
       _ws,
       Some(_room),
-      Some(round),
+      Some(round_state),
       _add_word_input,
     ) ->
       html.div([attribute.class("flex flex-col m-4")], [
         html.div([], [
           html.h2([], [
-            element.text({ round.leading_player.0 }.name <> " is choosing"),
+            element.text(
+              { round_state.round.leading_player.0 }.name <> " is choosing",
+            ),
           ]),
         ]),
         ui.prose([], [
           html.h2([], [element.text("Words:")]),
           ui.group(
             [],
-            list.map(round.words, fn(word) {
-              ui.button([], [element.text(word)])
+            list.map(round_state.round.words, fn(word) {
+              ui.button([event.on_click(AddNextPreferedWord(word))], [
+                element.text(word),
+              ])
             }),
           ),
-          // html.ul(
-        //   [],
-        //   list.map(round.words, fn(word) { html.li([], [element.text(word)]) }),
-        // ),
+          html.ol(
+            [],
+            list.reverse(round_state.ordered_words)
+              |> list.map(fn(word) { html.li([], [element.text(word)]) }),
+          ),
         ]),
       ])
     Connected(

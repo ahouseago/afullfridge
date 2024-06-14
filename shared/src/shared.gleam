@@ -276,7 +276,7 @@ pub fn encode_websocket_response(response: WebsocketResponse) {
         "wordList",
         json.array(from: word_list, of: json.string),
       )
-      RoundInfo(round) -> #("round", round_to_json(round))
+      RoundInfo(round) -> #("roundInfo", round_to_json(round))
       ServerError(reason) -> #("error", json.string(reason))
     }
     |> pair.map_first(json.string)

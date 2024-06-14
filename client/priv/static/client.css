@@ -631,6 +631,10 @@ video {
   text-decoration-line: underline;
 }
 
+.filter {
+  filter: var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow);
+}
+
 .placeholder\:tracking-widest::-moz-placeholder {
   letter-spacing: 0.1em;
 }

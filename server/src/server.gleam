@@ -548,12 +548,14 @@ fn list_words(state: State, room_code: RoomCode) {
 
 fn add_word_to_room(state: State, room_code: RoomCode, word: String) {
   use room <- result.map(dict.get(state.rooms, room_code))
+  // Remove duplicates
+  let word_list = room.word_list |> list.filter(fn(w) { w != word })
   State(
     ..state,
     rooms: dict.insert(
       state.rooms,
       room_code,
-      Room(..room, word_list: [word, ..room.word_list]),
+      Room(..room, word_list: [word, ..word_list]),
     ),
   )
 }
