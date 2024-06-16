@@ -513,20 +513,26 @@ fn handle_websocket_request(
       state
     }
     StartRound -> {
-      let new_state = result.map(dict.get(state.rooms, room_code), fn(room) {
-        // Starting a round means:
-        // - picking 5 words randomly (how do I do random things?)
-        let words = room.word_list |> list.shuffle |> list.take(5)
-        // - picking a player to start
-        let assert [leading_player, ..other_players] = room.players |> list.map(fn(player) { #(player, []) })
-        let round = shared.Round(words, leading_player, other_players)
+      let new_state =
+        result.map(dict.get(state.rooms, room_code), fn(room) {
+          // Starting a round means:
+          // - picking 5 words randomly (how do I do random things?)
+          let words = room.word_list |> list.shuffle |> list.take(5)
+          // - picking a player to start
+          let assert [leading_player, ..other_players] =
+            room.players |> list.map(fn(player) { #(player, []) })
+          let round = shared.Round(words, leading_player, other_players)
 
-        let room = Room(..room, round: Some(round))
+          let room = Room(..room, round: Some(round))
 
-        // - sending round info to clients
-        broadcast_message(state.connections, room.players, shared.RoundInfo(round))
-        State(..state, rooms: dict.insert(state.rooms, room_code, room))
-      })
+          // - sending round info to clients
+          broadcast_message(
+            state.connections,
+            room.players,
+            shared.RoundInfo(round),
+          )
+          State(..state, rooms: dict.insert(state.rooms, room_code, room))
+        })
       result.unwrap(new_state, state)
     }
     SubmitOrderedWords(ordered_words) -> {
@@ -568,7 +574,9 @@ fn submit_words(
   use room <- result.map(dict.get(state.rooms, player.room_code))
   use round <- option.map(room.round)
 
-  let lists_equal = list.sort(ordered_words, string.compare) == round.words
+  let lists_equal =
+    list.sort(ordered_words, string.compare)
+    == list.sort(round.words, string.compare)
   let is_leading = { round.leading_player.0 }.id == player.id
 
   let new_round = case lists_equal, is_leading {
