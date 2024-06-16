@@ -217,14 +217,14 @@ function structurallyCompatibleObjects(a2, b) {
   return a2.constructor === b.constructor;
 }
 function makeError(variant, module, line, fn, message, extra) {
-  let error = new globalThis.Error(message);
-  error.gleam_error = variant;
-  error.module = module;
-  error.line = line;
-  error.fn = fn;
+  let error2 = new globalThis.Error(message);
+  error2.gleam_error = variant;
+  error2.module = module;
+  error2.line = line;
+  error2.fn = fn;
   for (let k in extra)
-    error[k] = extra[k];
-  return error;
+    error2[k] = extra[k];
+  return error2;
 }
 
 // build/dev/javascript/gleam_stdlib/gleam/option.mjs
@@ -293,9 +293,9 @@ var Match = class extends CustomType {
   }
 };
 var CompileError = class extends CustomType {
-  constructor(error, byte_index) {
+  constructor(error2, byte_index) {
     super();
-    this.error = error;
+    this.error = error2;
     this.byte_index = byte_index;
   }
 };
@@ -437,8 +437,8 @@ function do_try_map(loop$list, loop$fun, loop$acc) {
         loop$fun = fun;
         loop$acc = prepend(y, acc);
       } else {
-        let error = $[0];
-        return new Error(error);
+        let error2 = $[0];
+        return new Error(error2);
       }
     }
   }
@@ -608,8 +608,8 @@ function map_error(result, fun) {
     let x = result[0];
     return new Ok(x);
   } else {
-    let error = result[0];
-    return new Error(fun(error));
+    let error2 = result[0];
+    return new Error(fun(error2));
   }
 }
 function try$(result, fun) {
@@ -726,7 +726,7 @@ function decode1(constructor, t1) {
     }
   };
 }
-function push_path(error, name) {
+function push_path(error2, name) {
   let name$1 = from(name);
   let decoder2 = any(
     toList([string, (x) => {
@@ -744,7 +744,7 @@ function push_path(error, name) {
       return to_string3(_pipe$1);
     }
   })();
-  return error.withFields({ path: prepend(name$2, error.path) });
+  return error2.withFields({ path: prepend(name$2, error2.path) });
 }
 function list(decoder_type) {
   return (dynamic2) => {
@@ -1656,9 +1656,9 @@ function compile_regex(pattern, options) {
     if (options.multi_line)
       flags += "m";
     return new Ok(new RegExp(pattern, flags));
-  } catch (error) {
-    const number = (error.columnNumber || 0) | 0;
-    return new Error(new CompileError(error.message, number));
+  } catch (error2) {
+    const number = (error2.columnNumber || 0) | 0;
+    return new Error(new CompileError(error2.message, number));
   }
 }
 function regex_scan(regex, string3) {
@@ -2501,6 +2501,9 @@ var Event = class extends CustomType {
 function attribute(name, value3) {
   return new Attribute(name, from(value3), false);
 }
+function property(name, value3) {
+  return new Attribute(name, from(value3), true);
+}
 function on(name, handler) {
   return new Event("on" + name, handler);
 }
@@ -2518,6 +2521,9 @@ function value(val) {
 }
 function placeholder(text3) {
   return attribute("placeholder", text3);
+}
+function disabled(is_disabled) {
+  return property("disabled", is_disabled);
 }
 function for$(id2) {
   return attribute("for", id2);
@@ -2780,8 +2786,8 @@ function lustreServerEventHandler(event2) {
   return {
     tag: tag2,
     data: include.reduce(
-      (data2, property) => {
-        const path = property.split(".");
+      (data2, property2) => {
+        const path = property2.split(".");
         for (let i = 0, o = data2, e = event2; i < path.length; i++) {
           if (i === path.length - 1) {
             o[path[i]] = e[path[i]];
@@ -3281,7 +3287,7 @@ function map_promise(promise, fn) {
   );
 }
 function rescue(promise, fn) {
-  return promise.catch((error) => fn(error));
+  return promise.catch((error2) => fn(error2));
 }
 
 // build/dev/javascript/gleam_javascript/gleam/javascript/promise.mjs
@@ -3315,8 +3321,8 @@ function try_await(promise, callback) {
 async function raw_send(request) {
   try {
     return new Ok(await fetch(request));
-  } catch (error) {
-    return new Error(new NetworkError(error.toString()));
+  } catch (error2) {
+    return new Error(new NetworkError(error2.toString()));
   }
 }
 function from_fetch_response(response) {
@@ -3347,7 +3353,7 @@ async function read_text_body(response) {
   let body;
   try {
     body = await response.body.text();
-  } catch (error) {
+  } catch (error2) {
     return new Error(new UnableToReadBody());
   }
   return new Ok(response.withFields({ body }));
@@ -3519,6 +3525,12 @@ function button2(attributes, children) {
     ),
     children
   );
+}
+function solid() {
+  return class$("solid");
+}
+function error() {
+  return attribute("data-variant", "error");
 }
 
 // build/dev/javascript/lustre_ui/lustre/ui/input.mjs
@@ -4118,6 +4130,12 @@ var ListWords = class extends CustomType {
 };
 var StartRound = class extends CustomType {
 };
+var SubmitOrderedWords = class extends CustomType {
+  constructor(x0) {
+    super();
+    this[0] = x0;
+  }
+};
 var InitialRoomState = class extends CustomType {
   constructor(x0) {
     super();
@@ -4495,6 +4513,10 @@ var AddNextPreferedWord = class extends CustomType {
     this[0] = x0;
   }
 };
+var ClearOrderedWords = class extends CustomType {
+};
+var SubmitOrderedWords2 = class extends CustomType {
+};
 function new_uri() {
   return new Uri(
     new None(),
@@ -4725,7 +4747,7 @@ function update2(model, msg) {
       throw makeError(
         "panic",
         "client",
-        193,
+        195,
         "update",
         "panic expression evaluated",
         {}
@@ -4764,7 +4786,7 @@ function update2(model, msg) {
       throw makeError(
         "panic",
         "client",
-        193,
+        195,
         "update",
         "panic expression evaluated",
         {}
@@ -4859,6 +4881,38 @@ function update2(model, msg) {
         add_word_input
       ),
       none()
+    ];
+  } else if (model instanceof Connected && model.round instanceof Some && msg instanceof ClearOrderedWords) {
+    let player_id = model.player_id;
+    let room_code = model.room_code;
+    let player_name = model.player_name;
+    let ws = model.ws;
+    let room = model.room;
+    let round_state = model.round[0];
+    let add_word_input = model.add_word_input;
+    return [
+      new Connected(
+        player_id,
+        room_code,
+        player_name,
+        ws,
+        room,
+        new Some(round_state.withFields({ ordered_words: toList([]) })),
+        add_word_input
+      ),
+      none()
+    ];
+  } else if (model instanceof Connected && model.round instanceof Some && msg instanceof SubmitOrderedWords2) {
+    let ws = model.ws;
+    let round_state = model.round[0];
+    return [
+      model,
+      send2(
+        ws,
+        encode_request(
+          new SubmitOrderedWords(round_state.ordered_words)
+        )
+      )
     ];
   } else if (model instanceof Connected) {
     return [model, none()];
@@ -5049,6 +5103,14 @@ function header(model) {
     );
   }
 }
+function get_choosing_player_text(player_id, leading_player) {
+  let $ = leading_player.id === player_id;
+  if ($) {
+    return "You are choosing.";
+  } else {
+    return leading_player.name + " is choosing.";
+  }
+}
 function content(model) {
   if (model instanceof NotInRoom && model.route instanceof Home) {
     return div(
@@ -5107,6 +5169,7 @@ function content(model) {
       ])
     );
   } else if (model instanceof Connected && model.room instanceof Some && model.round instanceof Some) {
+    let player_id = model.player_id;
     let round_state = model.round[0];
     return div(
       toList([class$("flex flex-col m-4")]),
@@ -5118,7 +5181,10 @@ function content(model) {
               toList([]),
               toList([
                 text(
-                  round_state.round.leading_player[0].name + " is choosing"
+                  get_choosing_player_text(
+                    player_id,
+                    round_state.round.leading_player[0]
+                  )
                 )
               ])
             )
@@ -5151,6 +5217,28 @@ function content(model) {
                   }
                 );
               })()
+            ),
+            button3(
+              toList([
+                on_click(new ClearOrderedWords()),
+                disabled(
+                  isEqual(round_state.ordered_words, toList([]))
+                ),
+                error()
+              ]),
+              toList([text("Clear")])
+            ),
+            button3(
+              toList([
+                on_click(new SubmitOrderedWords2()),
+                disabled(
+                  length(round_state.ordered_words) !== length(
+                    round_state.round.words
+                  )
+                ),
+                solid()
+              ]),
+              toList([text("Submit")])
             )
           ])
         )
@@ -5327,7 +5415,7 @@ function main() {
     throw makeError(
       "assignment_no_match",
       "client",
-      71,
+      73,
       "main",
       "Assignment pattern did not match",
       { value: $ }

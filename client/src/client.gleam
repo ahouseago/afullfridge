@@ -64,6 +64,8 @@ pub type Msg {
   AddWord
   StartRound
   AddNextPreferedWord(String)
+  ClearOrderedWords
+  SubmitOrderedWords
 }
 
 pub fn main() {
@@ -287,6 +289,51 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
           add_word_input,
         ),
         effect.none(),
+      )
+    }
+    Connected(
+      player_id,
+      room_code,
+      player_name,
+      ws,
+      room,
+      Some(round_state),
+      add_word_input,
+    ),
+      ClearOrderedWords
+    -> {
+      #(
+        Connected(
+          player_id,
+          room_code,
+          player_name,
+          ws,
+          room,
+          Some(RoundState(..round_state, ordered_words: [])),
+          add_word_input,
+        ),
+        effect.none(),
+      )
+    }
+    Connected(
+      _player_id,
+      _room_code,
+      _player_name,
+      ws,
+      _room,
+      Some(round_state),
+      _add_word_input,
+    ),
+      SubmitOrderedWords
+    -> {
+      #(
+        model,
+        ws.send(
+          ws,
+          shared.encode_request(shared.SubmitOrderedWords(
+            round_state.ordered_words,
+          )),
+        ),
       )
     }
     Connected(_player_id, _room_code, _player_name, _ws, _room, _round, _), _
@@ -519,7 +566,7 @@ fn content(model: Model) {
         ],
       )
     Connected(
-      _player_id,
+      player_id,
       _room_code,
       _player_name,
       _ws,
@@ -530,9 +577,10 @@ fn content(model: Model) {
       html.div([attribute.class("flex flex-col m-4")], [
         html.div([], [
           html.h2([], [
-            element.text(
-              { round_state.round.leading_player.0 }.name <> " is choosing",
-            ),
+            element.text(get_choosing_player_text(
+              player_id,
+              round_state.round.leading_player.0,
+            )),
           ]),
         ]),
         ui.prose([], [
@@ -549,6 +597,25 @@ fn content(model: Model) {
             [],
             list.reverse(round_state.ordered_words)
               |> list.map(fn(word) { html.li([], [element.text(word)]) }),
+          ),
+          ui.button(
+            [
+              event.on_click(ClearOrderedWords),
+              attribute.disabled(round_state.ordered_words == []),
+              button.error(),
+            ],
+            [element.text("Clear")],
+          ),
+          ui.button(
+            [
+              event.on_click(SubmitOrderedWords),
+              attribute.disabled(
+                list.length(round_state.ordered_words)
+                != list.length(round_state.round.words),
+              ),
+              button.solid(),
+            ],
+            [element.text("Submit")],
           ),
         ]),
       ])
@@ -640,5 +707,12 @@ fn content(model: Model) {
       ])
     }
     NotInRoom(_, NotFound, _) | _ -> element.text("Page not found")
+  }
+}
+
+fn get_choosing_player_text(player_id, leading_player: shared.Player) {
+  case leading_player.id == player_id {
+    True -> "You are choosing."
+    False -> leading_player.name <> " is choosing."
   }
 }

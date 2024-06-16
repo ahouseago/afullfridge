@@ -62,7 +62,7 @@ pub fn player_from_json(
   )
 }
 
-type PlayerWithOrderedPreferences =
+pub type PlayerWithOrderedPreferences =
   #(Player, List(String))
 
 fn player_with_preferences_to_json(p: PlayerWithOrderedPreferences) {
