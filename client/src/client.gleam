@@ -1,6 +1,8 @@
+import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/order
 import gleam/result
 import gleam/uri
 import lustre
@@ -634,6 +636,10 @@ fn content(model: Model) {
             [element.text("Submit")],
           ),
         ]),
+        html.br([]),
+        ..list.reverse(room.finished_rounds)
+        |> list.index_map(display_finished_round)
+        |> list.reverse
       ])
     InRoom(
       player_id,
@@ -741,4 +747,55 @@ fn get_choosing_player_text(
       |> result.unwrap("Someone else")
       <> " is choosing."
   }
+}
+
+fn display_finished_round(
+  finished_round: shared.FinishedRound,
+  round_index: Int,
+) {
+  let is_leading_text = fn(id) {
+    case id == finished_round.leading_player_id {
+      True -> " (main player)"
+      False -> ""
+    }
+  }
+
+  ui.prose([attribute.class("border-solid border-2")], [
+    html.h2([], [
+      element.text("Round " <> int.to_string(round_index + 1) <> " scores:"),
+    ]),
+    html.div(
+      [],
+      list.sort(finished_round.player_scores, fn(a, b) {
+        case
+          a.player.id
+          == finished_round.leading_player_id,
+          b.player.id
+          == finished_round.leading_player_id
+        {
+          True, _ -> order.Lt
+          _, True -> order.Gt
+          False, False -> int.compare(a.score, b.score)
+        }
+      })
+        |> list.map(fn(player_score) {
+          html.div([], [
+            html.h3([], [
+              element.text(
+                player_score.player.name
+                <> is_leading_text(player_score.player.id)
+                <> " ("
+                <> int.to_string(player_score.score)
+                <> " points)",
+              ),
+            ]),
+            html.ol(
+              [],
+              list.reverse(player_score.words)
+                |> list.map(fn(word) { html.li([], [element.text(word)]) }),
+            ),
+          ])
+        }),
+    ),
+  ])
 }

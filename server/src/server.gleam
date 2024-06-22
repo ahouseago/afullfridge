@@ -86,7 +86,6 @@ pub type RoomState {
   RoomState(
     room: shared.Room,
     round_state: Option(InProgressRound),
-    finished_rounds: List(shared.FinishedRound),
   )
 }
 
@@ -479,7 +478,7 @@ fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
         )
       actor.send(subj, Ok(#(room_code, connection_id)))
       let room_state =
-        RoomState(room: room, round_state: None, finished_rounds: [])
+        RoomState(room: room, round_state: None)
       actor.continue(
         State(
           ..state,
@@ -565,7 +564,7 @@ fn get_next_leading_player(room_state: RoomState) -> shared.PlayerId {
   let players_count = list.length(room_state.room.players)
   // Reverse the list to start from the first player to join.
   let index =
-    players_count - list.length(room_state.finished_rounds) % players_count
+    players_count - list.length(room_state.room.finished_rounds) % players_count
 
   let assert Ok(player) =
     room_state.room.players
@@ -596,7 +595,7 @@ fn start_new_round(state: State, room_state: RoomState) -> RoomState {
   // - sending round info to clients
   broadcast_message(state.connections, room.players, shared.RoundInfo(round))
 
-  RoomState(..room_state, round_state: Some(in_progress_round), room: room)
+  RoomState(round_state: Some(in_progress_round), room: room)
 }
 
 fn list_words(state: State, room_code: RoomCode) {
@@ -672,17 +671,19 @@ fn submit_words(
   {
     False ->
       RoomState(
-        ..room_state,
         round_state: Some(round_state),
         room: Room(..room_state.room, round: Some(round)),
       )
     True -> {
       RoomState(
         ..room_state,
-        finished_rounds: [
-          finish_round(state, room_state.room.players, round_state),
-          ..room_state.finished_rounds
-        ],
+        room: Room(
+          ..room_state.room,
+          finished_rounds: [
+            finish_round(state, room_state.room.players, round_state),
+            ..room_state.room.finished_rounds
+          ],
+        ),
       )
       |> start_new_round(state, _)
     }
@@ -700,8 +701,7 @@ fn finish_round(
     shared.FinishedRound(
       words: round.words,
       leading_player_id: round.leading_player_id,
-      player_word_lists: round.submitted_word_lists,
-      player_scores: score_round(round),
+      player_scores: get_player_scores(players, round, score_round(round)),
     )
 
   broadcast_message(
@@ -729,5 +729,28 @@ fn score_round(round: InProgressRound) -> List(#(shared.PlayerId, Int)) {
       False -> #(word_list.0, 0)
     }
     [score, ..scores]
+  })
+}
+
+fn get_player_scores(
+  players: List(shared.Player),
+  round: InProgressRound,
+  scores: List(#(shared.PlayerId, Int)),
+) -> List(shared.PlayerScore) {
+  let scores =
+    list.fold(scores, dict.new(), fn(scores, score) {
+      dict.insert(scores, score.0, score.1)
+    })
+  let player_map =
+    list.fold(players, dict.new(), fn(player_names, player) {
+      dict.insert(player_names, player.id, player)
+    })
+
+  list.map(round.submitted_word_lists, fn(word_list) {
+    let player_name =
+      dict.get(player_map, word_list.0)
+      |> result.unwrap(shared.Player("", "Unknown"))
+    let score = dict.get(scores, word_list.0) |> result.unwrap(0)
+    shared.PlayerScore(player_name, word_list.1, score)
   })
 }

@@ -66,38 +66,38 @@ pub fn player_from_json(
 pub type PlayerWithOrderedPreferences =
   #(PlayerId, List(String))
 
-fn player_with_preferences_to_json(p: PlayerWithOrderedPreferences) {
-  json.object([
-    #("playerId", json.string(p.0)),
-    #("wordOrder", json.array(p.1, of: json.string)),
-  ])
-}
-
-fn player_with_preferences_from_json(
-  player_with_prefs: dynamic.Dynamic,
-) -> Result(PlayerWithOrderedPreferences, List(dynamic.DecodeError)) {
-  player_with_prefs
-  |> dynamic.decode2(
-    fn(player_id, prefs) { #(player_id, prefs) },
-    dynamic.field("playerId", dynamic.string),
-    dynamic.field("wordOrder", dynamic.list(dynamic.string)),
-  )
-}
-
-fn scores_to_json(p: #(PlayerId, Int)) {
-  json.object([#("playerId", json.string(p.0)), #("score", json.int(p.1))])
-}
-
-fn scores_from_json(
-  p: dynamic.Dynamic,
-) -> Result(#(PlayerId, Int), List(dynamic.DecodeError)) {
-  p
-  |> dynamic.decode2(
-    fn(player_id, score) { #(player_id, score) },
-    dynamic.field("playerId", dynamic.string),
-    dynamic.field("score", dynamic.int),
-  )
-}
+// fn player_with_preferences_to_json(p: PlayerWithOrderedPreferences) {
+//   json.object([
+//     #("playerId", json.string(p.0)),
+//     #("wordOrder", json.array(p.1, of: json.string)),
+//   ])
+// }
+//
+// fn player_with_preferences_from_json(
+//   player_with_prefs: dynamic.Dynamic,
+// ) -> Result(PlayerWithOrderedPreferences, List(dynamic.DecodeError)) {
+//   player_with_prefs
+//   |> dynamic.decode2(
+//     fn(player_id, prefs) { #(player_id, prefs) },
+//     dynamic.field("playerId", dynamic.string),
+//     dynamic.field("wordOrder", dynamic.list(dynamic.string)),
+//   )
+// }
+//
+// fn scores_to_json(p: #(PlayerId, Int)) {
+//   json.object([#("playerId", json.string(p.0)), #("score", json.int(p.1))])
+// }
+//
+// fn scores_from_json(
+//   p: dynamic.Dynamic,
+// ) -> Result(#(PlayerId, Int), List(dynamic.DecodeError)) {
+//   p
+//   |> dynamic.decode2(
+//     fn(player_id, score) { #(player_id, score) },
+//     dynamic.field("playerId", dynamic.string),
+//     dynamic.field("score", dynamic.int),
+//   )
+// }
 
 /// Round represents a round of the game within a room, where one player is
 /// selecting their order of preferences out of some given list of words, and the
@@ -136,8 +136,7 @@ pub type FinishedRound {
   FinishedRound(
     words: List(String),
     leading_player_id: PlayerId,
-    player_scores: List(#(PlayerId, Int)),
-    player_word_lists: List(PlayerWithOrderedPreferences),
+    player_scores: List(PlayerScore),
   )
 }
 
@@ -145,11 +144,7 @@ pub fn finished_round_to_json(round: FinishedRound) -> json.Json {
   json.object([
     #("words", json.array(round.words, of: json.string)),
     #("leadingPlayerId", json.string(round.leading_player_id)),
-    #("scores", json.array(round.player_scores, of: scores_to_json)),
-    #(
-      "playerWordLists",
-      json.array(round.player_word_lists, of: player_with_preferences_to_json),
-    ),
+    #("scores", json.array(round.player_scores, of: player_score_to_json)),
   ])
 }
 
@@ -157,15 +152,35 @@ pub fn finished_round_from_json(
   round: dynamic.Dynamic,
 ) -> Result(FinishedRound, List(dynamic.DecodeError)) {
   round
-  |> dynamic.decode4(
+  |> dynamic.decode3(
     FinishedRound,
     dynamic.field("words", dynamic.list(dynamic.string)),
     dynamic.field("leadingPlayerId", dynamic.string),
-    dynamic.field("scores", dynamic.list(scores_from_json)),
-    dynamic.field(
-      "playerWordLists",
-      dynamic.list(player_with_preferences_from_json),
-    ),
+    dynamic.field("scores", dynamic.list(player_score_from_json)),
+  )
+}
+
+pub type PlayerScore {
+  PlayerScore(player: Player, words: List(String), score: Int)
+}
+
+pub fn player_score_to_json(player_score: PlayerScore) -> json.Json {
+  json.object([
+    #("player", player_to_json(player_score.player)),
+    #("words", json.array(player_score.words, of: json.string)),
+    #("score", json.int(player_score.score)),
+  ])
+}
+
+pub fn player_score_from_json(
+  player_score: dynamic.Dynamic,
+) -> Result(PlayerScore, List(dynamic.DecodeError)) {
+  player_score
+  |> dynamic.decode3(
+    PlayerScore,
+    dynamic.field("player", player_from_json),
+    dynamic.field("words", dynamic.list(dynamic.string)),
+    dynamic.field("score", dynamic.int),
   )
 }
 
