@@ -27,6 +27,7 @@ pub type HttpResponse {
 pub type WebsocketRequest {
   AddWord(String)
   AddRandomWord
+  RemoveWord(String)
   ListWords
   StartRound
   SubmitOrderedWords(List(String))
@@ -238,6 +239,7 @@ pub fn encode_request(request: WebsocketRequest) {
     case request {
       AddWord(word) -> #("addWord", json.string(word))
       AddRandomWord -> #("addRandomWord", json.null())
+      RemoveWord(word) -> #("removeWord", json.string(word))
       ListWords -> #("listWords", json.null())
       StartRound -> #("startRound", json.null())
       SubmitOrderedWords(ordered_words) -> #(
@@ -294,6 +296,8 @@ pub fn decode_websocket_request(
       msg
       |> dynamic.decode1(AddWord, dynamic.string)
     Ok(#("addRandomWord", _)) -> Ok(AddRandomWord)
+    Ok(#("removeWord", msg)) ->
+      msg |> dynamic.decode1(RemoveWord, dynamic.string)
     Ok(#("listWords", _)) -> Ok(ListWords)
     Ok(#("startRound", _)) -> Ok(StartRound)
     Ok(#("submitOrderedWords", msg)) ->

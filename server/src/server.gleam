@@ -542,6 +542,11 @@ fn handle_websocket_request(
       let _ = result.try(new_state, list_words(_, room_code))
       result.unwrap(new_state, state)
     }
+    shared.RemoveWord(word) -> {
+      let new_state = remove_word_from_room(state, room_code, word)
+      let _ = result.try(new_state, list_words(_, room_code))
+      result.unwrap(new_state, state)
+    }
     ListWords -> {
       let _ = list_words(state, room_code)
       state
@@ -621,6 +626,23 @@ fn add_word_to_room(state: State, room_code: RoomCode, word: String) {
       RoomState(
         ..room_state,
         room: Room(..room_state.room, word_list: [word, ..word_list]),
+      ),
+    ),
+  )
+}
+
+fn remove_word_from_room(state: State, room_code: RoomCode, word: String) {
+  use room_state <- result.map(dict.get(state.rooms, room_code))
+  // Remove word from list
+  let word_list = room_state.room.word_list |> list.filter(fn(w) { w != word })
+  State(
+    ..state,
+    rooms: dict.insert(
+      state.rooms,
+      room_code,
+      RoomState(
+        ..room_state,
+        room: Room(..room_state.room, word_list: word_list),
       ),
     ),
   )

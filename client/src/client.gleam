@@ -13,6 +13,7 @@ import lustre/element/html
 import lustre/event
 import lustre/ui
 import lustre/ui/button
+import lustre/ui/icon
 import lustre/ui/input
 import lustre/ui/util/styles
 import lustre_http
@@ -66,6 +67,7 @@ pub type Msg {
   UpdateAddWordInput(String)
   AddWord
   AddRandomWord
+  RemoveWord(String)
   StartRound
   AddNextPreferedWord(String)
   ClearOrderedWords
@@ -238,17 +240,20 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         ws.send(ws, shared.encode_request(shared.AddWord(add_word_input))),
       )
     }
-    InRoom(
-      _player_id,
-      _room_code,
-      _player_name,
-      Some(active_game),
-    ),
+    InRoom(_player_id, _room_code, _player_name, Some(active_game)),
       AddRandomWord
     -> {
       #(
         model,
         ws.send(active_game.ws, shared.encode_request(shared.AddRandomWord)),
+      )
+    }
+    InRoom(_player_id, _room_code, _player_name, Some(active_game)),
+      RemoveWord(word)
+    -> {
+      #(
+        model,
+        ws.send(active_game.ws, shared.encode_request(shared.RemoveWord(word))),
       )
     }
     InRoom(player_id, room_code, player_name, Some(active_game)),
@@ -661,7 +666,7 @@ fn content(model: Model) {
       _player_name,
       Some(ActiveGame(_ws, Some(room), None, add_word_input)),
     ) ->
-      html.div([attribute.class("flex flex-col m-4")], [
+      ui.prose([attribute.class("flex flex-col m-4")], [
         html.div([], [
           button.button([event.on_click(StartRound)], [
             element.text("Start game"),
@@ -686,7 +691,7 @@ fn content(model: Model) {
         ]),
         html.form([event.on_submit(AddWord)], [
           html.label([attribute.for("add-word-input")], [
-            element.text("Add word to list"),
+            element.text("Add to list"),
           ]),
           input.input([
             attribute.id("add-word-input"),
@@ -699,13 +704,20 @@ fn content(model: Model) {
           ]),
           button.button([attribute.type_("submit")], [element.text("Add")]),
         ]),
-        button.button([event.on_click(AddRandomWord)], [element.text("Add random word 🎲")]),
+        button.button([event.on_click(AddRandomWord)], [
+          element.text("Add random word 🎲"),
+        ]),
         html.div([], [
-          html.h2([], [element.text("Words:")]),
+          html.h2([], [element.text("List of words:")]),
           html.ul(
             [],
             list.map(room.word_list, fn(word) {
-              html.li([], [element.text(word)])
+              html.li([], [
+                element.text(word),
+                ui.button([button.error(), event.on_click(RemoveWord(word))], [
+                  icon.cross([]),
+                ]),
+              ])
             }),
           ),
         ]),
