@@ -627,6 +627,10 @@ video {
   line-height: 1.75rem;
 }
 
+.uppercase {
+  text-transform: uppercase;
+}
+
 .underline {
   text-decoration-line: underline;
 }

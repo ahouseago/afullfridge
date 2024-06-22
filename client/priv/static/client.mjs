@@ -1993,6 +1993,9 @@ function pop_grapheme(string3) {
 function lowercase(string3) {
   return string3.toLowerCase();
 }
+function uppercase(string3) {
+  return string3.toUpperCase();
+}
 function split(xs, pattern) {
   return List.fromArray(xs.split(pattern));
 }
@@ -2264,6 +2267,9 @@ function compare2(a2, b) {
 // build/dev/javascript/gleam_stdlib/gleam/string.mjs
 function lowercase2(string3) {
   return lowercase(string3);
+}
+function uppercase2(string3) {
+  return uppercase(string3);
 }
 function starts_with2(string3, prefix) {
   return starts_with(string3, prefix);
@@ -5215,7 +5221,10 @@ function update2(model, msg) {
     let uri = model.uri;
     let route = model.route;
     let room_code = msg[0];
-    return [new NotInRoom(uri, route, room_code), none()];
+    return [
+      new NotInRoom(uri, route, uppercase2(room_code)),
+      none()
+    ];
   } else if (model instanceof NotInRoom && msg instanceof JoinGame) {
     let room_code_input = model.room_code_input;
     return [model, join_game(room_code_input)];
@@ -5266,7 +5275,7 @@ function update2(model, msg) {
       throw makeError(
         "panic",
         "client",
-        201,
+        202,
         "update",
         "panic expression evaluated",
         {}
@@ -5302,7 +5311,7 @@ function update2(model, msg) {
       throw makeError(
         "panic",
         "client",
-        201,
+        202,
         "update",
         "panic expression evaluated",
         {}
@@ -5871,7 +5880,7 @@ function content(model) {
         input2(
           toList([
             id("room-code-input"),
-            placeholder("glittering-intelligent-iguana"),
+            placeholder("ABCD"),
             type_("text"),
             class$(
               "my-2 p-2 border-2 rounded placeholder:text-slate-300 placeholder:tracking-widest font-mono"
@@ -6169,7 +6178,7 @@ function main() {
     throw makeError(
       "assignment_no_match",
       "client",
-      79,
+      80,
       "main",
       "Assignment pattern did not match",
       { value: $ }

@@ -4,6 +4,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/result
+import gleam/string
 import gleam/uri
 import lustre
 import lustre/attribute
@@ -165,7 +166,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       effect.none(),
     )
     NotInRoom(uri, route, _room_code_input), UpdateRoomCode(room_code) -> #(
-      NotInRoom(uri, route, room_code),
+      NotInRoom(uri, route, string.uppercase(room_code)),
       effect.none(),
     )
     NotInRoom(_, _, room_code_input), JoinGame -> #(
@@ -592,7 +593,7 @@ fn content(model: Model) {
           ]),
           input.input([
             attribute.id("room-code-input"),
-            attribute.placeholder("glittering-intelligent-iguana"),
+            attribute.placeholder("ABCD"),
             attribute.type_("text"),
             attribute.class(
               "my-2 p-2 border-2 rounded placeholder:text-slate-300 placeholder:tracking-widest font-mono",

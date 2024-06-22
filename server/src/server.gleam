@@ -13,6 +13,8 @@ import gleam/otp/actor
 import gleam/result
 import gleam/string
 import mist.{type Connection, type ResponseData}
+import prng/random
+import prng/seed
 import random_word
 import shared.{
   type Player, type PlayerName, type Room, type RoomCode, AddWord, ListWords,
@@ -74,9 +76,14 @@ type PlayerConnection {
   ConnectedPlayer(id: ConnectionId, room_code: RoomCode, name: PlayerName)
 }
 
+type RoomCodeGenerator {
+  RoomCodeGenerator(generator: random.Generator(Int), seed: seed.Seed)
+}
+
 type StateWithSubject(connection_subject) {
   State(
-    next_id: Int,
+    next_player_id: Int,
+    room_code_generator: RoomCodeGenerator,
     players: Dict(ConnectionId, PlayerConnection),
     rooms: Dict(RoomCode, RoomState),
     connections: Dict(ConnectionId, fn(shared.WebsocketResponse) -> Nil),
@@ -98,10 +105,32 @@ pub type InProgressRound {
 type State =
   StateWithSubject(ConnectionSubject)
 
-fn get_next_id(state: State) {
-  let id = state.next_id
+fn get_next_player_id(state: State) {
+  let id = state.next_player_id
   let connection_id = int.to_string(id)
-  #(State(..state, next_id: id + 1), connection_id)
+  #(State(..state, next_player_id: id + 1), connection_id)
+}
+
+fn generate_room_code(state: State) {
+  let #(utf_points, new_seed) =
+    list.range(1, 4)
+    |> list.fold(#([], state.room_code_generator.seed), fn(rolls, _) {
+      let #(roll, new_seed) =
+        random.step(state.room_code_generator.generator, rolls.1)
+      let assert Ok(utf_point) = string.utf_codepoint(roll)
+      #([utf_point, ..rolls.0], new_seed)
+    })
+
+  #(
+    State(
+      ..state,
+      room_code_generator: RoomCodeGenerator(
+        ..state.room_code_generator,
+        seed: new_seed,
+      ),
+    ),
+    string.from_utf_codepoints(utf_points),
+  )
 }
 
 fn not_found() {
@@ -135,7 +164,11 @@ pub fn main() {
   let assert Ok(state_subject) =
     actor.start(
       State(
-        next_id: 0,
+        next_player_id: 0,
+        room_code_generator: RoomCodeGenerator(
+          generator: random.int(65, 90),
+          seed: seed.random(),
+        ),
         players: dict.new(),
         rooms: dict.new(),
         connections: dict.new(),
@@ -460,11 +493,8 @@ fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
       )
     }
     CreateRoom(subj) -> {
-      let #(state, connection_id) = get_next_id(state)
-      // TODO: make room codes that aren't just incrementing integers.
-      let room_code =
-        dict.size(state.rooms)
-        |> int.to_string
+      let #(state, connection_id) = get_next_player_id(state)
+      let #(state, room_code) = generate_room_code(state)
       let player = DisconnectedPlayer(id: connection_id, room_code: room_code)
       let room =
         Room(
@@ -493,7 +523,7 @@ fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
     }
     AddPlayerToRoom(subj, room_code) -> {
       result.map(dict.get(state.rooms, room_code), fn(room) {
-        let #(state, connection_id) = get_next_id(state)
+        let #(state, connection_id) = get_next_player_id(state)
         let player_connection =
           DisconnectedPlayer(id: connection_id, room_code: room_code)
         actor.send(subj, Ok(connection_id))
