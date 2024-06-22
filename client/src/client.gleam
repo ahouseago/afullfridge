@@ -24,7 +24,12 @@ import plinth/javascript/storage
 import shared
 
 pub type Model {
-  NotInRoom(uri: uri.Uri, route: Route, room_code_input: String)
+  NotInRoom(
+    uri: uri.Uri,
+    route: Route,
+    room_code_input: String,
+    join_room_err: Option(String),
+  )
   InRoom(
     player_id: shared.PlayerId,
     room_code: shared.RoomCode,
@@ -106,31 +111,47 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
         storage.local()
         |> result.try(fn(local_storage) {
           use id <- result.try(storage.get_item(local_storage, "connection_id"))
-          use name <- result.map(storage.get_item(local_storage, "player_name"))
+          use name <- result.try(storage.get_item(local_storage, "player_name"))
+          use stored_room_code <- result.try(storage.get_item(
+            local_storage,
+            "room_code",
+          ))
 
-          #(
-            id,
-            name,
-            ws.init(
-              "ws://localhost:3000/ws/" <> id <> "/" <> name,
-              WebSocketEvent,
-            ),
-          )
+          case room_code == stored_room_code {
+            True ->
+              Ok(#(
+                id,
+                name,
+                ws.init(
+                  "ws://localhost:3000/ws/" <> id <> "/" <> name,
+                  WebSocketEvent,
+                ),
+              ))
+            False -> {
+              storage.clear(local_storage)
+              Error(Nil)
+            }
+          }
         })
       case rejoin {
         Ok(#(id, name, msg)) -> #(InRoom(id, room_code, name, None), msg)
         Error(_) -> #(
-          NotInRoom(uri, Play(Some(room_code)), room_code),
+          NotInRoom(
+            uri,
+            Play(Some(room_code)),
+            room_code,
+            Some("Sorry, please try joining again."),
+          ),
           effect.batch([join_game(room_code), modem.init(on_url_change)]),
         )
       }
     }
     Ok(uri), Ok(route) -> #(
-      NotInRoom(uri, route, ""),
+      NotInRoom(uri, route, "", None),
       modem.init(on_url_change),
     )
     Error(Nil), _ | _, Error(Nil) -> #(
-      NotInRoom(relative(""), Home, ""),
+      NotInRoom(relative(""), Home, "", None),
       modem.init(on_url_change),
     )
   }
@@ -138,8 +159,8 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
 
 pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
   case model, msg {
-    NotInRoom(_, _, _), StartGame -> #(model, start_game())
-    NotInRoom(uri, _, _),
+    NotInRoom(_, _, _, _), StartGame -> #(model, start_game())
+    NotInRoom(uri, _, _, _),
       JoinedRoom(Ok(shared.RoomResponse(room_code, player_id)))
     -> {
       #(
@@ -157,34 +178,59 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         ),
       )
     }
-    NotInRoom(_, _, _), JoinedRoom(Error(err)) -> {
-      io.debug(err)
-      #(model, effect.none())
+    NotInRoom(uri, Play(Some(_room_code)), room_code_input, _err),
+      JoinedRoom(Error(lustre_http.NotFound))
+    -> {
+      // io.debug(err)
+      #(
+        NotInRoom(
+          uri,
+          Play(None),
+          room_code_input,
+          Some("No game found with that room code."),
+        ),
+        effect.none(),
+      )
     }
-    NotInRoom(_, _route, room_code_input), OnRouteChange(uri, route) -> #(
-      NotInRoom(uri, route, room_code_input),
+    NotInRoom(_, _route, room_code_input, _err),
+      OnRouteChange(uri, Play(Some(room_code)))
+    -> #(
+      NotInRoom(uri, Play(Some(room_code)), room_code_input, None),
+      join_game(room_code),
+    )
+    NotInRoom(_, _route, room_code_input, _err), OnRouteChange(uri, route) -> #(
+      NotInRoom(uri, route, room_code_input, None),
       effect.none(),
     )
-    NotInRoom(uri, route, _room_code_input), UpdateRoomCode(room_code) -> #(
-      NotInRoom(uri, route, string.uppercase(room_code)),
+    NotInRoom(uri, route, _room_code_input, _err), UpdateRoomCode(room_code) -> #(
+      NotInRoom(uri, route, string.uppercase(room_code), None),
       effect.none(),
     )
-    NotInRoom(_, _, room_code_input), JoinGame -> #(
+    NotInRoom(_, _, room_code_input, _), JoinGame -> #(
       model,
       join_game(room_code_input),
     )
-    NotInRoom(_, _, _), UpdatePlayerName(_) -> #(model, effect.none())
-    NotInRoom(_, _, _), _ -> #(model, effect.none())
+    NotInRoom(_, _, _, _), UpdatePlayerName(_) -> #(model, effect.none())
+    NotInRoom(_, _, _, _), _ -> #(model, effect.none())
+    InRoom(_, _, _, _), OnRouteChange(_uri, Play(Some(_room_code))) -> #(
+      model,
+      effect.none(),
+    )
+    InRoom(_, _, _, _), OnRouteChange(uri, route) -> #(
+      NotInRoom(uri, route, "", None),
+      effect.none(),
+    )
     InRoom(player_id, room_code, _player_name, None),
       UpdatePlayerName(player_name)
     -> #(InRoom(player_id, room_code, player_name, None), effect.none())
-    InRoom(player_id, _room_code, player_name, None), SetPlayerName -> {
+    InRoom(player_id, room_code, player_name, None), SetPlayerName -> {
       let _ =
         storage.local()
         |> result.try(fn(local_storage) {
           result.all([
             storage.set_item(local_storage, "connection_id", player_id),
             storage.set_item(local_storage, "player_name", player_name),
+            storage.set_item(local_storage, "room_code", room_code),
           ])
         })
       #(
@@ -368,7 +414,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
 
 fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) {
   case model {
-    NotInRoom(_, _, _) | InRoom(_, _, _, None) -> #(model, effect.none())
+    NotInRoom(_, _, _, _) | InRoom(_, _, _, None) -> #(model, effect.none())
     InRoom(player_id, room_code, player_name, Some(active_game)) ->
       case shared.decode_websocket_response(msg) {
         Ok(shared.InitialRoomState(room)) -> #(
@@ -527,11 +573,11 @@ fn link(href, content) {
 
 fn header(model: Model) {
   case model {
-    NotInRoom(_, Home, _) ->
+    NotInRoom(_, Home, _, _) ->
       html.h1([attribute.class("text-4xl my-10 text-center")], [
         element.text("A Full Fridge"),
       ])
-    NotInRoom(_, Play(Some(_)), _) ->
+    NotInRoom(_, Play(Some(_)), _, _) ->
       html.div([], [
         html.nav([attribute.class("flex items-center")], [
           link("/", [element.text("Home")]),
@@ -540,7 +586,7 @@ fn header(model: Model) {
           element.text("Joining game..."),
         ]),
       ])
-    NotInRoom(_, Play(None), _) ->
+    NotInRoom(_, Play(None), _, _) ->
       html.div([], [
         html.nav([attribute.class("flex items-center")], [
           link("/", [element.text("Home")]),
@@ -550,13 +596,13 @@ fn header(model: Model) {
     InRoom(_, room_code, _, _) ->
       html.div([], [
         html.nav([attribute.class("flex items-center")], [
-          // link("/", [element.text("Leave game")]),
+          link("/", [element.text("Leave game")]),
         ]),
         html.h1([attribute.class("text-2xl my-5")], [
           element.text("Game: " <> room_code),
         ]),
       ])
-    NotInRoom(_, NotFound, _) ->
+    NotInRoom(_, NotFound, _, _) ->
       html.div([], [
         html.nav([attribute.class("flex items-center")], [
           link("/", [element.text("Home")]),
@@ -570,7 +616,7 @@ fn header(model: Model) {
 
 fn content(model: Model) {
   case model {
-    NotInRoom(_, Home, _) ->
+    NotInRoom(_, Home, _, _) ->
       html.div([], [
         html.p([attribute.class("mx-4 text-lg")], [
           element.text("Welcome to "),
@@ -582,9 +628,10 @@ fn content(model: Model) {
         ]),
         link("/play", [element.text("Join a game")]),
       ])
-    NotInRoom(_, Play(Some(room_code)), _) ->
+    NotInRoom(_, _, _, Some(err)) -> element.text(err)
+    NotInRoom(_, Play(Some(room_code)), _, None) ->
       element.text("Joining room " <> room_code <> "...")
-    NotInRoom(_, Play(None), room_code_input) ->
+    NotInRoom(_, Play(None), room_code_input, None) ->
       html.form(
         [event.on_submit(JoinGame), attribute.class("flex flex-col m-4")],
         [
@@ -605,21 +652,13 @@ fn content(model: Model) {
         ],
       )
     InRoom(
-      player_id,
+      _player_id,
       _room_code,
       _player_name,
       Some(ActiveGame(_ws, Some(room), Some(round_state), _add_word_input)),
     ) ->
       html.div([attribute.class("flex flex-col m-4")], [
-        html.div([], [
-          html.h2([], [
-            element.text(get_choosing_player_text(
-              room.players,
-              player_id,
-              round_state.round.leading_player_id,
-            )),
-          ]),
-        ]),
+        display_players(room.players, round_state.round.leading_player_id),
         ui.prose([], [
           html.h2([], [element.text("Words:")]),
           ui.group(
@@ -760,23 +799,27 @@ fn content(model: Model) {
         ]),
       ])
     }
-    NotInRoom(_, NotFound, _) | _ -> element.text("Page not found")
+    NotInRoom(_, NotFound, _, _) | _ -> element.text("Page not found")
   }
 }
 
-fn get_choosing_player_text(
+fn display_players(
   players: List(shared.Player),
-  player_id: shared.PlayerId,
   leading_player_id: shared.PlayerId,
 ) {
-  case leading_player_id == player_id {
-    True -> "You are choosing."
-    False ->
-      list.find(players, fn(player) { player.id == leading_player_id })
-      |> result.map(fn(player) { player.name })
-      |> result.unwrap("Someone else")
-      <> " is choosing."
-  }
+  html.div(
+    [],
+    list.map(players, fn(player) {
+      case player.id == leading_player_id {
+        True ->
+          html.p([], [
+            element.text(player.name),
+            html.strong([], [element.text(" (choosing)")]),
+          ])
+        False -> html.p([], [element.text(player.name)])
+      }
+    }),
+  )
 }
 
 fn display_scores(finished_rounds: List(shared.FinishedRound)) {

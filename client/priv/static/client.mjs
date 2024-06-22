@@ -1215,26 +1215,29 @@ function decode3(constructor, t1, t2, t3) {
     }
   };
 }
-function decode5(constructor, t1, t2, t3, t4, t5) {
+function decode6(constructor, t1, t2, t3, t4, t5, t6) {
   return (x) => {
     let $ = t1(x);
     let $1 = t2(x);
     let $2 = t3(x);
     let $3 = t4(x);
     let $4 = t5(x);
-    if ($.isOk() && $1.isOk() && $2.isOk() && $3.isOk() && $4.isOk()) {
+    let $5 = t6(x);
+    if ($.isOk() && $1.isOk() && $2.isOk() && $3.isOk() && $4.isOk() && $5.isOk()) {
       let a2 = $[0];
       let b = $1[0];
       let c = $2[0];
       let d = $3[0];
       let e = $4[0];
-      return new Ok(constructor(a2, b, c, d, e));
+      let f = $5[0];
+      return new Ok(constructor(a2, b, c, d, e, f));
     } else {
       let a2 = $;
       let b = $1;
       let c = $2;
       let d = $3;
       let e = $4;
+      let f = $5;
       return new Error(
         concat(
           toList([
@@ -1242,7 +1245,8 @@ function decode5(constructor, t1, t2, t3, t4, t5) {
             all_errors(b),
             all_errors(c),
             all_errors(d),
-            all_errors(e)
+            all_errors(e),
+            all_errors(f)
           ])
         )
       );
@@ -3476,6 +3480,9 @@ function br(attrs) {
 function span(attrs, children) {
   return element("span", attrs, children);
 }
+function strong(attrs, children) {
+  return element("strong", attrs, children);
+}
 function svg(attrs, children) {
   return namespaced("http://www.w3.org/2000/svg", "svg", attrs, children);
 }
@@ -4547,6 +4554,9 @@ function setItem(storage, keyName, keyValue) {
     return new Error(null);
   }
 }
+function clear(storage) {
+  storage.clear();
+}
 function null_or(val) {
   if (val !== null) {
     return new Ok(val);
@@ -4662,14 +4672,19 @@ var PlayerScore = class extends CustomType {
     this.score = score;
   }
 };
+var ExactMatch = class extends CustomType {
+};
+var EqualPositions = class extends CustomType {
+};
 var Room = class extends CustomType {
-  constructor(room_code, players, word_list, round3, finished_rounds) {
+  constructor(room_code, players, word_list, round3, finished_rounds, scoring_method) {
     super();
     this.room_code = room_code;
     this.players = players;
     this.word_list = word_list;
     this.round = round3;
     this.finished_rounds = finished_rounds;
+    this.scoring_method = scoring_method;
   }
 };
 function player_from_json(player) {
@@ -4715,17 +4730,34 @@ function finished_round_from_json(round3) {
     field("scores", list(player_score_from_json))
   )(_pipe);
 }
+function scoring_method_from_json(scoring_method) {
+  let $ = string(scoring_method);
+  if ($.isOk() && $[0] === "EXACT_MATCH") {
+    return new Ok(new ExactMatch());
+  } else if ($.isOk() && $[0] === "EQUAL_POSITIONS") {
+    return new Ok(new EqualPositions());
+  } else if ($.isOk()) {
+    let method = $[0];
+    return new Error(
+      toList([new DecodeError("scoring method", method, toList([]))])
+    );
+  } else {
+    let a2 = $[0];
+    return new Error(a2);
+  }
+}
 function room_from_json(room) {
   let _pipe = room;
-  return decode5(
-    (var0, var1, var2, var3, var4) => {
-      return new Room(var0, var1, var2, var3, var4);
+  return decode6(
+    (var0, var1, var2, var3, var4, var5) => {
+      return new Room(var0, var1, var2, var3, var4, var5);
     },
     field("roomCode", string),
     field("players", list(player_from_json)),
     field("wordList", list(string)),
     optional_field("round", round_from_json),
-    field("finishedRounds", list(finished_round_from_json))
+    field("finishedRounds", list(finished_round_from_json)),
+    field("scoringMethod", scoring_method_from_json)
   )(_pipe);
 }
 function encode_http_request(request) {
@@ -4922,11 +4954,12 @@ function decode_websocket_response(text3) {
 
 // build/dev/javascript/client/client.mjs
 var NotInRoom = class extends CustomType {
-  constructor(uri, route, room_code_input) {
+  constructor(uri, route, room_code_input, join_room_err) {
     super();
     this.uri = uri;
     this.route = route;
     this.room_code_input = room_code_input;
+    this.join_room_err = join_room_err;
   }
 };
 var InRoom = class extends CustomType {
@@ -5208,21 +5241,45 @@ function update2(model, msg) {
         })
       )
     ];
-  } else if (model instanceof NotInRoom && msg instanceof JoinedRoom && !msg[0].isOk()) {
-    let err = msg[0][0];
-    debug(err);
-    return [model, none()];
+  } else if (model instanceof NotInRoom && model.route instanceof Play && model.route.room_code instanceof Some && msg instanceof JoinedRoom && !msg[0].isOk() && msg[0][0] instanceof NotFound) {
+    let uri = model.uri;
+    let room_code_input = model.room_code_input;
+    return [
+      new NotInRoom(
+        uri,
+        new Play(new None()),
+        room_code_input,
+        new Some("No game found with that room code.")
+      ),
+      none()
+    ];
+  } else if (model instanceof NotInRoom && msg instanceof OnRouteChange && msg[1] instanceof Play && msg[1].room_code instanceof Some) {
+    let room_code_input = model.room_code_input;
+    let uri = msg[0];
+    let room_code = msg[1].room_code[0];
+    return [
+      new NotInRoom(
+        uri,
+        new Play(new Some(room_code)),
+        room_code_input,
+        new None()
+      ),
+      join_game(room_code)
+    ];
   } else if (model instanceof NotInRoom && msg instanceof OnRouteChange) {
     let room_code_input = model.room_code_input;
     let uri = msg[0];
     let route = msg[1];
-    return [new NotInRoom(uri, route, room_code_input), none()];
+    return [
+      new NotInRoom(uri, route, room_code_input, new None()),
+      none()
+    ];
   } else if (model instanceof NotInRoom && msg instanceof UpdateRoomCode) {
     let uri = model.uri;
     let route = model.route;
     let room_code = msg[0];
     return [
-      new NotInRoom(uri, route, uppercase2(room_code)),
+      new NotInRoom(uri, route, uppercase2(room_code), new None()),
       none()
     ];
   } else if (model instanceof NotInRoom && msg instanceof JoinGame) {
@@ -5232,6 +5289,12 @@ function update2(model, msg) {
     return [model, none()];
   } else if (model instanceof NotInRoom) {
     return [model, none()];
+  } else if (model instanceof InRoom && msg instanceof OnRouteChange && msg[1] instanceof Play && msg[1].room_code instanceof Some) {
+    return [model, none()];
+  } else if (model instanceof InRoom && msg instanceof OnRouteChange) {
+    let uri = msg[0];
+    let route = msg[1];
+    return [new NotInRoom(uri, route, "", new None()), none()];
   } else if (model instanceof InRoom && model.active_game instanceof None && msg instanceof UpdatePlayerName) {
     let player_id = model.player_id;
     let room_code = model.room_code;
@@ -5242,6 +5305,7 @@ function update2(model, msg) {
     ];
   } else if (model instanceof InRoom && model.active_game instanceof None && msg instanceof SetPlayerName) {
     let player_id = model.player_id;
+    let room_code = model.room_code;
     let player_name = model.player_name;
     let $ = (() => {
       let _pipe = localStorage();
@@ -5251,7 +5315,8 @@ function update2(model, msg) {
           return all(
             toList([
               setItem(local_storage, "connection_id", player_id),
-              setItem(local_storage, "player_name", player_name)
+              setItem(local_storage, "player_name", player_name),
+              setItem(local_storage, "room_code", room_code)
             ])
           );
         }
@@ -5275,7 +5340,7 @@ function update2(model, msg) {
       throw makeError(
         "panic",
         "client",
-        202,
+        248,
         "update",
         "panic expression evaluated",
         {}
@@ -5311,7 +5376,7 @@ function update2(model, msg) {
       throw makeError(
         "panic",
         "client",
-        202,
+        248,
         "update",
         "panic expression evaluated",
         {}
@@ -5543,19 +5608,32 @@ function init4(_) {
           return try$(
             getItem(local_storage, "connection_id"),
             (id2) => {
-              return map3(
+              return try$(
                 getItem(local_storage, "player_name"),
                 (name) => {
-                  return [
-                    id2,
-                    name,
-                    init2(
-                      "ws://localhost:3000/ws/" + id2 + "/" + name,
-                      (var0) => {
-                        return new WebSocketEvent(var0);
+                  return try$(
+                    getItem(local_storage, "room_code"),
+                    (stored_room_code) => {
+                      let $1 = room_code === stored_room_code;
+                      if ($1) {
+                        return new Ok(
+                          [
+                            id2,
+                            name,
+                            init2(
+                              "ws://localhost:3000/ws/" + id2 + "/" + name,
+                              (var0) => {
+                                return new WebSocketEvent(var0);
+                              }
+                            )
+                          ]
+                        );
+                      } else {
+                        clear(local_storage);
+                        return new Error(void 0);
                       }
-                    )
-                  ];
+                    }
+                  );
                 }
               );
             }
@@ -5570,7 +5648,12 @@ function init4(_) {
       return [new InRoom(id2, room_code, name, new None()), msg];
     } else {
       return [
-        new NotInRoom(uri$1, new Play(new Some(room_code)), room_code),
+        new NotInRoom(
+          uri$1,
+          new Play(new Some(room_code)),
+          room_code,
+          new Some("Sorry, please try joining again.")
+        ),
         batch(
           toList([join_game(room_code), init3(on_url_change)])
         )
@@ -5579,15 +5662,18 @@ function init4(_) {
   } else if (uri.isOk() && $.isOk()) {
     let uri$1 = uri[0];
     let route = $[0];
-    return [new NotInRoom(uri$1, route, ""), init3(on_url_change)];
+    return [
+      new NotInRoom(uri$1, route, "", new None()),
+      init3(on_url_change)
+    ];
   } else if (!uri.isOk() && !uri[0]) {
     return [
-      new NotInRoom(relative(""), new Home(), ""),
+      new NotInRoom(relative(""), new Home(), "", new None()),
       init3(on_url_change)
     ];
   } else {
     return [
-      new NotInRoom(relative(""), new Home(), ""),
+      new NotInRoom(relative(""), new Home(), "", new None()),
       init3(on_url_change)
     ];
   }
@@ -5640,7 +5726,10 @@ function header(model) {
     return div(
       toList([]),
       toList([
-        nav(toList([class$("flex items-center")]), toList([])),
+        nav(
+          toList([class$("flex items-center")]),
+          toList([link("/", toList([text("Leave game")]))])
+        ),
         h1(
           toList([class$("text-2xl my-5")]),
           toList([text("Game: " + room_code)])
@@ -5663,24 +5752,27 @@ function header(model) {
     );
   }
 }
-function get_choosing_player_text(players, player_id, leading_player_id) {
-  let $ = leading_player_id === player_id;
-  if ($) {
-    return "You are choosing.";
-  } else {
-    return (() => {
-      let _pipe = find(
-        players,
-        (player) => {
-          return player.id === leading_player_id;
+function display_players(players, leading_player_id) {
+  return div(
+    toList([]),
+    map2(
+      players,
+      (player) => {
+        let $ = player.id === leading_player_id;
+        if ($) {
+          return p(
+            toList([]),
+            toList([
+              text(player.name),
+              strong(toList([]), toList([text(" (choosing)")]))
+            ])
+          );
+        } else {
+          return p(toList([]), toList([text(player.name)]));
         }
-      );
-      let _pipe$1 = map3(_pipe, (player) => {
-        return player.name;
-      });
-      return unwrap2(_pipe$1, "Someone else");
-    })() + " is choosing.";
-  }
+      }
+    )
+  );
 }
 function display_scores(finished_rounds) {
   let scores = (() => {
@@ -5862,10 +5954,13 @@ function content(model) {
         link("/play", toList([text("Join a game")]))
       ])
     );
-  } else if (model instanceof NotInRoom && model.route instanceof Play && model.route.room_code instanceof Some) {
+  } else if (model instanceof NotInRoom && model.join_room_err instanceof Some) {
+    let err = model.join_room_err[0];
+    return text(err);
+  } else if (model instanceof NotInRoom && model.route instanceof Play && model.route.room_code instanceof Some && model.join_room_err instanceof None) {
     let room_code = model.route.room_code[0];
     return text("Joining room " + room_code + "...");
-  } else if (model instanceof NotInRoom && model.route instanceof Play && model.route.room_code instanceof None) {
+  } else if (model instanceof NotInRoom && model.route instanceof Play && model.route.room_code instanceof None && model.join_room_err instanceof None) {
     let room_code_input = model.room_code_input;
     return form(
       toList([
@@ -5898,29 +5993,12 @@ function content(model) {
       ])
     );
   } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].room instanceof Some && model.active_game[0].round instanceof Some) {
-    let player_id = model.player_id;
     let room = model.active_game[0].room[0];
     let round_state = model.active_game[0].round[0];
     return div(
       toList([class$("flex flex-col m-4")]),
       prepend(
-        div(
-          toList([]),
-          toList([
-            h2(
-              toList([]),
-              toList([
-                text(
-                  get_choosing_player_text(
-                    room.players,
-                    player_id,
-                    round_state.round.leading_player_id
-                  )
-                )
-              ])
-            )
-          ])
-        ),
+        display_players(room.players, round_state.round.leading_player_id),
         prepend(
           prose2(
             toList([]),
@@ -6178,7 +6256,7 @@ function main() {
     throw makeError(
       "assignment_no_match",
       "client",
-      80,
+      85,
       "main",
       "Assignment pattern did not match",
       { value: $ }
