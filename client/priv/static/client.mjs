@@ -5673,6 +5673,87 @@ function get_choosing_player_text(players, player_id, leading_player_id) {
     })() + " is choosing.";
   }
 }
+function display_scores(finished_rounds) {
+  let scores = (() => {
+    let _pipe = fold(
+      finished_rounds,
+      toList([]),
+      (scores2, round3) => {
+        let round_scores = (() => {
+          let _pipe2 = round3.player_scores;
+          return map2(
+            _pipe2,
+            (score) => {
+              return [score.player.id, score];
+            }
+          );
+        })();
+        return fold(
+          round_scores,
+          scores2,
+          (scores3, round_score) => {
+            let $ = find(
+              scores3,
+              (s) => {
+                return s[0] === round_score[0];
+              }
+            );
+            if ($.isOk()) {
+              let score = $[0];
+              let rest = (() => {
+                let _pipe2 = scores3;
+                return filter(_pipe2, (s) => {
+                  return s[0] !== score[0];
+                });
+              })();
+              return prepend(
+                [
+                  score[0],
+                  new PlayerScore(
+                    score[1].player,
+                    toList([]),
+                    score[1].score + round_score[1].score
+                  )
+                ],
+                rest
+              );
+            } else {
+              return prepend(round_score, scores3);
+            }
+          }
+        );
+      }
+    );
+    return sort(
+      _pipe,
+      (a2, b) => {
+        return compare2(b[1].score, a2[1].score);
+      }
+    );
+  })();
+  return prose2(
+    toList([]),
+    toList([
+      h2(toList([]), toList([text("Scores")])),
+      ol(
+        toList([]),
+        map2(
+          scores,
+          (score) => {
+            return li(
+              toList([]),
+              toList([
+                text(
+                  score[1].player.name + ": " + to_string2(score[1].score)
+                )
+              ])
+            );
+          }
+        )
+      )
+    ])
+  );
+}
 function display_finished_round(finished_round, round_index) {
   let is_leading_text = (id2) => {
     let $ = id2 === finished_round.leading_player_id;
@@ -5886,11 +5967,17 @@ function content(model) {
           ),
           prepend(
             br(toList([])),
-            (() => {
-              let _pipe = reverse(room.finished_rounds);
-              let _pipe$1 = index_map(_pipe, display_finished_round);
-              return reverse(_pipe$1);
-            })()
+            prepend(
+              display_scores(room.finished_rounds),
+              prepend(
+                br(toList([])),
+                (() => {
+                  let _pipe = reverse(room.finished_rounds);
+                  let _pipe$1 = index_map(_pipe, display_finished_round);
+                  return reverse(_pipe$1);
+                })()
+              )
+            )
           )
         )
       )

@@ -656,6 +656,8 @@ fn content(model: Model) {
           ),
         ]),
         html.br([]),
+        display_scores(room.finished_rounds),
+        html.br([]),
         ..list.reverse(room.finished_rounds)
         |> list.index_map(display_finished_round)
         |> list.reverse
@@ -774,6 +776,52 @@ fn get_choosing_player_text(
       |> result.unwrap("Someone else")
       <> " is choosing."
   }
+}
+
+fn display_scores(finished_rounds: List(shared.FinishedRound)) {
+  let scores =
+    list.fold(finished_rounds, [], fn(scores, round) {
+      let round_scores =
+        round.player_scores |> list.map(fn(score) { #(score.player.id, score) })
+      list.fold(
+        round_scores,
+        scores,
+        fn(scores: List(#(shared.PlayerId, shared.PlayerScore)), round_score) {
+          case list.find(scores, fn(s) { s.0 == round_score.0 }) {
+            Ok(score) -> {
+              let rest = scores |> list.filter(fn(s) { s.0 != score.0 })
+              [
+                #(
+                  score.0,
+                  shared.PlayerScore(
+                    { score.1 }.player,
+                    [],
+                    { score.1 }.score + { round_score.1 }.score,
+                  ),
+                ),
+                ..rest
+              ]
+            }
+            Error(Nil) -> [round_score, ..scores]
+          }
+        },
+      )
+    })
+    |> list.sort(fn(a, b) { int.compare({ b.1 }.score, { a.1 }.score) })
+
+  ui.prose([], [
+    html.h2([], [element.text("Scores")]),
+    html.ol(
+      [],
+      list.map(scores, fn(score) {
+        html.li([], [
+          element.text(
+            { score.1 }.player.name <> ": " <> int.to_string({ score.1 }.score),
+          ),
+        ])
+      }),
+    ),
+  ])
 }
 
 fn display_finished_round(
