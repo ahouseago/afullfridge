@@ -13,6 +13,7 @@ import gleam/otp/actor
 import gleam/result
 import gleam/string
 import mist.{type Connection, type ResponseData}
+import random_word
 import shared.{
   type Player, type PlayerName, type Room, type RoomCode, AddWord, ListWords,
   Player, Room, Round, StartRound, SubmitOrderedWords,
@@ -83,10 +84,7 @@ type StateWithSubject(connection_subject) {
 }
 
 pub type RoomState {
-  RoomState(
-    room: shared.Room,
-    round_state: Option(InProgressRound),
-  )
+  RoomState(room: shared.Room, round_state: Option(InProgressRound))
 }
 
 pub type InProgressRound {
@@ -477,8 +475,7 @@ fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
           finished_rounds: [],
         )
       actor.send(subj, Ok(#(room_code, connection_id)))
-      let room_state =
-        RoomState(room: room, round_state: None)
+      let room_state = RoomState(room: room, round_state: None)
       actor.continue(
         State(
           ..state,
@@ -537,6 +534,11 @@ fn handle_websocket_request(
   case request {
     AddWord(word) -> {
       let new_state = add_word_to_room(state, room_code, word)
+      let _ = result.try(new_state, list_words(_, room_code))
+      result.unwrap(new_state, state)
+    }
+    shared.AddRandomWord -> {
+      let new_state = add_word_to_room(state, room_code, random_word.new())
       let _ = result.try(new_state, list_words(_, room_code))
       result.unwrap(new_state, state)
     }

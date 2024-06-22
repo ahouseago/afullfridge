@@ -4530,6 +4530,8 @@ var AddWord = class extends CustomType {
     this[0] = x0;
   }
 };
+var AddRandomWord = class extends CustomType {
+};
 var ListWords = class extends CustomType {
 };
 var StartRound = class extends CustomType {
@@ -4695,6 +4697,8 @@ function encode_request(request) {
       if (request instanceof AddWord) {
         let word = request[0];
         return ["addWord", string2(word)];
+      } else if (request instanceof AddRandomWord) {
+        return ["addRandomWord", null$()];
       } else if (request instanceof ListWords) {
         return ["listWords", null$()];
       } else if (request instanceof StartRound) {
@@ -4950,6 +4954,8 @@ var UpdateAddWordInput = class extends CustomType {
 };
 var AddWord2 = class extends CustomType {
 };
+var AddRandomWord2 = class extends CustomType {
+};
 var StartRound2 = class extends CustomType {
 };
 var AddNextPreferedWord = class extends CustomType {
@@ -5204,7 +5210,7 @@ function update2(model, msg) {
       throw makeError(
         "panic",
         "client",
-        198,
+        199,
         "update",
         "panic expression evaluated",
         {}
@@ -5240,7 +5246,7 @@ function update2(model, msg) {
       throw makeError(
         "panic",
         "client",
-        198,
+        199,
         "update",
         "panic expression evaluated",
         {}
@@ -5283,6 +5289,15 @@ function update2(model, msg) {
         new Some(new ActiveGame(ws, room, round3, ""))
       ),
       send2(ws, encode_request(new AddWord(add_word_input)))
+    ];
+  } else if (model instanceof InRoom && model.active_game instanceof Some && msg instanceof AddRandomWord2) {
+    let active_game = model.active_game[0];
+    return [
+      model,
+      send2(
+        active_game.ws,
+        encode_request(new AddRandomWord())
+      )
     ];
   } else if (model instanceof InRoom && model.active_game instanceof Some && msg instanceof UpdateAddWordInput) {
     let player_id = model.player_id;
@@ -5894,6 +5909,10 @@ function content(model) {
             )
           ])
         ),
+        button2(
+          toList([on_click(new AddRandomWord2())]),
+          toList([text("Add random word \u{1F3B2}")])
+        ),
         div(
           toList([]),
           toList([
@@ -5985,7 +6004,7 @@ function main() {
     throw makeError(
       "assignment_no_match",
       "client",
-      76,
+      77,
       "main",
       "Assignment pattern did not match",
       { value: $ }

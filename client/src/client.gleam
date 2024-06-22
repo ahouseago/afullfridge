@@ -65,6 +65,7 @@ pub type Msg {
   SetPlayerName
   UpdateAddWordInput(String)
   AddWord
+  AddRandomWord
   StartRound
   AddNextPreferedWord(String)
   ClearOrderedWords
@@ -235,6 +236,19 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
           Some(ActiveGame(ws, room, round, "")),
         ),
         ws.send(ws, shared.encode_request(shared.AddWord(add_word_input))),
+      )
+    }
+    InRoom(
+      _player_id,
+      _room_code,
+      _player_name,
+      Some(active_game),
+    ),
+      AddRandomWord
+    -> {
+      #(
+        model,
+        ws.send(active_game.ws, shared.encode_request(shared.AddRandomWord)),
       )
     }
     InRoom(player_id, room_code, player_name, Some(active_game)),
@@ -685,6 +699,7 @@ fn content(model: Model) {
           ]),
           button.button([attribute.type_("submit")], [element.text("Add")]),
         ]),
+        button.button([event.on_click(AddRandomWord)], [element.text("Add random word 🎲")]),
         html.div([], [
           html.h2([], [element.text("Words:")]),
           html.ul(
