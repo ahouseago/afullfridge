@@ -68,39 +68,6 @@ pub fn player_from_json(
 pub type PlayerWithOrderedPreferences =
   #(PlayerId, List(String))
 
-// fn player_with_preferences_to_json(p: PlayerWithOrderedPreferences) {
-//   json.object([
-//     #("playerId", json.string(p.0)),
-//     #("wordOrder", json.array(p.1, of: json.string)),
-//   ])
-// }
-//
-// fn player_with_preferences_from_json(
-//   player_with_prefs: dynamic.Dynamic,
-// ) -> Result(PlayerWithOrderedPreferences, List(dynamic.DecodeError)) {
-//   player_with_prefs
-//   |> dynamic.decode2(
-//     fn(player_id, prefs) { #(player_id, prefs) },
-//     dynamic.field("playerId", dynamic.string),
-//     dynamic.field("wordOrder", dynamic.list(dynamic.string)),
-//   )
-// }
-//
-// fn scores_to_json(p: #(PlayerId, Int)) {
-//   json.object([#("playerId", json.string(p.0)), #("score", json.int(p.1))])
-// }
-//
-// fn scores_from_json(
-//   p: dynamic.Dynamic,
-// ) -> Result(#(PlayerId, Int), List(dynamic.DecodeError)) {
-//   p
-//   |> dynamic.decode2(
-//     fn(player_id, score) { #(player_id, score) },
-//     dynamic.field("playerId", dynamic.string),
-//     dynamic.field("score", dynamic.int),
-//   )
-// }
-
 /// Round represents a round of the game within a room, where one player is
 /// selecting their order of preferences out of some given list of words, and the
 /// other players are trying to guess that ordering.
@@ -186,6 +153,35 @@ pub fn player_score_from_json(
   )
 }
 
+pub type ScoringMethod {
+  // Scores one point for exactly matching the correct list.
+  ExactMatch
+  // Scores one point for every entry that is in the same position as the same
+  // entry in the correct list.
+  EqualPositions
+}
+
+fn scoring_method_to_json(scoring_method: ScoringMethod) -> json.Json {
+  case scoring_method {
+    ExactMatch -> json.string("EXACT_MATCH")
+    EqualPositions -> json.string("EQUAL_POSITIONS")
+  }
+}
+
+fn scoring_method_from_json(
+  scoring_method: dynamic.Dynamic,
+) -> Result(ScoringMethod, List(dynamic.DecodeError)) {
+  case dynamic.string(scoring_method) {
+    Ok("EXACT_MATCH") -> Ok(ExactMatch)
+    Ok("EQUAL_POSITIONS") -> Ok(EqualPositions)
+    Ok(method) ->
+      Error([
+        dynamic.DecodeError(expected: "scoring method", found: method, path: []),
+      ])
+    Error(a) -> Error(a)
+  }
+}
+
 pub type Room {
   Room(
     room_code: RoomCode,
@@ -194,6 +190,7 @@ pub type Room {
     word_list: List(String),
     round: Option(Round),
     finished_rounds: List(FinishedRound),
+    scoring_method: ScoringMethod,
   )
 }
 
@@ -207,6 +204,7 @@ pub fn room_to_json(room: Room) -> json.Json {
       "finishedRounds",
       json.array(room.finished_rounds, of: finished_round_to_json),
     ),
+    #("scoringMethod", scoring_method_to_json(room.scoring_method)),
   ])
 }
 
@@ -214,13 +212,14 @@ pub fn room_from_json(
   room: dynamic.Dynamic,
 ) -> Result(Room, List(dynamic.DecodeError)) {
   room
-  |> dynamic.decode5(
+  |> dynamic.decode6(
     Room,
     dynamic.field("roomCode", dynamic.string),
     dynamic.field("players", dynamic.list(player_from_json)),
     dynamic.field("wordList", dynamic.list(dynamic.string)),
     dynamic.optional_field("round", round_from_json),
     dynamic.field("finishedRounds", dynamic.list(finished_round_from_json)),
+    dynamic.field("scoringMethod", scoring_method_from_json)
   )
 }
 

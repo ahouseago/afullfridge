@@ -503,6 +503,7 @@ fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
           word_list: [],
           round: None,
           finished_rounds: [],
+          scoring_method: shared.EqualPositions,
         )
       actor.send(subj, Ok(#(room_code, connection_id)))
       let room_state = RoomState(room: room, round_state: None)
@@ -734,7 +735,7 @@ fn submit_words(
         room: Room(
           ..room_state.room,
           finished_rounds: [
-            finish_round(state, room_state.room.players, round_state),
+            finish_round(state, room_state, round_state),
             ..room_state.room.finished_rounds
           ],
         ),
@@ -748,32 +749,49 @@ fn submit_words(
 
 fn finish_round(
   state: State,
-  players: List(Player),
+  room_state: RoomState,
   round: InProgressRound,
 ) -> shared.FinishedRound {
   let finished_round =
     shared.FinishedRound(
       words: round.words,
       leading_player_id: round.leading_player_id,
-      player_scores: get_player_scores(players, round, score_round(round)),
+      player_scores: get_player_scores(
+        room_state.room.players,
+        round,
+        score_round(room_state.room.scoring_method, round),
+      ),
     )
 
   broadcast_message(
     state.connections,
-    to: players,
+    to: room_state.room.players,
     message: shared.RoundResult(finished_round),
   )
 
   finished_round
 }
 
-fn score_round(round: InProgressRound) -> List(#(shared.PlayerId, Int)) {
+fn score_round(
+  scoring_method: shared.ScoringMethod,
+  round: InProgressRound,
+) -> List(#(shared.PlayerId, Int)) {
   let assert [correct_word_list] =
     list.filter(round.submitted_word_lists, fn(word_list) {
       word_list.0 == round.leading_player_id
     })
     |> list.map(fn(player_with_preferences) { player_with_preferences.1 })
 
+  case scoring_method {
+    shared.ExactMatch -> exact_match_scores(round, correct_word_list)
+    shared.EqualPositions -> equal_position_scores(round, correct_word_list)
+  }
+}
+
+fn exact_match_scores(
+  round: InProgressRound,
+  correct_word_list: List(String),
+) -> List(#(shared.PlayerId, Int)) {
   list.fold(round.submitted_word_lists, [], fn(scores, word_list) {
     let score = case
       round.leading_player_id != word_list.0
@@ -783,6 +801,26 @@ fn score_round(round: InProgressRound) -> List(#(shared.PlayerId, Int)) {
       False -> #(word_list.0, 0)
     }
     [score, ..scores]
+  })
+}
+
+fn equal_position_scores(
+  round: InProgressRound,
+  correct_word_list: List(String),
+) -> List(#(shared.PlayerId, Int)) {
+  list.fold(round.submitted_word_lists, [], fn(scores, word_list) {
+    let score = case round.leading_player_id == word_list.0 {
+      True -> 0
+      False ->
+        list.zip(correct_word_list, word_list.1)
+        |> list.fold(0, fn(score, items) {
+          case items.0 == items.1 {
+            True -> score + 1
+            False -> score
+          }
+        })
+    }
+    [#(word_list.0, score), ..scores]
   })
 }
 
