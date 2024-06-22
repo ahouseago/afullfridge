@@ -21,15 +21,16 @@ import shared
 
 pub type Model {
   NotInRoom(uri: uri.Uri, route: Route, room_code_input: String)
-  Disconnected(
+  InRoom(
     player_id: shared.PlayerId,
     room_code: shared.RoomCode,
     player_name: String,
+    active_game: Option(ActiveGame),
   )
-  Connected(
-    player_id: shared.PlayerId,
-    room_code: shared.RoomCode,
-    player_name: String,
+}
+
+pub type ActiveGame {
+  ActiveGame(
     ws: ws.WebSocket,
     room: Option(shared.Room),
     round: Option(RoundState),
@@ -38,7 +39,7 @@ pub type Model {
 }
 
 pub type RoundState {
-  RoundState(round: shared.Round, ordered_words: List(String))
+  RoundState(round: shared.Round, ordered_words: List(String), submitted: Bool)
 }
 
 pub type Route {
@@ -111,7 +112,7 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
           )
         })
       case rejoin {
-        Ok(#(id, name, msg)) -> #(Disconnected(id, room_code, name), msg)
+        Ok(#(id, name, msg)) -> #(InRoom(id, room_code, name, None), msg)
         Error(_) -> #(
           NotInRoom(uri, Play(Some(room_code)), room_code),
           effect.batch([join_game(room_code), modem.init(on_url_change)]),
@@ -136,10 +137,11 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       JoinedRoom(Ok(shared.RoomResponse(room_code, player_id)))
     -> {
       #(
-        Disconnected(
+        InRoom(
           player_id: player_id,
           room_code: room_code,
           player_name: "",
+          active_game: None,
         ),
         modem.push(
           uri.Uri(
@@ -167,10 +169,10 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
     )
     NotInRoom(_, _, _), UpdatePlayerName(_) -> #(model, effect.none())
     NotInRoom(_, _, _), _ -> #(model, effect.none())
-    Disconnected(player_id, room_code, _player_name),
+    InRoom(player_id, room_code, _player_name, None),
       UpdatePlayerName(player_name)
-    -> #(Disconnected(player_id, room_code, player_name), effect.none())
-    Disconnected(player_id, _room_code, player_name), SetPlayerName -> {
+    -> #(InRoom(player_id, room_code, player_name, None), effect.none())
+    InRoom(player_id, _room_code, player_name, None), SetPlayerName -> {
       let _ =
         storage.local()
         |> result.try(fn(local_storage) {
@@ -187,147 +189,146 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         ),
       )
     }
-    Disconnected(player_id, room_code, player_name), WebSocketEvent(ws_event)
-    | Connected(player_id, room_code, player_name, _, _, _, _),
-      WebSocketEvent(ws_event)
+    InRoom(player_id, room_code, player_name, _), WebSocketEvent(ws_event)
+    | InRoom(player_id, room_code, player_name, _), WebSocketEvent(ws_event)
     -> {
       case ws_event {
         ws.InvalidUrl -> panic
         ws.OnOpen(socket) -> #(
-          Connected(
+          InRoom(
             player_id: player_id,
             room_code: room_code,
             player_name: player_name,
-            ws: socket,
-            room: None,
-            round: None,
-            add_word_input: "",
+            active_game: Some(ActiveGame(
+              ws: socket,
+              room: None,
+              round: None,
+              add_word_input: "",
+            )),
           ),
           effect.none(),
         )
         ws.OnTextMessage(msg) -> handle_ws_message(model, msg)
         ws.OnBinaryMessage(_msg) -> #(model, effect.none())
         ws.OnClose(_reason) -> #(
-          Disconnected(player_id, room_code, player_name),
+          InRoom(player_id, room_code, player_name, None),
           effect.none(),
         )
       }
     }
-    Connected(
+    InRoom(
       player_id,
       room_code,
       player_name,
-      ws,
-      room,
-      round,
-      add_word_input,
+      Some(ActiveGame(ws, room, round, add_word_input)),
     ),
       AddWord
+      if add_word_input != ""
     -> {
       #(
-        Connected(player_id, room_code, player_name, ws, room, round, ""),
+        InRoom(
+          player_id,
+          room_code,
+          player_name,
+          Some(ActiveGame(ws, room, round, "")),
+        ),
         ws.send(ws, shared.encode_request(shared.AddWord(add_word_input))),
       )
     }
-    Connected(
-      player_id,
-      room_code,
-      player_name,
-      ws,
-      room,
-      round,
-      _add_word_input,
-    ),
+    InRoom(player_id, room_code, player_name, Some(active_game)),
       UpdateAddWordInput(value)
     -> {
       #(
-        Connected(player_id, room_code, player_name, ws, room, round, value),
+        InRoom(
+          player_id,
+          room_code,
+          player_name,
+          Some(ActiveGame(..active_game, add_word_input: value)),
+        ),
         effect.none(),
       )
     }
-    Connected(
-      _player_id,
-      _room_code,
-      _player_name,
-      ws,
-      _room,
-      _round,
-      _add_word_input,
-    ),
-      StartRound
-    -> {
-      #(model, ws.send(ws, shared.encode_request(shared.StartRound)))
+    InRoom(_player_id, _room_code, _player_name, Some(active_game)), StartRound -> {
+      #(
+        model,
+        ws.send(active_game.ws, shared.encode_request(shared.StartRound)),
+      )
     }
-    Connected(
+    InRoom(
       player_id,
       room_code,
       player_name,
-      ws,
-      room,
-      Some(round_state),
-      add_word_input,
+      Some(ActiveGame(ws, room, Some(round_state), add_word_input)),
     ),
       AddNextPreferedWord(word)
     -> {
       #(
-        Connected(
+        InRoom(
           player_id,
           room_code,
           player_name,
-          ws,
-          room,
-          Some(
-            RoundState(
-              ..round_state,
-              ordered_words: [
-                word,
-                ..round_state.ordered_words
-                |> list.filter(fn(existing_word) { existing_word != word })
-              ],
+          Some(ActiveGame(
+            ws,
+            room,
+            add_word_input,
+            round: Some(
+              RoundState(
+                ..round_state,
+                ordered_words: [
+                  word,
+                  ..round_state.ordered_words
+                  |> list.filter(fn(existing_word) { existing_word != word })
+                ],
+              ),
             ),
-          ),
-          add_word_input,
+          )),
         ),
         effect.none(),
       )
     }
-    Connected(
+    InRoom(
       player_id,
       room_code,
       player_name,
-      ws,
-      room,
-      Some(round_state),
-      add_word_input,
+      Some(ActiveGame(ws, room, Some(round_state), add_word_input)),
     ),
       ClearOrderedWords
     -> {
       #(
-        Connected(
+        InRoom(
           player_id,
           room_code,
           player_name,
-          ws,
-          room,
-          Some(RoundState(..round_state, ordered_words: [])),
-          add_word_input,
+          Some(ActiveGame(
+            ws,
+            room,
+            Some(RoundState(..round_state, ordered_words: [])),
+            add_word_input,
+          )),
         ),
         effect.none(),
       )
     }
-    Connected(
-      _player_id,
-      _room_code,
-      _player_name,
-      ws,
-      _room,
-      Some(round_state),
-      _add_word_input,
+    InRoom(
+      player_id,
+      room_code,
+      player_name,
+      Some(ActiveGame(ws, room, Some(round_state), add_word_input)),
     ),
       SubmitOrderedWords
     -> {
       #(
-        model,
+        InRoom(
+          player_id,
+          room_code,
+          player_name,
+          Some(ActiveGame(
+            ws,
+            room,
+            Some(RoundState(..round_state, submitted: True)),
+            add_word_input,
+          )),
+        ),
         ws.send(
           ws,
           shared.encode_request(shared.SubmitOrderedWords(
@@ -336,96 +337,112 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         ),
       )
     }
-    Connected(_player_id, _room_code, _player_name, _ws, _room, _round, _), _
-    | Disconnected(_player_id, _room, _player_name), _
-    -> #(model, effect.none())
+    InRoom(_player_id, _room_code, _player_name, _active_game), _ -> #(
+      model,
+      effect.none(),
+    )
   }
 }
 
 fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) {
   case model {
-    NotInRoom(_, _, _) | Disconnected(_, _, _) -> #(model, effect.none())
-    Connected(
-      player_id,
-      room_code,
-      player_name,
-      ws,
-      room,
-      round_state,
-      add_word_input,
-    ) ->
+    NotInRoom(_, _, _) | InRoom(_, _, _, None) -> #(model, effect.none())
+    InRoom(player_id, room_code, player_name, Some(active_game)) ->
       case shared.decode_websocket_response(msg) {
         Ok(shared.InitialRoomState(room)) -> #(
-          Connected(
+          InRoom(
             player_id: player_id,
             room_code: room_code,
             player_name: player_name,
-            ws: ws,
-            room: Some(room),
-            round: option.or(
-              room.round
-                |> option.map(fn(round) {
-                  RoundState(round: round, ordered_words: [])
-                }),
-              round_state,
+            active_game: Some(
+              ActiveGame(
+                ..active_game,
+                room: Some(room),
+                round: option.or(
+                  room.round
+                    |> option.map(fn(round) {
+                      RoundState(
+                        round: round,
+                        ordered_words: [],
+                        submitted: False,
+                      )
+                    }),
+                  active_game.round,
+                ),
+              ),
             ),
-            add_word_input: add_word_input,
           ),
           effect.none(),
         )
         Ok(shared.PlayersInRoom(player_list)) -> {
           let room =
-            option.map(room, fn(room) {
+            option.map(active_game.room, fn(room) {
               shared.Room(..room, players: player_list)
             })
           #(
-            Connected(
+            InRoom(
               player_id: player_id,
               room_code: room_code,
               player_name: player_name,
-              ws: ws,
-              room: room,
-              round: round_state,
-              add_word_input: add_word_input,
+              active_game: Some(ActiveGame(..active_game, room: room)),
             ),
             effect.none(),
           )
         }
         Ok(shared.WordList(word_list)) -> {
           let room =
-            option.map(room, fn(room) {
+            option.map(active_game.room, fn(room) {
               shared.Room(..room, word_list: word_list)
             })
           #(
-            Connected(
+            InRoom(
               player_id: player_id,
               room_code: room_code,
               player_name: player_name,
-              ws: ws,
-              room: room,
-              round: round_state,
-              add_word_input: add_word_input,
+              active_game: Some(ActiveGame(..active_game, room: room)),
             ),
             effect.none(),
           )
         }
         Ok(shared.RoundInfo(round)) -> #(
-          Connected(
+          InRoom(
             player_id: player_id,
             room_code: room_code,
             player_name: player_name,
-            ws: ws,
-            room: room,
-            round: round_state
-              |> option.map(fn(round_state) {
-                RoundState(..round_state, round: round)
-              })
-              |> option.unwrap(RoundState(round, []))
-              |> Some,
-            add_word_input: add_word_input,
+            active_game: Some(
+              ActiveGame(
+                ..active_game,
+                round: Some(RoundState(round, [], False)),
+              ),
+            ),
           ),
           effect.none(),
         )
+        Ok(shared.RoundResult(finished_round)) -> {
+          #(
+            InRoom(
+              player_id,
+              room_code,
+              player_name,
+              Some(
+                ActiveGame(
+                  ..active_game,
+                  room: active_game.room
+                    |> option.map(fn(room) {
+                      shared.Room(
+                        ..room,
+                        finished_rounds: [
+                          finished_round,
+                          ..room.finished_rounds
+                        ],
+                      )
+                    }),
+                ),
+              ),
+            ),
+            effect.none(),
+          )
+        }
         Ok(shared.ServerError(reason)) | Error(reason) -> {
           io.debug(reason)
           #(model, effect.none())
@@ -508,7 +525,7 @@ fn header(model: Model) {
         ]),
         html.h1([attribute.class("text-2xl my-5")], [element.text("Join game")]),
       ])
-    Connected(_, room_code, _, _, _, _, _) | Disconnected(_, room_code, _) ->
+    InRoom(_, room_code, _, _) ->
       html.div([], [
         html.nav([attribute.class("flex items-center")], [
           // link("/", [element.text("Leave game")]),
@@ -565,21 +582,19 @@ fn content(model: Model) {
           button.button([attribute.type_("submit")], [element.text("Join")]),
         ],
       )
-    Connected(
+    InRoom(
       player_id,
       _room_code,
       _player_name,
-      _ws,
-      Some(_room),
-      Some(round_state),
-      _add_word_input,
+      Some(ActiveGame(_ws, Some(room), Some(round_state), _add_word_input)),
     ) ->
       html.div([attribute.class("flex flex-col m-4")], [
         html.div([], [
           html.h2([], [
             element.text(get_choosing_player_text(
+              room.players,
               player_id,
-              round_state.round.leading_player.0,
+              round_state.round.leading_player_id,
             )),
           ]),
         ]),
@@ -611,7 +626,8 @@ fn content(model: Model) {
               event.on_click(SubmitOrderedWords),
               attribute.disabled(
                 list.length(round_state.ordered_words)
-                != list.length(round_state.round.words),
+                != list.length(round_state.round.words)
+                || round_state.submitted,
               ),
               button.solid(),
             ],
@@ -619,14 +635,11 @@ fn content(model: Model) {
           ),
         ]),
       ])
-    Connected(
+    InRoom(
       player_id,
       _room_code,
       _player_name,
-      _ws,
-      Some(room),
-      None,
-      add_word_input,
+      Some(ActiveGame(_ws, Some(room), None, add_word_input)),
     ) ->
       html.div([attribute.class("flex flex-col m-4")], [
         html.div([], [
@@ -676,7 +689,7 @@ fn content(model: Model) {
           ),
         ]),
       ])
-    Disconnected(_player_id, _room_code, player_name) ->
+    InRoom(_player_id, _room_code, player_name, None) ->
       html.div([attribute.class("flex flex-col m-4")], [
         html.form(
           [event.on_submit(SetPlayerName), attribute.class("flex flex-col m-4")],
@@ -698,7 +711,12 @@ fn content(model: Model) {
           ],
         ),
       ])
-    Connected(_player_id, room_code, player_name, _ws, None, _round, _) -> {
+    InRoom(
+      _player_id,
+      room_code,
+      player_name,
+      Some(ActiveGame(_ws, None, _round, _)),
+    ) -> {
       html.div([attribute.class("flex flex-col m-4")], [
         html.div([], [
           html.h2([], [element.text(player_name)]),
@@ -710,9 +728,17 @@ fn content(model: Model) {
   }
 }
 
-fn get_choosing_player_text(player_id, leading_player: shared.Player) {
-  case leading_player.id == player_id {
+fn get_choosing_player_text(
+  players: List(shared.Player),
+  player_id: shared.PlayerId,
+  leading_player_id: shared.PlayerId,
+) {
+  case leading_player_id == player_id {
     True -> "You are choosing."
-    False -> leading_player.name <> " is choosing."
+    False ->
+      list.find(players, fn(player) { player.id == leading_player_id })
+      |> result.map(fn(player) { player.name })
+      |> result.unwrap("Someone else")
+      <> " is choosing."
   }
 }

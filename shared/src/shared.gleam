@@ -37,6 +37,7 @@ pub type WebsocketResponse {
   PlayersInRoom(List(Player))
   WordList(List(String))
   RoundInfo(Round)
+  RoundResult(FinishedRound)
   ServerError(reason: String)
 }
 
@@ -63,21 +64,38 @@ pub fn player_from_json(
 }
 
 pub type PlayerWithOrderedPreferences =
-  #(Player, List(String))
+  #(PlayerId, List(String))
 
 fn player_with_preferences_to_json(p: PlayerWithOrderedPreferences) {
   json.object([
-    #("player", player_to_json(p.0)),
+    #("playerId", json.string(p.0)),
     #("wordOrder", json.array(p.1, of: json.string)),
   ])
 }
 
-fn player_with_preferences_from_json(player_with_prefs: dynamic.Dynamic) {
+fn player_with_preferences_from_json(
+  player_with_prefs: dynamic.Dynamic,
+) -> Result(PlayerWithOrderedPreferences, List(dynamic.DecodeError)) {
   player_with_prefs
   |> dynamic.decode2(
-    fn(player, prefs) { #(player, prefs) },
-    dynamic.field("player", player_from_json),
+    fn(player_id, prefs) { #(player_id, prefs) },
+    dynamic.field("playerId", dynamic.string),
     dynamic.field("wordOrder", dynamic.list(dynamic.string)),
+  )
+}
+
+fn scores_to_json(p: #(PlayerId, Int)) {
+  json.object([#("playerId", json.string(p.0)), #("score", json.int(p.1))])
+}
+
+fn scores_from_json(
+  p: dynamic.Dynamic,
+) -> Result(#(PlayerId, Int), List(dynamic.DecodeError)) {
+  p
+  |> dynamic.decode2(
+    fn(player_id, score) { #(player_id, score) },
+    dynamic.field("playerId", dynamic.string),
+    dynamic.field("score", dynamic.int),
   )
 }
 
@@ -87,21 +105,18 @@ fn player_with_preferences_from_json(player_with_prefs: dynamic.Dynamic) {
 pub type Round {
   Round(
     words: List(String),
-    // The leading player with their ordered preferences.
-    leading_player: PlayerWithOrderedPreferences,
-    // The other players with their guessed ordered words.
-    other_players: List(PlayerWithOrderedPreferences),
+    // The player who everyone is trying to guess the preference order of.
+    leading_player_id: PlayerId,
+    // The other players who have submitted.
+    submitted: List(PlayerId),
   )
 }
 
 pub fn round_to_json(round: Round) -> json.Json {
   json.object([
     #("words", json.array(round.words, of: json.string)),
-    #("leadingPlayer", player_with_preferences_to_json(round.leading_player)),
-    #(
-      "otherPlayers",
-      json.array(round.other_players, of: player_with_preferences_to_json),
-    ),
+    #("leadingPlayerId", json.string(round.leading_player_id)),
+    #("submitted", json.array(round.submitted, of: json.string)),
   ])
 }
 
@@ -112,9 +127,43 @@ pub fn round_from_json(
   |> dynamic.decode3(
     Round,
     dynamic.field("words", dynamic.list(dynamic.string)),
-    dynamic.field("leadingPlayer", player_with_preferences_from_json),
+    dynamic.field("leadingPlayerId", dynamic.string),
+    dynamic.field("submitted", dynamic.list(dynamic.string)),
+  )
+}
+
+pub type FinishedRound {
+  FinishedRound(
+    words: List(String),
+    leading_player_id: PlayerId,
+    player_scores: List(#(PlayerId, Int)),
+    player_word_lists: List(PlayerWithOrderedPreferences),
+  )
+}
+
+pub fn finished_round_to_json(round: FinishedRound) -> json.Json {
+  json.object([
+    #("words", json.array(round.words, of: json.string)),
+    #("leadingPlayerId", json.string(round.leading_player_id)),
+    #("scores", json.array(round.player_scores, of: scores_to_json)),
+    #(
+      "playerWordLists",
+      json.array(round.player_word_lists, of: player_with_preferences_to_json),
+    ),
+  ])
+}
+
+pub fn finished_round_from_json(
+  round: dynamic.Dynamic,
+) -> Result(FinishedRound, List(dynamic.DecodeError)) {
+  round
+  |> dynamic.decode4(
+    FinishedRound,
+    dynamic.field("words", dynamic.list(dynamic.string)),
+    dynamic.field("leadingPlayerId", dynamic.string),
+    dynamic.field("scores", dynamic.list(scores_from_json)),
     dynamic.field(
-      "otherPlayers",
+      "playerWordLists",
       dynamic.list(player_with_preferences_from_json),
     ),
   )
@@ -124,8 +173,10 @@ pub type Room {
   Room(
     room_code: RoomCode,
     players: List(Player),
+    // All of the words that can be chosen from to create a round.
     word_list: List(String),
     round: Option(Round),
+    finished_rounds: List(FinishedRound),
   )
 }
 
@@ -135,28 +186,24 @@ pub fn room_to_json(room: Room) -> json.Json {
     #("players", json.array(room.players, of: player_to_json)),
     #("wordList", json.array(room.word_list, of: json.string)),
     #("round", json.nullable(room.round, of: round_to_json)),
+    #(
+      "finishedRounds",
+      json.array(room.finished_rounds, of: finished_round_to_json),
+    ),
   ])
 }
-
-// fn player_list_to_dict(
-//   player_list: dynamic.Dynamic,
-// ) -> Result(Dict(PlayerId, Player), List(dynamic.DecodeError)) {
-//   use players <- result.map(dynamic.list(player_from_json)(player_list))
-//   players
-//   |> list.map(fn(player) { #(player.id, player) })
-//   |> dict.from_list
-// }
 
 pub fn room_from_json(
   room: dynamic.Dynamic,
 ) -> Result(Room, List(dynamic.DecodeError)) {
   room
-  |> dynamic.decode4(
+  |> dynamic.decode5(
     Room,
     dynamic.field("roomCode", dynamic.string),
     dynamic.field("players", dynamic.list(player_from_json)),
     dynamic.field("wordList", dynamic.list(dynamic.string)),
     dynamic.optional_field("round", round_from_json),
+    dynamic.field("finishedRounds", dynamic.list(finished_round_from_json)),
   )
 }
 
@@ -277,6 +324,10 @@ pub fn encode_websocket_response(response: WebsocketResponse) {
         json.array(from: word_list, of: json.string),
       )
       RoundInfo(round) -> #("roundInfo", round_to_json(round))
+      RoundResult(finished_round) -> #(
+        "roundResult",
+        finished_round_to_json(finished_round),
+      )
       ServerError(reason) -> #("error", json.string(reason))
     }
     |> pair.map_first(json.string)
@@ -360,6 +411,9 @@ pub fn decode_websocket_response(
     Ok(#("roundInfo", msg)) ->
       msg
       |> dynamic.decode1(RoundInfo, round_from_json)
+    Ok(#("roundResult", msg)) ->
+      msg
+      |> dynamic.decode1(RoundResult, finished_round_from_json)
     Ok(#("error", msg)) ->
       msg
       |> dynamic.decode1(ServerError, dynamic.string)

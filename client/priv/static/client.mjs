@@ -534,6 +534,25 @@ function fold(loop$list, loop$initial, loop$fun) {
     }
   }
 }
+function find(loop$haystack, loop$is_desired) {
+  while (true) {
+    let haystack = loop$haystack;
+    let is_desired = loop$is_desired;
+    if (haystack.hasLength(0)) {
+      return new Error(void 0);
+    } else {
+      let x = haystack.head;
+      let rest$1 = haystack.tail;
+      let $ = is_desired(x);
+      if ($) {
+        return new Ok(x);
+      } else {
+        loop$haystack = rest$1;
+        loop$is_desired = is_desired;
+      }
+    }
+  }
+}
 function do_intersperse(loop$list, loop$separator, loop$acc) {
   while (true) {
     let list2 = loop$list;
@@ -867,6 +886,40 @@ function decode4(constructor, t1, t2, t3, t4) {
       return new Error(
         concat(
           toList([all_errors(a2), all_errors(b), all_errors(c), all_errors(d)])
+        )
+      );
+    }
+  };
+}
+function decode5(constructor, t1, t2, t3, t4, t5) {
+  return (x) => {
+    let $ = t1(x);
+    let $1 = t2(x);
+    let $2 = t3(x);
+    let $3 = t4(x);
+    let $4 = t5(x);
+    if ($.isOk() && $1.isOk() && $2.isOk() && $3.isOk() && $4.isOk()) {
+      let a2 = $[0];
+      let b = $1[0];
+      let c = $2[0];
+      let d = $3[0];
+      let e = $4[0];
+      return new Ok(constructor(a2, b, c, d, e));
+    } else {
+      let a2 = $;
+      let b = $1;
+      let c = $2;
+      let d = $3;
+      let e = $4;
+      return new Error(
+        concat(
+          toList([
+            all_errors(a2),
+            all_errors(b),
+            all_errors(c),
+            all_errors(d),
+            all_errors(e)
+          ])
         )
       );
     }
@@ -1245,7 +1298,7 @@ function collisionIndexOf(root2, key2) {
   }
   return -1;
 }
-function find(root2, shift, hash, key2) {
+function find2(root2, shift, hash, key2) {
   switch (root2.type) {
     case ARRAY_NODE:
       return findArray(root2, shift, hash, key2);
@@ -1262,7 +1315,7 @@ function findArray(root2, shift, hash, key2) {
     return void 0;
   }
   if (node.type !== ENTRY) {
-    return find(node, shift + SHIFT, hash, key2);
+    return find2(node, shift + SHIFT, hash, key2);
   }
   if (isEqual(key2, node.k)) {
     return node;
@@ -1277,7 +1330,7 @@ function findIndex(root2, shift, hash, key2) {
   const idx = index(root2.bitmap, bit);
   const node = root2.array[idx];
   if (node.type !== ENTRY) {
-    return find(node, shift + SHIFT, hash, key2);
+    return find2(node, shift + SHIFT, hash, key2);
   }
   if (isEqual(key2, node.k)) {
     return node;
@@ -1482,7 +1535,7 @@ var Dict = class _Dict {
     if (this.root === void 0) {
       return notFound;
     }
-    const found = find(this.root, 0, getHash(key2), key2);
+    const found = find2(this.root, 0, getHash(key2), key2);
     if (found === void 0) {
       return notFound;
     }
@@ -1527,7 +1580,7 @@ var Dict = class _Dict {
     if (this.root === void 0) {
       return false;
     }
-    return find(this.root, 0, getHash(key2), key2) !== void 0;
+    return find2(this.root, 0, getHash(key2), key2) !== void 0;
   }
   /**
    * @returns {[K,V][]}
@@ -2410,7 +2463,7 @@ function do_decode(json, decoder2) {
     }
   );
 }
-function decode5(json, decoder2) {
+function decode6(json, decoder2) {
   return do_decode(json, decoder2);
 }
 function to_string6(json) {
@@ -3501,7 +3554,7 @@ function expect_json(decoder2, to_msg) {
       let _pipe$2 = then$2(
         _pipe$1,
         (body) => {
-          let $ = decode5(body, decoder2);
+          let $ = decode6(body, decoder2);
           if ($.isOk()) {
             let json = $[0];
             return new Ok(json);
@@ -4160,6 +4213,12 @@ var RoundInfo = class extends CustomType {
     this[0] = x0;
   }
 };
+var RoundResult = class extends CustomType {
+  constructor(x0) {
+    super();
+    this[0] = x0;
+  }
+};
 var ServerError = class extends CustomType {
   constructor(reason) {
     super();
@@ -4174,20 +4233,30 @@ var Player = class extends CustomType {
   }
 };
 var Round = class extends CustomType {
-  constructor(words, leading_player, other_players) {
+  constructor(words, leading_player_id, submitted) {
     super();
     this.words = words;
-    this.leading_player = leading_player;
-    this.other_players = other_players;
+    this.leading_player_id = leading_player_id;
+    this.submitted = submitted;
+  }
+};
+var FinishedRound = class extends CustomType {
+  constructor(words, leading_player_id, player_scores, player_word_lists) {
+    super();
+    this.words = words;
+    this.leading_player_id = leading_player_id;
+    this.player_scores = player_scores;
+    this.player_word_lists = player_word_lists;
   }
 };
 var Room = class extends CustomType {
-  constructor(room_code, players, word_list, round3) {
+  constructor(room_code, players, word_list, round3, finished_rounds) {
     super();
     this.room_code = room_code;
     this.players = players;
     this.word_list = word_list;
     this.round = round3;
+    this.finished_rounds = finished_rounds;
   }
 };
 function player_from_json(player) {
@@ -4203,11 +4272,21 @@ function player_from_json(player) {
 function player_with_preferences_from_json(player_with_prefs) {
   let _pipe = player_with_prefs;
   return decode2(
-    (player, prefs) => {
-      return [player, prefs];
+    (player_id, prefs) => {
+      return [player_id, prefs];
     },
-    field("player", player_from_json),
+    field("playerId", string),
     field("wordOrder", list(string))
+  )(_pipe);
+}
+function scores_from_json(p2) {
+  let _pipe = p2;
+  return decode2(
+    (player_id, score) => {
+      return [player_id, score];
+    },
+    field("playerId", string),
+    field("score", int)
   )(_pipe);
 }
 function round_from_json(round3) {
@@ -4217,23 +4296,36 @@ function round_from_json(round3) {
       return new Round(var0, var1, var2);
     },
     field("words", list(string)),
-    field("leadingPlayer", player_with_preferences_from_json),
+    field("leadingPlayerId", string),
+    field("submitted", list(string))
+  )(_pipe);
+}
+function finished_round_from_json(round3) {
+  let _pipe = round3;
+  return decode4(
+    (var0, var1, var2, var3) => {
+      return new FinishedRound(var0, var1, var2, var3);
+    },
+    field("words", list(string)),
+    field("leadingPlayerId", string),
+    field("scores", list(scores_from_json)),
     field(
-      "otherPlayers",
+      "playerWordLists",
       list(player_with_preferences_from_json)
     )
   )(_pipe);
 }
 function room_from_json(room) {
   let _pipe = room;
-  return decode4(
-    (var0, var1, var2, var3) => {
-      return new Room(var0, var1, var2, var3);
+  return decode5(
+    (var0, var1, var2, var3, var4) => {
+      return new Room(var0, var1, var2, var3, var4);
     },
     field("roomCode", string),
     field("players", list(player_from_json)),
     field("wordList", list(string)),
-    optional_field("round", round_from_json)
+    optional_field("round", round_from_json),
+    field("finishedRounds", list(finished_round_from_json))
   )(_pipe);
 }
 function encode_http_request(request) {
@@ -4328,7 +4420,7 @@ function decode_websocket_response(text3) {
     field("type", string),
     field("message", dynamic)
   );
-  let response_with_type = decode5(text3, type_decoder);
+  let response_with_type = decode6(text3, type_decoder);
   let _pipe = (() => {
     if (response_with_type.isOk() && response_with_type[0][0] === "room") {
       let msg = response_with_type[0][1];
@@ -4365,6 +4457,15 @@ function decode_websocket_response(text3) {
           return new RoundInfo(var0);
         },
         round_from_json
+      )(_pipe2);
+    } else if (response_with_type.isOk() && response_with_type[0][0] === "roundResult") {
+      let msg = response_with_type[0][1];
+      let _pipe2 = msg;
+      return decode1(
+        (var0) => {
+          return new RoundResult(var0);
+        },
+        finished_round_from_json
       )(_pipe2);
     } else if (response_with_type.isOk() && response_with_type[0][0] === "error") {
       let msg = response_with_type[0][1];
@@ -4423,20 +4524,18 @@ var NotInRoom = class extends CustomType {
     this.room_code_input = room_code_input;
   }
 };
-var Disconnected = class extends CustomType {
-  constructor(player_id, room_code, player_name) {
+var InRoom = class extends CustomType {
+  constructor(player_id, room_code, player_name, active_game) {
     super();
     this.player_id = player_id;
     this.room_code = room_code;
     this.player_name = player_name;
+    this.active_game = active_game;
   }
 };
-var Connected = class extends CustomType {
-  constructor(player_id, room_code, player_name, ws, room, round3, add_word_input) {
+var ActiveGame = class extends CustomType {
+  constructor(ws, room, round3, add_word_input) {
     super();
-    this.player_id = player_id;
-    this.room_code = room_code;
-    this.player_name = player_name;
     this.ws = ws;
     this.room = room;
     this.round = round3;
@@ -4444,10 +4543,11 @@ var Connected = class extends CustomType {
   }
 };
 var RoundState = class extends CustomType {
-  constructor(round3, ordered_words) {
+  constructor(round3, ordered_words, submitted) {
     super();
     this.round = round3;
     this.ordered_words = ordered_words;
+    this.submitted = submitted;
   }
 };
 var Home = class extends CustomType {
@@ -4534,106 +4634,115 @@ function relative(path) {
 function handle_ws_message(model, msg) {
   if (model instanceof NotInRoom) {
     return [model, none()];
-  } else if (model instanceof Disconnected) {
+  } else if (model instanceof InRoom && model.active_game instanceof None) {
     return [model, none()];
   } else {
     let player_id = model.player_id;
     let room_code = model.room_code;
     let player_name = model.player_name;
-    let ws = model.ws;
-    let room = model.room;
-    let round_state = model.round;
-    let add_word_input = model.add_word_input;
+    let active_game = model.active_game[0];
     let $ = decode_websocket_response(msg);
     if ($.isOk() && $[0] instanceof InitialRoomState) {
-      let room$1 = $[0][0];
+      let room = $[0][0];
       return [
-        new Connected(
+        new InRoom(
           player_id,
           room_code,
           player_name,
-          ws,
-          new Some(room$1),
-          or(
-            (() => {
-              let _pipe = room$1.round;
-              return map(
-                _pipe,
-                (round3) => {
-                  return new RoundState(round3, toList([]));
-                }
-              );
-            })(),
-            round_state
-          ),
-          add_word_input
+          new Some(
+            active_game.withFields({
+              room: new Some(room),
+              round: or(
+                (() => {
+                  let _pipe = room.round;
+                  return map(
+                    _pipe,
+                    (round3) => {
+                      return new RoundState(round3, toList([]), false);
+                    }
+                  );
+                })(),
+                active_game.round
+              )
+            })
+          )
         ),
         none()
       ];
     } else if ($.isOk() && $[0] instanceof PlayersInRoom) {
       let player_list = $[0][0];
-      let room$1 = map(
-        room,
+      let room = map(
+        active_game.room,
         (room2) => {
           return room2.withFields({ players: player_list });
         }
       );
       return [
-        new Connected(
+        new InRoom(
           player_id,
           room_code,
           player_name,
-          ws,
-          room$1,
-          round_state,
-          add_word_input
+          new Some(active_game.withFields({ room }))
         ),
         none()
       ];
     } else if ($.isOk() && $[0] instanceof WordList) {
       let word_list = $[0][0];
-      let room$1 = map(
-        room,
+      let room = map(
+        active_game.room,
         (room2) => {
           return room2.withFields({ word_list });
         }
       );
       return [
-        new Connected(
+        new InRoom(
           player_id,
           room_code,
           player_name,
-          ws,
-          room$1,
-          round_state,
-          add_word_input
+          new Some(active_game.withFields({ room }))
         ),
         none()
       ];
     } else if ($.isOk() && $[0] instanceof RoundInfo) {
       let round3 = $[0][0];
       return [
-        new Connected(
+        new InRoom(
           player_id,
           room_code,
           player_name,
-          ws,
-          room,
-          (() => {
-            let _pipe = round_state;
-            let _pipe$1 = map(
-              _pipe,
-              (round_state2) => {
-                return round_state2.withFields({ round: round3 });
-              }
-            );
-            let _pipe$2 = unwrap(
-              _pipe$1,
-              new RoundState(round3, toList([]))
-            );
-            return new Some(_pipe$2);
-          })(),
-          add_word_input
+          new Some(
+            active_game.withFields({
+              round: new Some(new RoundState(round3, toList([]), false))
+            })
+          )
+        ),
+        none()
+      ];
+    } else if ($.isOk() && $[0] instanceof RoundResult) {
+      let finished_round = $[0][0];
+      return [
+        new InRoom(
+          player_id,
+          room_code,
+          player_name,
+          new Some(
+            active_game.withFields({
+              room: (() => {
+                let _pipe = active_game.room;
+                return map(
+                  _pipe,
+                  (room) => {
+                    return room.withFields({
+                      finished_rounds: prepend(
+                        finished_round,
+                        room.finished_rounds
+                      )
+                    });
+                  }
+                );
+              })()
+            })
+          )
         ),
         none()
       ];
@@ -4679,7 +4788,7 @@ function update2(model, msg) {
     let room_code = msg[0][0].room_code;
     let player_id = msg[0][0].player_id;
     return [
-      new Disconnected(player_id, room_code, ""),
+      new InRoom(player_id, room_code, "", new None()),
       push(
         relative("/play").withFields({
           query: new Some(query_to_string(toList([["game", room_code]])))
@@ -4707,12 +4816,15 @@ function update2(model, msg) {
     return [model, none()];
   } else if (model instanceof NotInRoom) {
     return [model, none()];
-  } else if (model instanceof Disconnected && msg instanceof UpdatePlayerName) {
+  } else if (model instanceof InRoom && model.active_game instanceof None && msg instanceof UpdatePlayerName) {
     let player_id = model.player_id;
     let room_code = model.room_code;
     let player_name = msg[0];
-    return [new Disconnected(player_id, room_code, player_name), none()];
-  } else if (model instanceof Disconnected && msg instanceof SetPlayerName) {
+    return [
+      new InRoom(player_id, room_code, player_name, new None()),
+      none()
+    ];
+  } else if (model instanceof InRoom && model.active_game instanceof None && msg instanceof SetPlayerName) {
     let player_id = model.player_id;
     let player_name = model.player_name;
     let $ = (() => {
@@ -4738,7 +4850,7 @@ function update2(model, msg) {
         }
       )
     ];
-  } else if (model instanceof Disconnected && msg instanceof WebSocketEvent) {
+  } else if (model instanceof InRoom && msg instanceof WebSocketEvent) {
     let player_id = model.player_id;
     let room_code = model.room_code;
     let player_name = model.player_name;
@@ -4747,7 +4859,7 @@ function update2(model, msg) {
       throw makeError(
         "panic",
         "client",
-        195,
+        196,
         "update",
         "panic expression evaluated",
         {}
@@ -4755,14 +4867,11 @@ function update2(model, msg) {
     } else if (ws_event instanceof OnOpen) {
       let socket = ws_event[0];
       return [
-        new Connected(
+        new InRoom(
           player_id,
           room_code,
           player_name,
-          socket,
-          new None(),
-          new None(),
-          ""
+          new Some(new ActiveGame(socket, new None(), new None(), ""))
         ),
         none()
       ];
@@ -4773,11 +4882,11 @@ function update2(model, msg) {
       return [model, none()];
     } else {
       return [
-        new Disconnected(player_id, room_code, player_name),
+        new InRoom(player_id, room_code, player_name, new None()),
         none()
       ];
     }
-  } else if (model instanceof Connected && msg instanceof WebSocketEvent) {
+  } else if (model instanceof InRoom && msg instanceof WebSocketEvent) {
     let player_id = model.player_id;
     let room_code = model.room_code;
     let player_name = model.player_name;
@@ -4786,7 +4895,7 @@ function update2(model, msg) {
       throw makeError(
         "panic",
         "client",
-        195,
+        196,
         "update",
         "panic expression evaluated",
         {}
@@ -4794,14 +4903,11 @@ function update2(model, msg) {
     } else if (ws_event instanceof OnOpen) {
       let socket = ws_event[0];
       return [
-        new Connected(
+        new InRoom(
           player_id,
           room_code,
           player_name,
-          socket,
-          new None(),
-          new None(),
-          ""
+          new Some(new ActiveGame(socket, new None(), new None(), ""))
         ),
         none()
       ];
@@ -4812,101 +4918,134 @@ function update2(model, msg) {
       return [model, none()];
     } else {
       return [
-        new Disconnected(player_id, room_code, player_name),
+        new InRoom(player_id, room_code, player_name, new None()),
         none()
       ];
     }
-  } else if (model instanceof Connected && msg instanceof AddWord2) {
+  } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && msg instanceof AddWord2 && model.active_game[0].add_word_input !== "") {
     let player_id = model.player_id;
     let room_code = model.room_code;
     let player_name = model.player_name;
-    let ws = model.ws;
-    let room = model.room;
-    let round3 = model.round;
-    let add_word_input = model.add_word_input;
+    let ws = model.active_game[0].ws;
+    let room = model.active_game[0].room;
+    let round3 = model.active_game[0].round;
+    let add_word_input = model.active_game[0].add_word_input;
     return [
-      new Connected(player_id, room_code, player_name, ws, room, round3, ""),
+      new InRoom(
+        player_id,
+        room_code,
+        player_name,
+        new Some(new ActiveGame(ws, room, round3, ""))
+      ),
       send2(ws, encode_request(new AddWord(add_word_input)))
     ];
-  } else if (model instanceof Connected && msg instanceof UpdateAddWordInput) {
+  } else if (model instanceof InRoom && model.active_game instanceof Some && msg instanceof UpdateAddWordInput) {
     let player_id = model.player_id;
     let room_code = model.room_code;
     let player_name = model.player_name;
-    let ws = model.ws;
-    let room = model.room;
-    let round3 = model.round;
+    let active_game = model.active_game[0];
     let value3 = msg[0];
     return [
-      new Connected(player_id, room_code, player_name, ws, room, round3, value3),
+      new InRoom(
+        player_id,
+        room_code,
+        player_name,
+        new Some(active_game.withFields({ add_word_input: value3 }))
+      ),
       none()
     ];
-  } else if (model instanceof Connected && msg instanceof StartRound2) {
-    let ws = model.ws;
+  } else if (model instanceof InRoom && model.active_game instanceof Some && msg instanceof StartRound2) {
+    let active_game = model.active_game[0];
     return [
       model,
-      send2(ws, encode_request(new StartRound()))
+      send2(active_game.ws, encode_request(new StartRound()))
     ];
-  } else if (model instanceof Connected && model.round instanceof Some && msg instanceof AddNextPreferedWord) {
+  } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].round instanceof Some && msg instanceof AddNextPreferedWord) {
     let player_id = model.player_id;
     let room_code = model.room_code;
     let player_name = model.player_name;
-    let ws = model.ws;
-    let room = model.room;
-    let round_state = model.round[0];
-    let add_word_input = model.add_word_input;
+    let ws = model.active_game[0].ws;
+    let room = model.active_game[0].room;
+    let round_state = model.active_game[0].round[0];
+    let add_word_input = model.active_game[0].add_word_input;
     let word = msg[0];
     return [
-      new Connected(
+      new InRoom(
         player_id,
         room_code,
         player_name,
-        ws,
-        room,
         new Some(
-          round_state.withFields({
-            ordered_words: prepend(
-              word,
-              (() => {
-                let _pipe = round_state.ordered_words;
-                return filter(
-                  _pipe,
-                  (existing_word) => {
-                    return existing_word !== word;
-                  }
-                );
-              })()
-            )
-          })
-        ),
-        add_word_input
+          new ActiveGame(
+            ws,
+            room,
+            new Some(
+              round_state.withFields({
+                ordered_words: prepend(
+                  word,
+                  (() => {
+                    let _pipe = round_state.ordered_words;
+                    return filter(
+                      _pipe,
+                      (existing_word) => {
+                        return existing_word !== word;
+                      }
+                    );
+                  })()
+                )
+              })
+            ),
+            add_word_input
+          )
+        )
       ),
       none()
     ];
-  } else if (model instanceof Connected && model.round instanceof Some && msg instanceof ClearOrderedWords) {
+  } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].round instanceof Some && msg instanceof ClearOrderedWords) {
     let player_id = model.player_id;
     let room_code = model.room_code;
     let player_name = model.player_name;
-    let ws = model.ws;
-    let room = model.room;
-    let round_state = model.round[0];
-    let add_word_input = model.add_word_input;
+    let ws = model.active_game[0].ws;
+    let room = model.active_game[0].room;
+    let round_state = model.active_game[0].round[0];
+    let add_word_input = model.active_game[0].add_word_input;
     return [
-      new Connected(
+      new InRoom(
         player_id,
         room_code,
         player_name,
-        ws,
-        room,
-        new Some(round_state.withFields({ ordered_words: toList([]) })),
-        add_word_input
+        new Some(
+          new ActiveGame(
+            ws,
+            room,
+            new Some(round_state.withFields({ ordered_words: toList([]) })),
+            add_word_input
+          )
+        )
       ),
       none()
     ];
-  } else if (model instanceof Connected && model.round instanceof Some && msg instanceof SubmitOrderedWords2) {
-    let ws = model.ws;
-    let round_state = model.round[0];
+  } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].round instanceof Some && msg instanceof SubmitOrderedWords2) {
+    let player_id = model.player_id;
+    let room_code = model.room_code;
+    let player_name = model.player_name;
+    let ws = model.active_game[0].ws;
+    let room = model.active_game[0].room;
+    let round_state = model.active_game[0].round[0];
+    let add_word_input = model.active_game[0].add_word_input;
     return [
-      model,
+      new InRoom(
+        player_id,
+        room_code,
+        player_name,
+        new Some(
+          new ActiveGame(
+            ws,
+            room,
+            new Some(round_state.withFields({ submitted: true })),
+            add_word_input
+          )
+        )
+      ),
       send2(
         ws,
         encode_request(
@@ -4914,8 +5053,6 @@ function update2(model, msg) {
         )
       )
     ];
-  } else if (model instanceof Connected) {
-    return [model, none()];
   } else {
     return [model, none()];
   }
@@ -4995,7 +5132,7 @@ function init4(_) {
       let id2 = rejoin[0][0];
       let name = rejoin[0][1];
       let msg = rejoin[0][2];
-      return [new Disconnected(id2, room_code, name), msg];
+      return [new InRoom(id2, room_code, name, new None()), msg];
     } else {
       return [
         new NotInRoom(uri$1, new Play(new Some(room_code)), room_code),
@@ -5063,19 +5200,7 @@ function header(model) {
         )
       ])
     );
-  } else if (model instanceof Connected) {
-    let room_code = model.room_code;
-    return div(
-      toList([]),
-      toList([
-        nav(toList([class$("flex items-center")]), toList([])),
-        h1(
-          toList([class$("text-2xl my-5")]),
-          toList([text("Game: " + room_code)])
-        )
-      ])
-    );
-  } else if (model instanceof Disconnected) {
+  } else if (model instanceof InRoom) {
     let room_code = model.room_code;
     return div(
       toList([]),
@@ -5103,12 +5228,23 @@ function header(model) {
     );
   }
 }
-function get_choosing_player_text(player_id, leading_player) {
-  let $ = leading_player.id === player_id;
+function get_choosing_player_text(players, player_id, leading_player_id) {
+  let $ = leading_player_id === player_id;
   if ($) {
     return "You are choosing.";
   } else {
-    return leading_player.name + " is choosing.";
+    return (() => {
+      let _pipe = find(
+        players,
+        (player) => {
+          return player.id === leading_player_id;
+        }
+      );
+      let _pipe$1 = map3(_pipe, (player) => {
+        return player.name;
+      });
+      return unwrap2(_pipe$1, "Someone else");
+    })() + " is choosing.";
   }
 }
 function content(model) {
@@ -5168,9 +5304,10 @@ function content(model) {
         )
       ])
     );
-  } else if (model instanceof Connected && model.room instanceof Some && model.round instanceof Some) {
+  } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].room instanceof Some && model.active_game[0].round instanceof Some) {
     let player_id = model.player_id;
-    let round_state = model.round[0];
+    let room = model.active_game[0].room[0];
+    let round_state = model.active_game[0].round[0];
     return div(
       toList([class$("flex flex-col m-4")]),
       toList([
@@ -5182,8 +5319,9 @@ function content(model) {
               toList([
                 text(
                   get_choosing_player_text(
+                    room.players,
                     player_id,
-                    round_state.round.leading_player[0]
+                    round_state.round.leading_player_id
                   )
                 )
               ])
@@ -5234,7 +5372,7 @@ function content(model) {
                 disabled(
                   length(round_state.ordered_words) !== length(
                     round_state.round.words
-                  )
+                  ) || round_state.submitted
                 ),
                 solid()
               ]),
@@ -5244,10 +5382,10 @@ function content(model) {
         )
       ])
     );
-  } else if (model instanceof Connected && model.room instanceof Some && model.round instanceof None) {
+  } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].room instanceof Some && model.active_game[0].round instanceof None) {
     let player_id = model.player_id;
-    let room = model.room[0];
-    let add_word_input = model.add_word_input;
+    let room = model.active_game[0].room[0];
+    let add_word_input = model.active_game[0].add_word_input;
     return div(
       toList([class$("flex flex-col m-4")]),
       toList([
@@ -5341,7 +5479,7 @@ function content(model) {
         )
       ])
     );
-  } else if (model instanceof Disconnected) {
+  } else if (model instanceof InRoom && model.active_game instanceof None) {
     let player_name = model.player_name;
     return div(
       toList([class$("flex flex-col m-4")]),
@@ -5380,7 +5518,7 @@ function content(model) {
         )
       ])
     );
-  } else if (model instanceof Connected && model.room instanceof None) {
+  } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].room instanceof None) {
     let room_code = model.room_code;
     let player_name = model.player_name;
     return div(
@@ -5415,7 +5553,7 @@ function main() {
     throw makeError(
       "assignment_no_match",
       "client",
-      73,
+      74,
       "main",
       "Assignment pattern did not match",
       { value: $ }
