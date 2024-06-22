@@ -562,15 +562,15 @@ fn handle_websocket_request(
 }
 
 fn get_next_leading_player(room_state: RoomState) -> shared.PlayerId {
+  let players_count = list.length(room_state.room.players)
   // Reverse the list to start from the first player to join.
   let index =
-    list.length(room_state.finished_rounds)
-    % list.length(room_state.room.players)
+    players_count - list.length(room_state.finished_rounds) % players_count
 
   let assert Ok(player) =
     room_state.room.players
+    |> list.take(index)
     |> list.reverse
-    |> list.take(index + 1)
     |> list.first
 
   player.id
