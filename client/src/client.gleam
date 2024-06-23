@@ -597,8 +597,6 @@ fn on_url_change(uri: uri.Uri) -> Msg {
 }
 
 pub fn view(model: Model) -> element.Element(Msg) {
-  let content = content(model)
-
   html.div([], [
     // Lustre UI style sheet
     styles.elements(),
@@ -608,8 +606,11 @@ pub fn view(model: Model) -> element.Element(Msg) {
       attribute.type_("text/css"),
       attribute.href("/priv/static/client.css"),
     ]),
-    header(model),
-    content,
+    html.div([class("flex flex-col h-svh max-h-svh")], [
+      header(model),
+      content(model),
+      footer(model),
+    ]),
   ])
 }
 
@@ -631,17 +632,17 @@ fn header(model: Model) {
       ])
     NotInRoom(_, Play(Some(_)), _, _) ->
       html.div([], [
-        html.nav([class("flex items-center")], [
-          link("/", [element.text("Home")], ""),
+        html.nav([class("flex items-center bg-emerald-100 text-green-900")], [
+          link("/", [icon.home([class("mr-2")]), element.text("Home")], ""),
         ]),
         html.h1([class("text-2xl my-5")], [element.text("Joining game...")]),
       ])
     NotInRoom(_, Play(None), _, _) ->
       html.div([], [
-        html.nav([class("flex items-center")], [
-          link("/", [element.text("Home")], ""),
+        html.nav([class("flex items-center bg-emerald-100 text-green-900")], [
+          link("/", [icon.home([class("mr-2")]), element.text("Home")], ""),
         ]),
-        html.h1([class("text-2xl my-5")], [element.text("Join game")]),
+        html.h1([class("text-2xl my-5 mx-4")], [element.text("Join game")]),
       ])
     InRoom(_uri, _, room_code, _, _) ->
       html.div([class("flex bg-green-700 text-gray-100")], [
@@ -684,33 +685,49 @@ fn content(model: Model) {
           element.text("A game about preferences best played with friends."),
         ]),
         html.div([class("flex flex-col items-center")], [
-          button.button(
-            [event.on_click(StartGame), button.success(), class("w-36")],
+          html.button(
+            [
+              event.on_click(StartGame),
+              button.success(),
+              class(
+                "w-36 p-2 bg-green-700 text-white rounded hover:bg-green-600",
+              ),
+            ],
             [element.text("Start new game")],
           ),
-          link("/play", [element.text("Join a game")], "w-36"),
+          link(
+            "/play",
+            [element.text("Join a game")],
+            "w-36 text-white bg-sky-600 rounded hover:bg-sky-500",
+          ),
         ]),
       ])
     NotInRoom(_, _, _, Some(err)) -> element.text(err)
     NotInRoom(_, Play(Some(room_code)), _, None) ->
       element.text("Joining room " <> room_code <> "...")
     NotInRoom(_, Play(None), room_code_input, None) ->
-      html.form([event.on_submit(JoinGame), class("flex flex-col m-4")], [
-        html.label([attribute.for("room-code-input")], [
-          element.text("Enter game code:"),
-        ]),
-        input.input([
-          attribute.id("room-code-input"),
-          attribute.placeholder("ABCD"),
-          attribute.type_("text"),
-          class(
-            "my-2 p-2 border-2 rounded placeholder:text-slate-300 placeholder:tracking-widest font-mono",
+      html.form(
+        [event.on_submit(JoinGame), class("flex flex-wrap items-center mx-4")],
+        [
+          html.label(
+            [attribute.for("room-code-input"), class("flex-initial mr-2 mb-2")],
+            [element.text("Enter game code:")],
           ),
-          event.on_input(UpdateRoomCode),
-          attribute.value(room_code_input),
-        ]),
-        button.button([attribute.type_("submit")], [element.text("Join")]),
-      ])
+          html.div([], [
+            input.input([
+              attribute.id("room-code-input"),
+              attribute.placeholder("ABCD"),
+              attribute.type_("text"),
+              class(
+                "mr-2 p-2 w-16 border-2 rounded placeholder:text-slate-300 placeholder:tracking-widest font-mono placeholder:opacity-50 tracking-widest",
+              ),
+              event.on_input(UpdateRoomCode),
+              attribute.value(room_code_input),
+            ]),
+            button.button([attribute.type_("submit")], [element.text("Join")]),
+          ]),
+        ],
+      )
     InRoom(
       _uri,
       _player_id,
@@ -770,7 +787,7 @@ fn content(model: Model) {
       _player_name,
       Some(ActiveGame(_ws, Some(room), None, add_word_input)),
     ) ->
-      html.div([class("flex flex-col m-4")], [
+      html.div([class("flex flex-col p-4 max-h-full overflow-y-auto")], [
         html.div([], [
           html.h2([class("text-lg")], [element.text("Players:")]),
           html.ul(
@@ -861,7 +878,6 @@ fn content(model: Model) {
             }),
           ),
         ]),
-        button.button([event.on_click(StartRound)], [element.text("Start game")]),
       ])
     InRoom(_uri, _player_id, _room_code, player_name, None) ->
       html.div([class("flex flex-col m-4")], [
@@ -877,7 +893,14 @@ fn content(model: Model) {
               "my-2 p-2 border-2 rounded placeholder:text-slate-300 placeholder:opacity-50",
             ),
           ]),
-          button.button([attribute.type_("submit")], [element.text("Set name")]),
+          html.button(
+            [
+              attribute.type_("submit"),
+              attribute.disabled(string.trim(player_name) == ""),
+              class("p-2 text-lime-900 bg-emerald-100 hover:bg-emerald-200 rounded disabled:bg-emerald-100 disabled:text-lime-700 disabled:opacity-50"),
+            ],
+            [element.text("Join room")],
+          ),
         ]),
       ])
     InRoom(
@@ -895,6 +918,28 @@ fn content(model: Model) {
       ])
     }
     NotInRoom(_, NotFound, _, _) | _ -> element.text("Page not found")
+  }
+}
+
+fn footer(model: Model) {
+  case model {
+    InRoom(
+      _uri,
+      _player_id,
+      _room_code,
+      _player_name,
+      Some(ActiveGame(_ws, Some(_room), None, _add_word_input)),
+    ) ->
+      html.button(
+        [
+          event.on_click(StartRound),
+          class(
+            "mt-auto py-2 border-t-2 border-green-400 bg-green-50 text-green-900 hover:bg-green-100",
+          ),
+        ],
+        [element.text("Start game 🚀")],
+      )
+    _ -> html.div([], [])
   }
 }
 
