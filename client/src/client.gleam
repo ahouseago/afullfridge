@@ -12,8 +12,6 @@ import lustre/effect
 import lustre/element
 import lustre/element/html
 import lustre/event
-import lustre/ui
-import lustre/ui/button
 import lustre/ui/icon
 import lustre/ui/input
 import lustre/ui/util/styles
@@ -632,14 +630,14 @@ fn header(model: Model) {
       ])
     NotInRoom(_, Play(Some(_)), _, _) ->
       html.div([], [
-        html.nav([class("flex items-center bg-emerald-100 text-green-900")], [
+        html.nav([class("flex items-center bg-sky-100 text-blue-900")], [
           link("/", [icon.home([class("mr-2")]), element.text("Home")], ""),
         ]),
         html.h1([class("text-2xl my-5")], [element.text("Joining game...")]),
       ])
     NotInRoom(_, Play(None), _, _) ->
       html.div([], [
-        html.nav([class("flex items-center bg-emerald-100 text-green-900")], [
+        html.nav([class("flex items-center bg-sky-100 text-blue-900")], [
           link("/", [icon.home([class("mr-2")]), element.text("Home")], ""),
         ]),
         html.h1([class("text-2xl my-5 mx-4")], [element.text("Join game")]),
@@ -688,7 +686,6 @@ fn content(model: Model) {
           html.button(
             [
               event.on_click(StartGame),
-              button.success(),
               class(
                 "w-36 p-2 bg-green-700 text-white rounded hover:bg-green-600",
               ),
@@ -713,8 +710,8 @@ fn content(model: Model) {
             [attribute.for("room-code-input"), class("flex-initial mr-2 mb-2")],
             [element.text("Enter game code:")],
           ),
-          html.div([], [
-            input.input([
+          html.div([class("mb-2")], [
+            html.input([
               attribute.id("room-code-input"),
               attribute.placeholder("ABCD"),
               attribute.type_("text"),
@@ -724,57 +721,93 @@ fn content(model: Model) {
               event.on_input(UpdateRoomCode),
               attribute.value(room_code_input),
             ]),
-            button.button([attribute.type_("submit")], [element.text("Join")]),
+            html.button(
+              [
+                attribute.type_("submit"),
+                attribute.disabled(
+                  string.length(string.trim(room_code_input)) != 4,
+                ),
+                class(
+                  "rounded px-3 py-2 border bg-sky-600 hover:bg-sky-500 text-white hover:shadow-md disabled:opacity-50 disabled:bg-sky-600 disabled:shadow-none",
+                ),
+              ],
+              [element.text("Join")],
+            ),
           ]),
         ],
       )
     InRoom(
       _uri,
-      _player_id,
+      player_id,
       _room_code,
       _player_name,
       Some(ActiveGame(_ws, Some(room), Some(round_state), _add_word_input)),
     ) ->
       html.div([class("flex flex-col m-4")], [
-        display_players(room.players, round_state.round.leading_player_id),
-        ui.prose([], [
-          html.h2([], [element.text("Words:")]),
-          ui.group(
-            [],
+        html.div([], [
+          html.h2([class("text-lg mb-2")], [
+            element.text(choosing_player_heading(
+              room.players,
+              player_id,
+              round_state.round.leading_player_id,
+            )),
+          ]),
+          html.div(
+            [class("flex flex-col flex-wrap")],
             list.map(round_state.round.words, fn(word) {
-              ui.button([event.on_click(AddNextPreferedWord(word))], [
-                element.text(word),
-              ])
+              let bg_colour = case
+                list.find(round_state.ordered_words, fn(w) { w == word })
+              {
+                Ok(_) -> "bg-green-50"
+                Error(_) -> ""
+              }
+              html.button(
+                [
+                  event.on_click(AddNextPreferedWord(word)),
+                  class(
+                    "p-2 m-1 rounded border border-slate-200 hover:shadow-md "
+                    <> bg_colour,
+                  ),
+                ],
+                [element.text(word)],
+              )
             }),
           ),
           html.ol(
-            [],
+            [class("list-decimal list-inside p-3")],
             list.reverse(round_state.ordered_words)
               |> list.map(fn(word) { html.li([], [element.text(word)]) }),
           ),
-          ui.button(
-            [
-              event.on_click(ClearOrderedWords),
-              attribute.disabled(round_state.ordered_words == []),
-              button.error(),
-            ],
-            [element.text("Clear")],
-          ),
-          ui.button(
-            [
-              event.on_click(SubmitOrderedWords),
-              attribute.disabled(
-                list.length(round_state.ordered_words)
-                != list.length(round_state.round.words)
-                || round_state.submitted,
-              ),
-              button.solid(),
-            ],
-            [element.text("Submit")],
-          ),
+          html.div([class("flex items-center justify-between")], [
+            html.button(
+              [
+                event.on_click(ClearOrderedWords),
+                attribute.disabled(round_state.ordered_words == []),
+                class(
+                  "py-2 px-3 rounded m-2 bg-red-100 text-red-800 hover:shadow-md hover:bg-red-200 disabled:bg-red-100 disabled:opacity-50 disabled:shadow-none",
+                ),
+              ],
+              [element.text("Clear"), icon.cross([class("ml-2")])],
+            ),
+            html.button(
+              [
+                event.on_click(SubmitOrderedWords),
+                attribute.disabled(
+                  list.length(round_state.ordered_words)
+                  != list.length(round_state.round.words)
+                  || round_state.submitted,
+                ),
+                class(
+                  "py-2 px-3 m-2 rounded bg-green-100 text-green-900 hover:shadow-md hover:bg-green-200 disabled:green-50 disabled:opacity-50 disabled:shadow-none",
+                ),
+              ],
+              [element.text("Submit"), icon.check([class("ml-2")])],
+            ),
+          ]),
         ]),
         html.br([]),
         display_scores(room.finished_rounds),
+        display_players(room.players, round_state.round.leading_player_id),
         html.br([]),
         ..list.reverse(room.finished_rounds)
         |> list.index_map(display_finished_round)
@@ -863,12 +896,11 @@ fn content(model: Model) {
                 ],
                 [
                   element.text(word),
-                  ui.button(
+                  html.button(
                     [
-                      button.error(),
                       event.on_click(RemoveWord(word)),
                       class(
-                        "bg-red-50 border border-solid border-red-100 py-1 px-2",
+                        "rounded text-red-800 bg-red-50 border border-solid border-red-100 py-1 px-2 hover:bg-red-100",
                       ),
                     ],
                     [icon.cross([])],
@@ -897,7 +929,9 @@ fn content(model: Model) {
             [
               attribute.type_("submit"),
               attribute.disabled(string.trim(player_name) == ""),
-              class("p-2 text-lime-900 bg-emerald-100 hover:bg-emerald-200 rounded disabled:bg-emerald-100 disabled:text-lime-700 disabled:opacity-50"),
+              class(
+                "p-2 text-lime-900 bg-emerald-100 hover:bg-emerald-200 rounded disabled:bg-emerald-100 disabled:text-lime-700 disabled:opacity-50",
+              ),
             ],
             [element.text("Join room")],
           ),
@@ -941,6 +975,21 @@ fn footer(model: Model) {
       )
     _ -> html.div([], [])
   }
+}
+
+fn choosing_player_heading(
+  players: List(shared.Player),
+  self_player_id: shared.PlayerId,
+  leading_player_id: shared.PlayerId,
+) {
+  list.find(players, fn(player) { player.id == leading_player_id })
+  |> result.map(fn(player) {
+    case player.id == self_player_id {
+      False -> "You are guessing " <> player.name <> "'s order of preference"
+      True -> "It's your turn! Select the things below in your preference order"
+    }
+  })
+  |> result.unwrap("Select the options below in order")
 }
 
 fn display_players(
@@ -993,7 +1042,7 @@ fn display_scores(finished_rounds: List(shared.FinishedRound)) {
     })
     |> list.sort(fn(a, b) { int.compare({ b.1 }.score, { a.1 }.score) })
 
-  ui.prose([], [
+  html.div([], [
     html.h2([], [element.text("Scores")]),
     html.ol(
       [],
@@ -1019,7 +1068,7 @@ fn display_finished_round(
     }
   }
 
-  ui.prose([class("border-solid border-2")], [
+  html.div([class("border-solid border-2")], [
     html.h2([], [
       element.text("Round " <> int.to_string(round_index + 1) <> " scores:"),
     ]),
