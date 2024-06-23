@@ -244,6 +244,9 @@ var Some = class extends CustomType {
 };
 var None = class extends CustomType {
 };
+function is_some(option) {
+  return !isEqual(option, new None());
+}
 function to_result(option, e) {
   if (option instanceof Some) {
     let a2 = option[0];
@@ -3007,6 +3010,9 @@ function namespaced(namespace2, tag2, attrs, children) {
 function text(content2) {
   return new Text(content2);
 }
+function none2() {
+  return new Text("");
+}
 
 // build/dev/javascript/lustre/lustre/internals/runtime.mjs
 var Debug = class extends CustomType {
@@ -5266,7 +5272,7 @@ function handle_ws_message(model, msg) {
               })()
             })
           ),
-          display_state
+          new DisplayState(new Scores(), false)
         ),
         none()
       ];
@@ -5981,10 +5987,20 @@ function footer(model) {
       toList([
         on_click(new StartRound2()),
         class$(
-          "mt-auto py-2 border-t-2 border-green-400 bg-green-50 text-green-900 hover:bg-green-100"
+          "mt-auto py-3 border-t-2 border-green-400 bg-green-50 text-green-900 hover:bg-green-100"
         )
       ]),
       toList([text("Start game \u{1F680}")])
+    );
+  } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].room instanceof Some && model.active_game[0].round instanceof Some && model.display_state instanceof DisplayState && model.display_state.view instanceof Scores) {
+    return button(
+      toList([
+        on_click(new SetView(new Round2())),
+        class$(
+          "mt-auto py-3 border-t-2 border-green-400 bg-green-50 text-green-900 hover:bg-green-100"
+        )
+      ]),
+      toList([text("Back to game")])
     );
   } else {
     return div(toList([]), toList([]));
@@ -6056,39 +6072,44 @@ function display_players(players, leading_player_id, finished_rounds) {
   );
   return div(
     toList([class$("flex flex-col")]),
-    map2(
-      players,
-      (player) => {
-        let score = (() => {
-          let _pipe = find(
-            scores,
-            (score2) => {
-              return score2[0] === player.id;
+    (() => {
+      let _pipe = reverse(players);
+      return map2(
+        _pipe,
+        (player) => {
+          let score = (() => {
+            let _pipe$1 = find(
+              scores,
+              (score2) => {
+                return score2[0] === player.id;
+              }
+            );
+            let _pipe$2 = map3(_pipe$1, (s) => {
+              return s[1].score;
+            });
+            let _pipe$3 = unwrap2(_pipe$2, 0);
+            return to_string2(_pipe$3);
+          })();
+          let extra_class = (() => {
+            let $ = player.id === leading_player_id;
+            if ($) {
+              return " border border-gray-200 shadow";
+            } else {
+              return "";
             }
+          })();
+          return div(
+            toList([
+              class$("my-1 p-2 rounded flex justify-between" + extra_class)
+            ]),
+            toList([
+              text(player.name),
+              strong(toList([]), toList([text(score)]))
+            ])
           );
-          let _pipe$1 = map3(_pipe, (s) => {
-            return s[1].score;
-          });
-          let _pipe$2 = unwrap2(_pipe$1, 0);
-          return to_string2(_pipe$2);
-        })();
-        let extra_class = (() => {
-          let $ = player.id === leading_player_id;
-          if ($) {
-            return " border border-gray-200 shadow";
-          } else {
-            return "";
-          }
-        })();
-        return div(
-          toList([class$("my-1 p-2 rounded flex justify-between" + extra_class)]),
-          toList([
-            text(player.name),
-            strong(toList([]), toList([text(score)]))
-          ])
-        );
-      }
-    )
+        }
+      );
+    })()
   );
 }
 function display_finished_round(finished_round, round_index) {
@@ -6162,31 +6183,37 @@ function display_finished_round(finished_round, round_index) {
     ])
   );
 }
-function display_menu(current_view) {
+function display_menu(current_view, game_started) {
   return div(
     toList([class$("my-4 mx-2 max-w-90 flex flex-col items-center")]),
     toList([
       button(
         toList([
           on_click(new SetView(new Round2())),
-          disabled(isEqual(current_view, new Round2())),
-          class$("underline p-2 disabled:no-underline")
+          disabled(
+            isEqual(current_view, new Round2()) || !game_started
+          ),
+          class$("underline p-2 disabled:no-underline disabled:text-slate-600")
         ]),
         toList([text("Current round")])
       ),
       button(
         toList([
           on_click(new SetView(new Scores())),
-          disabled(isEqual(current_view, new Scores())),
-          class$("underline p-2 disabled:no-underline")
+          disabled(
+            isEqual(current_view, new Scores()) || !game_started
+          ),
+          class$("underline p-2 disabled:no-underline disabled:text-slate-600")
         ]),
         toList([text("View scores")])
       ),
       button(
         toList([
           on_click(new SetView(new WordList2())),
-          disabled(isEqual(current_view, new WordList2())),
-          class$("underline p-2 disabled:no-underline")
+          disabled(
+            isEqual(current_view, new WordList2()) || !game_started
+          ),
+          class$("underline p-2 disabled:no-underline disabled:text-slate-600")
         ]),
         toList([text("Update list")])
       ),
@@ -6322,7 +6349,7 @@ function content(model) {
             link2(
               "/play",
               toList([text("Join a game")]),
-              "w-36 text-white bg-sky-600 rounded hover:bg-sky-500"
+              "w-36 text-white bg-sky-600 rounded hover:bg-sky-500 no-underline"
             )
           ])
         )
@@ -6387,10 +6414,10 @@ function content(model) {
     let room = model.active_game[0].room[0];
     let round_state = model.active_game[0].round[0];
     return div(
-      toList([class$("flex flex-col m-4")]),
+      toList([class$("flex flex-col max-w-2xl mx-auto")]),
       toList([
         div(
-          toList([]),
+          toList([class$("m-4")]),
           toList([
             h2(
               toList([class$("text-lg mb-2")]),
@@ -6453,7 +6480,7 @@ function content(model) {
                   toList([
                     on_click(new ClearOrderedWords()),
                     disabled(
-                      isEqual(round_state.ordered_words, toList([]))
+                      isEqual(round_state.ordered_words, toList([])) || round_state.submitted
                     ),
                     class$(
                       "py-2 px-3 rounded m-2 bg-red-100 text-red-800 hover:shadow-md hover:bg-red-200 disabled:bg-red-100 disabled:opacity-50 disabled:shadow-none"
@@ -6482,7 +6509,18 @@ function content(model) {
                   ])
                 )
               ])
-            )
+            ),
+            (() => {
+              let $ = round_state.submitted;
+              if ($) {
+                return p(
+                  toList([]),
+                  toList([text("Waiting for other players...")])
+                );
+              } else {
+                return none2();
+              }
+            })()
           ])
         )
       ])
@@ -6491,51 +6529,57 @@ function content(model) {
     let room = model.active_game[0].room[0];
     let round_state = model.active_game[0].round[0];
     return div(
-      toList([class$("flex flex-col m-4")]),
-      prepend(
-        display_players(
-          room.players,
-          round_state.round.leading_player_id,
-          room.finished_rounds
-        ),
-        prepend(
-          hr(toList([class$("my-4 text-gray-400")])),
+      toList([class$("max-w-2xl mx-auto")]),
+      toList([
+        div(
+          toList([class$("flex flex-col m-4")]),
           prepend(
-            h2(
-              toList([class$("text-2xl mt-1 mb-3 font-bold")]),
-              toList([
-                text("Previous rounds"),
-                span(
-                  toList([class$("font-normal")]),
-                  toList([text(" (latest first)")])
-                )
-              ])
+            display_players(
+              room.players,
+              round_state.round.leading_player_id,
+              room.finished_rounds
             ),
-            (() => {
-              let _pipe = reverse(room.finished_rounds);
-              let _pipe$1 = index_map(_pipe, display_finished_round);
-              return reverse(_pipe$1);
-            })()
+            prepend(
+              hr(toList([class$("my-4 text-gray-400")])),
+              prepend(
+                h2(
+                  toList([class$("text-2xl mt-1 mb-3 font-bold")]),
+                  toList([
+                    text("Previous rounds"),
+                    span(
+                      toList([class$("font-normal")]),
+                      toList([text(" (latest first)")])
+                    )
+                  ])
+                ),
+                (() => {
+                  let _pipe = reverse(room.finished_rounds);
+                  let _pipe$1 = index_map(_pipe, display_finished_round);
+                  return reverse(_pipe$1);
+                })()
+              )
+            )
           )
         )
-      )
+      ])
     );
   } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].room instanceof Some && model.active_game[0].round instanceof Some && model.display_state instanceof DisplayState && model.display_state.view instanceof WordList2 && !model.display_state.menu_open) {
     let room = model.active_game[0].room[0];
     let add_word_input = model.active_game[0].add_word_input;
     return div(
-      toList([class$("flex flex-col p-4 max-h-full overflow-y-auto")]),
+      toList([class$("flex flex-col p-4 max-w-2xl mx-auto")]),
       display_full_word_list(room, add_word_input)
     );
-  } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].room instanceof Some && model.active_game[0].round instanceof Some && model.display_state instanceof DisplayState && model.display_state.menu_open) {
+  } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].room instanceof Some && model.display_state instanceof DisplayState && model.display_state.menu_open) {
+    let round_state = model.active_game[0].round;
     let view$1 = model.display_state.view;
-    return display_menu(view$1);
+    return display_menu(view$1, is_some(round_state));
   } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].room instanceof Some && model.active_game[0].round instanceof None) {
     let player_id = model.player_id;
     let room = model.active_game[0].room[0];
     let add_word_input = model.active_game[0].add_word_input;
     return div(
-      toList([class$("flex flex-col p-4 max-h-full overflow-y-auto")]),
+      toList([class$("flex flex-col p-4 max-w-2xl mx-auto")]),
       prepend(
         div(
           toList([]),
@@ -6546,33 +6590,36 @@ function content(model) {
             ),
             ul(
               toList([class$("ml-3")]),
-              map2(
-                room.players,
-                (player) => {
-                  let display = (() => {
-                    let _pipe = (() => {
-                      let $ = player.name;
-                      let $1 = player.id;
-                      if ($ === "" && $1 === player_id) {
-                        let id2 = $1;
-                        return id2 + " (you)";
-                      } else if ($1 === player_id) {
-                        let name = $;
-                        let id2 = $1;
-                        return name + " (you)";
-                      } else if ($ === "") {
-                        let id2 = $1;
-                        return id2;
-                      } else {
-                        let name = $;
-                        return name;
-                      }
+              (() => {
+                let _pipe = reverse(room.players);
+                return map2(
+                  _pipe,
+                  (player) => {
+                    let display = (() => {
+                      let _pipe$1 = (() => {
+                        let $ = player.name;
+                        let $1 = player.id;
+                        if ($ === "" && $1 === player_id) {
+                          let id2 = $1;
+                          return id2 + " (you)";
+                        } else if ($1 === player_id) {
+                          let name = $;
+                          let id2 = $1;
+                          return name + " (you)";
+                        } else if ($ === "") {
+                          let id2 = $1;
+                          return id2;
+                        } else {
+                          let name = $;
+                          return name;
+                        }
+                      })();
+                      return text(_pipe$1);
                     })();
-                    return text(_pipe);
-                  })();
-                  return li(toList([]), toList([display]));
-                }
-              )
+                    return li(toList([]), toList([display]));
+                  }
+                );
+              })()
             )
           ])
         ),
@@ -6596,7 +6643,7 @@ function content(model) {
   } else if (model instanceof InRoom && model.active_game instanceof None) {
     let player_name = model.player_name;
     return div(
-      toList([class$("flex flex-col m-4")]),
+      toList([class$("flex flex-col m-4 max-w-2xl mx-auto")]),
       toList([
         form(
           toList([
@@ -6673,7 +6720,14 @@ function view(model) {
       ),
       div(
         toList([class$("flex flex-col h-svh max-h-svh")]),
-        toList([header(model), content(model), footer(model)])
+        toList([
+          header(model),
+          div(
+            toList([class$("max-h-full overflow-y-auto")]),
+            toList([content(model)])
+          ),
+          footer(model)
+        ])
       )
     ])
   );
