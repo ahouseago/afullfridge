@@ -32,7 +32,7 @@ const random_words = [
   "Spring", "Autumn", "Swings", "Metal music", "Rock music", "Classical music",
   "Pop music", "Pie", "Films", "Books", "Flying", "Aeroplanes", "Birthdays",
   "Watches", "Churches", "Islands", "Watching people's reactions", "Trains",
-  "Scarfs", "Snakes", "Spiders", "Astronomy", "Chess", "Backgammon",
+  "Scarves", "Snakes", "Spiders", "Astronomy", "Chess", "Backgammon",
   "Programming", "Computers", "Keyboards", "Family", "Frogs", "Mountaineering",
   "Vaccines", "Justice", "World peace", "Typewriters",
   "The sound of someone mowing their lawn nearby",
