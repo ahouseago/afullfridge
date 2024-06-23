@@ -475,7 +475,7 @@ fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
             shared.PlayersInRoom(room.players),
           )
           let room_state = RoomState(..room_state, room: room)
-          Ok(dict.insert(state.rooms, room.room_code, room_state))
+          Ok(dict.insert(state.rooms, room_state.room.room_code, room_state))
         })
         |> result.unwrap(state.rooms)
       actor.continue(
@@ -776,16 +776,28 @@ fn score_round(
   scoring_method: shared.ScoringMethod,
   round: InProgressRound,
 ) -> List(#(shared.PlayerId, Int)) {
-  let assert [correct_word_list] =
+  let correct_word_list =
     list.filter(round.submitted_word_lists, fn(word_list) {
       word_list.0 == round.leading_player_id
     })
     |> list.map(fn(player_with_preferences) { player_with_preferences.1 })
+    |> list.first
 
-  case scoring_method {
-    shared.ExactMatch -> exact_match_scores(round, correct_word_list)
-    shared.EqualPositions -> equal_position_scores(round, correct_word_list)
+  case scoring_method, correct_word_list {
+    shared.ExactMatch, Ok(correct_word_list) ->
+      exact_match_scores(round, correct_word_list)
+    shared.EqualPositions, Ok(correct_word_list) ->
+      equal_position_scores(round, correct_word_list)
+    _, Error(_) -> no_score(round)
   }
+}
+
+// This is used when the leading player has left before submitting a word list:
+// nobody can score.
+fn no_score(round: InProgressRound) -> List(#(shared.PlayerId, Int)) {
+  list.fold(round.submitted_word_lists, [], fn(scores, word_list) {
+    [#(word_list.0, 0), ..scores]
+  })
 }
 
 fn exact_match_scores(
