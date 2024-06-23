@@ -5289,9 +5289,19 @@ function handle_ws_message(model, msg) {
 }
 function start_game(uri) {
   let host = uri.host;
+  let port = uri.port;
   let host$1 = unwrap(host, "localhost");
+  let port$1 = (() => {
+    let _pipe = map(
+      port,
+      (port2) => {
+        return ":" + to_string2(port2);
+      }
+    );
+    return unwrap(_pipe, "");
+  })();
   return get2(
-    "http://" + host$1 + ":3000/createroom",
+    "http://" + host$1 + port$1 + "/createroom",
     expect_json(
       decode_http_response_json,
       (var0) => {
@@ -5302,9 +5312,19 @@ function start_game(uri) {
 }
 function join_game(uri, room_code) {
   let host = uri.host;
+  let port = uri.port;
   let host$1 = unwrap(host, "localhost");
+  let port$1 = (() => {
+    let _pipe = map(
+      port,
+      (port2) => {
+        return ":" + to_string2(port2);
+      }
+    );
+    return unwrap(_pipe, "");
+  })();
   return post(
-    "http://" + host$1 + ":3000/joinroom",
+    "http://" + host$1 + port$1 + "/joinroom",
     encode_http_request(new JoinRoomRequest(room_code)),
     expect_json(
       decode_http_response_json,
@@ -5477,11 +5497,21 @@ function update2(model, msg) {
       );
     })();
     let host = uri.host;
+    let port = uri.port;
     let host$1 = unwrap(host, "localhost");
+    let port$1 = (() => {
+      let _pipe = map(
+        port,
+        (port2) => {
+          return ":" + to_string2(port2);
+        }
+      );
+      return unwrap(_pipe, "");
+    })();
     return [
       model,
       init2(
-        "ws://" + host$1 + ":3000/ws/" + player_id + "/" + player_name,
+        "ws://" + host$1 + port$1 + "/ws/" + player_id + "/" + player_name,
         (var0) => {
           return new WebSocketEvent(var0);
         }
@@ -5498,7 +5528,7 @@ function update2(model, msg) {
       throw makeError(
         "panic",
         "client",
-        320,
+        325,
         "update",
         "panic expression evaluated",
         {}
@@ -5766,7 +5796,17 @@ function init4(_) {
                     getItem(local_storage, "room_code"),
                     (stored_room_code) => {
                       let host = uri$1.host;
+                      let port = uri$1.port;
                       let host$1 = unwrap(host, "localhost");
+                      let port$1 = (() => {
+                        let _pipe$1 = map(
+                          port,
+                          (port2) => {
+                            return ":" + to_string2(port2);
+                          }
+                        );
+                        return unwrap(_pipe$1, "");
+                      })();
                       let $1 = room_code === stored_room_code;
                       if ($1) {
                         return new Ok(
@@ -5774,7 +5814,7 @@ function init4(_) {
                             id2,
                             name,
                             init2(
-                              "ws://" + host$1 + ":3000/ws/" + id2 + "/" + name,
+                              "ws://" + host$1 + port$1 + "/ws/" + id2 + "/" + name,
                               (var0) => {
                                 return new WebSocketEvent(var0);
                               }
@@ -6715,7 +6755,7 @@ function view(model) {
         toList([
           rel("stylesheet"),
           type_("text/css"),
-          href("/priv/static/client.css")
+          href("/client.css")
         ])
       ),
       div(

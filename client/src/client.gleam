@@ -133,16 +133,18 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
             local_storage,
             "room_code",
           ))
-          let uri.Uri(_, _, host, _, _, _, _) = uri
+          let uri.Uri(_, _, host, port, _, _, _) = uri
           let host = option.unwrap(host, "localhost")
-
+          let port =
+            option.map(port, fn(port) { ":" <> int.to_string(port) })
+            |> option.unwrap("")
           case room_code == stored_room_code {
             True ->
               Ok(#(
                 id,
                 name,
                 ws.init(
-                  "ws://" <> host <> ":3000/ws/" <> id <> "/" <> name,
+                  "wss://" <> host <> port <> "/ws/" <> id <> "/" <> name,
                   WebSocketEvent,
                 ),
               ))
@@ -303,12 +305,15 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
             storage.set_item(local_storage, "room_code", room_code),
           ])
         })
-      let uri.Uri(_, _, host, _, _, _, _) = uri
+      let uri.Uri(_, _, host, port, _, _, _) = uri
       let host = option.unwrap(host, "localhost")
+      let port =
+        option.map(port, fn(port) { ":" <> int.to_string(port) })
+        |> option.unwrap("")
       #(
         model,
         ws.init(
-          "ws://" <> host <> ":3000/ws/" <> player_id <> "/" <> player_name,
+          "wss://" <> host <> port <> "/ws/" <> player_id <> "/" <> player_name,
           WebSocketEvent,
         ),
       )
@@ -654,19 +659,25 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
 }
 
 fn start_game(uri: uri.Uri) {
-  let uri.Uri(_, _, host, _, _, _, _) = uri
+  let uri.Uri(_, _, host, port, _, _, _) = uri
   let host = option.unwrap(host, "localhost")
+  let port =
+    option.map(port, fn(port) { ":" <> int.to_string(port) })
+    |> option.unwrap("")
   lustre_http.get(
-    "http://" <> host <> ":3000/createroom",
+    "https://" <> host <> port <> "/createroom",
     lustre_http.expect_json(shared.decode_http_response_json, JoinedRoom),
   )
 }
 
 fn join_game(uri, room_code) {
-  let uri.Uri(_, _, host, _, _, _, _) = uri
+  let uri.Uri(_, _, host, port, _, _, _) = uri
   let host = option.unwrap(host, "localhost")
+  let port =
+    option.map(port, fn(port) { ":" <> int.to_string(port) })
+    |> option.unwrap("")
   lustre_http.post(
-    "http://" <> host <> ":3000/joinroom",
+    "https://" <> host <> port <> "/joinroom",
     shared.encode_http_request(shared.JoinRoomRequest(room_code)),
     lustre_http.expect_json(shared.decode_http_response_json, JoinedRoom),
   )
@@ -701,7 +712,7 @@ pub fn view(model: Model) -> element.Element(Msg) {
     html.link([
       attribute.rel("stylesheet"),
       attribute.type_("text/css"),
-      attribute.href("/priv/static/client.css"),
+      attribute.href("/client.css"),
     ]),
     html.div([class("flex flex-col h-svh max-h-svh")], [
       header(model),
