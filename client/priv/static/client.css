@@ -658,16 +658,16 @@ video {
   display: flex;
 }
 
-.h-svh {
-  height: 100svh;
+.h-dvh {
+  height: 100dvh;
+}
+
+.max-h-dvh {
+  max-height: 100dvh;
 }
 
 .max-h-full {
   max-height: 100%;
-}
-
-.max-h-svh {
-  max-height: 100svh;
 }
 
 .w-16 {

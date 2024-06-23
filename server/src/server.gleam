@@ -224,6 +224,22 @@ pub fn main() {
                 |> response.set_body(mist.Bytes(bytes_builder.new()))
               })
 
+            ["lustre_ui.css"] ->
+              mist.send_file(
+                priv <> "/static/lustre_ui.css",
+                offset: 0,
+                limit: None,
+              )
+              |> result.map(fn(file) {
+                response.new(200)
+                |> response.prepend_header("content-type", "text/css")
+                |> response.set_body(file)
+              })
+              |> result.lazy_unwrap(fn() {
+                response.new(404)
+                |> response.set_body(mist.Bytes(bytes_builder.new()))
+              })
+
             ["ws", player_id, player_name] ->
               mist.websocket(
                 request: req,
@@ -247,6 +263,14 @@ pub fn main() {
                   html.head([], [
                     html.meta([attribute.attribute("charset", "UTF-8")]),
                     html.title([], "A Full Fridge"),
+                    html.link([
+                      attribute.rel("stylesheet"),
+                      attribute.href("/lustre_ui.css"),
+                    ]),
+                    html.link([
+                      attribute.rel("stylesheet"),
+                      attribute.href("/client.css"),
+                    ]),
                     html.script(
                       [attribute.type_("module"), attribute.src("/client.mjs")],
                       "",

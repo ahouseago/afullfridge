@@ -14,7 +14,6 @@ import lustre/element/html
 import lustre/event
 import lustre/ui/icon
 import lustre/ui/input
-import lustre/ui/util/styles
 import lustre_http
 import lustre_websocket as ws
 import modem
@@ -706,15 +705,7 @@ fn on_url_change(uri: uri.Uri) -> Msg {
 
 pub fn view(model: Model) -> element.Element(Msg) {
   html.div([], [
-    // Lustre UI style sheet
-    styles.elements(),
-    // Tailwind style sheet -- must be imported after the Lustre UI one
-    html.link([
-      attribute.rel("stylesheet"),
-      attribute.type_("text/css"),
-      attribute.href("/client.css"),
-    ]),
-    html.div([class("flex flex-col h-svh max-h-svh")], [
+    html.div([class("flex flex-col h-dvh max-h-dvh")], [
       header(model),
       html.div([class("max-h-full overflow-y-auto")], [content(model)]),
       footer(model),
