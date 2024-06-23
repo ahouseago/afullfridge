@@ -2939,6 +2939,9 @@ function for$(id2) {
 function href(uri) {
   return attribute("href", uri);
 }
+function rel(relationship) {
+  return attribute("rel", relationship);
+}
 
 // build/dev/javascript/lustre/lustre/element.mjs
 function element(tag2, attrs, children) {
@@ -3441,6 +3444,9 @@ function start3(app, selector, flags) {
 function text2(content2) {
   return text(content2);
 }
+function link(attrs) {
+  return element("link", attrs, toList([]));
+}
 function style(attrs, css) {
   return element("style", attrs, toList([text2(css)]));
 }
@@ -3458,6 +3464,9 @@ function nav(attrs, children) {
 }
 function div(attrs, children) {
   return element("div", attrs, children);
+}
+function hr(attrs) {
+  return element("hr", attrs, toList([]));
 }
 function li(attrs, children) {
   return element("li", attrs, children);
@@ -4193,6 +4202,12 @@ function icon(attrs, path2) {
         ])
       )
     ])
+  );
+}
+function plus(attrs) {
+  return icon(
+    attrs,
+    "M8 2.75C8 2.47386 7.77614 2.25 7.5 2.25C7.22386 2.25 7 2.47386 7 2.75V7H2.75C2.47386 7 2.25 7.22386 2.25 7.5C2.25 7.77614 2.47386 8 2.75 8H7V12.25C7 12.5261 7.22386 12.75 7.5 12.75C7.77614 12.75 8 12.5261 8 12.25V8H12.25C12.5261 8 12.75 7.77614 12.75 7.5C12.75 7.22386 12.5261 7 12.25 7H8V2.75Z"
   );
 }
 function cross(attrs) {
@@ -5710,7 +5725,7 @@ function init4(_) {
     ];
   }
 }
-function link(href2, content2, class_name) {
+function link2(href2, content2, class_name) {
   return a(
     toList([
       class$("p-2 underline border-solid rounded m-2 " + class_name),
@@ -5731,7 +5746,7 @@ function header(model) {
       toList([
         nav(
           toList([class$("flex items-center")]),
-          toList([link("/", toList([text("Home")]), "")])
+          toList([link2("/", toList([text("Home")]), "")])
         ),
         h1(
           toList([class$("text-2xl my-5")]),
@@ -5745,7 +5760,7 @@ function header(model) {
       toList([
         nav(
           toList([class$("flex items-center")]),
-          toList([link("/", toList([text("Home")]), "")])
+          toList([link2("/", toList([text("Home")]), "")])
         ),
         h1(
           toList([class$("text-2xl my-5")]),
@@ -5756,7 +5771,7 @@ function header(model) {
   } else if (model instanceof InRoom) {
     let room_code = model.room_code;
     return div(
-      toList([class$("flex bg-green-300")]),
+      toList([class$("flex bg-green-700 text-gray-100")]),
       toList([
         h1(
           toList([class$("text-xl my-5 mx-2")]),
@@ -5767,7 +5782,7 @@ function header(model) {
                 on_click(new CopyRoomCode()),
                 attribute("title", "Copy"),
                 class$(
-                  "mx-1 px-1 border-dashed border rounded-sm border-white hover:border-slate-500 hover:bg-gray-200 cursor-pointer"
+                  "mx-1 px-1 text-gray-100 border-dashed border-2 rounded-sm border-transparent hover:border-slate-500 hover:bg-green-200 hover:text-gray-800 cursor-pointer"
                 )
               ]),
               toList([text(room_code)])
@@ -5777,7 +5792,7 @@ function header(model) {
         nav(
           toList([class$("flex items-center")]),
           toList([
-            link(
+            link2(
               "/",
               toList([
                 exit(toList([class$("mr-2")])),
@@ -5795,7 +5810,7 @@ function header(model) {
       toList([
         nav(
           toList([class$("flex items-center")]),
-          toList([link("/", toList([text("Home")]), "")])
+          toList([link2("/", toList([text("Home")]), "")])
         ),
         h1(
           toList([class$("text-2xl my-5")]),
@@ -6007,7 +6022,7 @@ function content(model) {
               ]),
               toList([text("Start new game")])
             ),
-            link("/play", toList([text("Join a game")]), "w-36")
+            link2("/play", toList([text("Join a game")]), "w-36")
           ])
         )
       ])
@@ -6128,24 +6143,18 @@ function content(model) {
     let player_id = model.player_id;
     let room = model.active_game[0].room[0];
     let add_word_input = model.active_game[0].add_word_input;
-    return prose2(
+    return div(
       toList([class$("flex flex-col m-4")]),
       toList([
         div(
           toList([]),
           toList([
-            button2(
-              toList([on_click(new StartRound2())]),
-              toList([text("Start game")])
-            )
-          ])
-        ),
-        div(
-          toList([]),
-          toList([
-            h2(toList([]), toList([text("Players:")])),
+            h2(
+              toList([class$("text-lg")]),
+              toList([text("Players:")])
+            ),
             ul(
-              toList([]),
+              toList([class$("ml-3")]),
               map2(
                 room.players,
                 (player) => {
@@ -6176,55 +6185,97 @@ function content(model) {
             )
           ])
         ),
-        form(
-          toList([on_submit(new AddWord2())]),
+        hr(toList([class$("my-2 text-gray-300")])),
+        p(
+          toList([]),
           toList([
-            label(
-              toList([for$("add-word-input")]),
-              toList([text("Add to list")])
-            ),
-            input2(
-              toList([
-                id("add-word-input"),
-                type_("text"),
-                class$(
-                  "my-2 p-2 border-2 rounded placeholder:text-slate-300 placeholder:tracking-widest font-mono"
-                ),
-                on_input(
-                  (var0) => {
-                    return new UpdateAddWordInput(var0);
-                  }
-                ),
-                value(add_word_input)
-              ])
-            ),
-            button2(
-              toList([type_("submit")]),
-              toList([text("Add")])
+            text("Please add some things to the list. "),
+            text(
+              "Each round, 5 things will be picked at random from this list."
             )
           ])
         ),
-        button2(
-          toList([on_click(new AddRandomWord2())]),
-          toList([text("Add random word \u{1F3B2}")])
+        form(
+          toList([
+            on_submit(new AddWord2()),
+            class$("my-2 flex items-center flex-wrap")
+          ]),
+          toList([
+            label(
+              toList([for$("add-word-input"), class$("mr-2")]),
+              toList([text("Add to list")])
+            ),
+            div(
+              toList([class$("flex max-w-80 min-w-56 flex-auto")]),
+              toList([
+                input2(
+                  toList([
+                    id("add-word-input"),
+                    type_("text"),
+                    placeholder("A full fridge"),
+                    class$(
+                      "my-2 p-2 border-2 rounded placeholder:text-slate-300 placeholder:opacity-50 flex-auto w-24"
+                    ),
+                    on_input(
+                      (var0) => {
+                        return new UpdateAddWordInput(var0);
+                      }
+                    ),
+                    value(add_word_input)
+                  ])
+                ),
+                button(
+                  toList([
+                    type_("submit"),
+                    class$(
+                      "py-2 px-3 ml-2 bg-green-200 hover:bg-green-300 rounded flex-none self-center"
+                    )
+                  ]),
+                  toList([
+                    text("Add"),
+                    plus(toList([class$("ml-2")]))
+                  ])
+                )
+              ])
+            )
+          ])
+        ),
+        button(
+          toList([
+            on_click(new AddRandomWord2()),
+            class$(
+              "p-2 rounded border-solid border border-gray-200 hover:bg-emerald-50"
+            )
+          ]),
+          toList([text("Add random \u{1F3B2}")])
         ),
         div(
           toList([]),
           toList([
-            h2(toList([]), toList([text("List of words:")])),
+            h2(
+              toList([class$("text-lg my-2")]),
+              toList([text("List of words:")])
+            ),
             ul(
               toList([]),
               map2(
                 room.word_list,
                 (word) => {
                   return li(
-                    toList([]),
+                    toList([
+                      class$(
+                        "flex justify-between items-center hover:bg-slate-100 pl-3 my-1"
+                      )
+                    ]),
                     toList([
                       text(word),
                       button3(
                         toList([
                           error(),
-                          on_click(new RemoveWord2(word))
+                          on_click(new RemoveWord2(word)),
+                          class$(
+                            "bg-red-50 border border-solid border-red-100 py-1 px-2"
+                          )
                         ]),
                         toList([cross(toList([]))])
                       )
@@ -6234,6 +6285,10 @@ function content(model) {
               )
             )
           ])
+        ),
+        button2(
+          toList([on_click(new StartRound2())]),
+          toList([text("Start game")])
         )
       ])
     );
@@ -6301,7 +6356,18 @@ function view(model) {
   let content$1 = content(model);
   return div(
     toList([]),
-    toList([elements(), header(model), content$1])
+    toList([
+      elements(),
+      link(
+        toList([
+          rel("stylesheet"),
+          type_("text/css"),
+          href("/priv/static/client.css")
+        ])
+      ),
+      header(model),
+      content$1
+    ])
   );
 }
 function main() {

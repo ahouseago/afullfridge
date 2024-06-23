@@ -599,7 +599,18 @@ fn on_url_change(uri: uri.Uri) -> Msg {
 pub fn view(model: Model) -> element.Element(Msg) {
   let content = content(model)
 
-  html.div([], [styles.elements(), header(model), content])
+  html.div([], [
+    // Lustre UI style sheet
+    styles.elements(),
+    // Tailwind style sheet -- must be imported after the Lustre UI one
+    html.link([
+      attribute.rel("stylesheet"),
+      attribute.type_("text/css"),
+      attribute.href("/priv/static/client.css"),
+    ]),
+    header(model),
+    content,
+  ])
 }
 
 fn link(href, content, class_name) {
@@ -633,7 +644,7 @@ fn header(model: Model) {
         html.h1([class("text-2xl my-5")], [element.text("Join game")]),
       ])
     InRoom(_uri, _, room_code, _, _) ->
-      html.div([class("flex bg-green-300")], [
+      html.div([class("flex bg-green-700 text-gray-100")], [
         html.h1([class("text-xl my-5 mx-2")], [
           element.text("Game:"),
           html.code(
@@ -641,7 +652,7 @@ fn header(model: Model) {
               event.on_click(CopyRoomCode),
               attribute.attribute("title", "Copy"),
               class(
-                "mx-1 px-1 border-dashed border rounded-sm border-white hover:border-slate-500 hover:bg-gray-200 cursor-pointer",
+                "mx-1 px-1 text-gray-100 border-dashed border-2 rounded-sm border-transparent hover:border-slate-500 hover:bg-green-200 hover:text-gray-800 cursor-pointer",
               ),
             ],
             [element.text(room_code)],
@@ -759,16 +770,11 @@ fn content(model: Model) {
       _player_name,
       Some(ActiveGame(_ws, Some(room), None, add_word_input)),
     ) ->
-      ui.prose([class("flex flex-col m-4")], [
+      html.div([class("flex flex-col m-4")], [
         html.div([], [
-          button.button([event.on_click(StartRound)], [
-            element.text("Start game"),
-          ]),
-        ]),
-        html.div([], [
-          html.h2([], [element.text("Players:")]),
+          html.h2([class("text-lg")], [element.text("Players:")]),
           html.ul(
-            [],
+            [class("ml-3")],
             list.map(room.players, fn(player) {
               let display =
                 case player.name, player.id {
@@ -782,38 +788,80 @@ fn content(model: Model) {
             }),
           ),
         ]),
-        html.form([event.on_submit(AddWord)], [
-          html.label([attribute.for("add-word-input")], [
-            element.text("Add to list"),
-          ]),
-          input.input([
-            attribute.id("add-word-input"),
-            attribute.type_("text"),
+        html.hr([class("my-2 text-gray-300")]),
+        html.p([], [
+          element.text("Please add some things to the list. "),
+          element.text(
+            "Each round, 5 things will be picked at random from this list.",
+          ),
+        ]),
+        html.form(
+          [event.on_submit(AddWord), class("my-2 flex items-center flex-wrap")],
+          [
+            html.label([attribute.for("add-word-input"), class("mr-2")], [
+              element.text("Add to list"),
+            ]),
+            html.div([class("flex max-w-80 min-w-56 flex-auto")], [
+              input.input([
+                attribute.id("add-word-input"),
+                attribute.type_("text"),
+                attribute.placeholder("A full fridge"),
+                class(
+                  "my-2 p-2 border-2 rounded placeholder:text-slate-300 placeholder:opacity-50 flex-auto w-24",
+                ),
+                event.on_input(UpdateAddWordInput),
+                attribute.value(add_word_input),
+              ]),
+              html.button(
+                [
+                  attribute.type_("submit"),
+                  class(
+                    "py-2 px-3 ml-2 bg-green-200 hover:bg-green-300 rounded flex-none self-center",
+                  ),
+                ],
+                [element.text("Add"), icon.plus([class("ml-2")])],
+              ),
+            ]),
+          ],
+        ),
+        html.button(
+          [
+            event.on_click(AddRandomWord),
             class(
-              "my-2 p-2 border-2 rounded placeholder:text-slate-300 placeholder:tracking-widest font-mono",
+              "p-2 rounded border-solid border border-gray-200 hover:bg-emerald-50",
             ),
-            event.on_input(UpdateAddWordInput),
-            attribute.value(add_word_input),
-          ]),
-          button.button([attribute.type_("submit")], [element.text("Add")]),
-        ]),
-        button.button([event.on_click(AddRandomWord)], [
-          element.text("Add random word 🎲"),
-        ]),
+          ],
+          [element.text("Add random 🎲")],
+        ),
         html.div([], [
-          html.h2([], [element.text("List of words:")]),
+          html.h2([class("text-lg my-2")], [element.text("List of words:")]),
           html.ul(
             [],
             list.map(room.word_list, fn(word) {
-              html.li([], [
-                element.text(word),
-                ui.button([button.error(), event.on_click(RemoveWord(word))], [
-                  icon.cross([]),
-                ]),
-              ])
+              html.li(
+                [
+                  class(
+                    "flex justify-between items-center hover:bg-slate-100 pl-3 my-1",
+                  ),
+                ],
+                [
+                  element.text(word),
+                  ui.button(
+                    [
+                      button.error(),
+                      event.on_click(RemoveWord(word)),
+                      class(
+                        "bg-red-50 border border-solid border-red-100 py-1 px-2",
+                      ),
+                    ],
+                    [icon.cross([])],
+                  ),
+                ],
+              )
             }),
           ),
         ]),
+        button.button([event.on_click(StartRound)], [element.text("Start game")]),
       ])
     InRoom(_uri, _player_id, _room_code, player_name, None) ->
       html.div([class("flex flex-col m-4")], [
