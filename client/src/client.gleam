@@ -895,7 +895,7 @@ fn content(model: Model) {
             list.reverse(round_state.ordered_words)
               |> list.map(fn(word) { html.li([], [element.text(word)]) }),
           ),
-          html.div([class("flex items-center justify-between")], [
+          html.div([class("mb-4 flex items-center justify-between")], [
             html.button(
               [
                 event.on_click(ClearOrderedWords),
@@ -932,9 +932,16 @@ fn content(model: Model) {
       DisplayState(Scores, False),
     ) ->
       html.div([class("flex flex-col m-4")], [
-        display_scores(room.finished_rounds),
-        display_players(room.players, round_state.round.leading_player_id),
-        html.br([]),
+        display_players(
+          room.players,
+          round_state.round.leading_player_id,
+          room.finished_rounds,
+        ),
+        html.hr([class("my-4 text-gray-400")]),
+        html.h2([class("text-2xl mt-1 mb-3 font-bold")], [
+          element.text("Previous rounds"),
+          html.span([class("font-normal")], [element.text(" (latest first)")]),
+        ]),
         ..list.reverse(room.finished_rounds)
         |> list.index_map(display_finished_round)
         |> list.reverse
@@ -1080,23 +1087,8 @@ fn choosing_player_heading(
 fn display_players(
   players: List(shared.Player),
   leading_player_id: shared.PlayerId,
+  finished_rounds: List(shared.FinishedRound),
 ) {
-  html.div(
-    [],
-    list.map(players, fn(player) {
-      case player.id == leading_player_id {
-        True ->
-          html.p([], [
-            element.text(player.name),
-            html.strong([], [element.text(" (choosing)")]),
-          ])
-        False -> html.p([], [element.text(player.name)])
-      }
-    }),
-  )
-}
-
-fn display_scores(finished_rounds: List(shared.FinishedRound)) {
   let scores =
     list.fold(finished_rounds, [], fn(scores, round) {
       let round_scores =
@@ -1125,37 +1117,42 @@ fn display_scores(finished_rounds: List(shared.FinishedRound)) {
         },
       )
     })
-    |> list.sort(fn(a, b) { int.compare({ b.1 }.score, { a.1 }.score) })
 
-  html.div([], [
-    html.h2([], [element.text("Scores")]),
-    html.ol(
-      [],
-      list.map(scores, fn(score) {
-        html.li([], [
-          element.text(
-            { score.1 }.player.name <> ": " <> int.to_string({ score.1 }.score),
-          ),
-        ])
-      }),
-    ),
-  ])
+  html.div(
+    [class("flex flex-col")],
+    list.map(players, fn(player) {
+      let score =
+        list.find(scores, fn(score) { score.0 == player.id })
+        |> result.map(fn(s) { { s.1 }.score })
+        |> result.unwrap(0)
+        |> int.to_string
+
+      let extra_class = case player.id == leading_player_id {
+        True -> " border border-gray-200 shadow"
+        False -> ""
+      }
+      html.div([class("my-1 p-2 rounded flex justify-between" <> extra_class)], [
+        element.text(player.name),
+        html.strong([], [element.text(score)]),
+      ])
+    }),
+  )
 }
 
 fn display_finished_round(
   finished_round: shared.FinishedRound,
   round_index: Int,
 ) {
-  let is_leading_text = fn(id) {
-    case id == finished_round.leading_player_id {
-      True -> " (choosing)"
-      False -> ""
+  let player_text = fn(player: shared.Player, score: Int) {
+    case player.id == finished_round.leading_player_id {
+      True -> player.name <> "'s ranking"
+      False -> player.name <> "'s guess - " <> int.to_string(score) <> " points"
     }
   }
 
-  html.div([class("border-solid border-2")], [
-    html.h2([], [
-      element.text("Round " <> int.to_string(round_index + 1) <> " scores:"),
+  html.div([class("my-3 py-1 border-solid border-l-2 p-2 border-gray-300")], [
+    html.h3([class("text-xl mb-2 font-bold")], [
+      element.text("Round " <> int.to_string(round_index + 1)),
     ]),
     html.div(
       [],
@@ -1173,17 +1170,11 @@ fn display_finished_round(
       })
         |> list.map(fn(player_score) {
           html.div([], [
-            html.h3([], [
-              element.text(
-                player_score.player.name
-                <> is_leading_text(player_score.player.id)
-                <> " - "
-                <> int.to_string(player_score.score)
-                <> " points",
-              ),
+            html.h4([class("text-lg")], [
+              element.text(player_text(player_score.player, player_score.score)),
             ]),
             html.ol(
-              [],
+              [class("list-decimal list-inside p-2")],
               list.reverse(player_score.words)
                 |> list.map(fn(word) { html.li([], [element.text(word)]) }),
             ),

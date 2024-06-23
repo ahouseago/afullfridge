@@ -3483,6 +3483,9 @@ function h2(attrs, children) {
 function h3(attrs, children) {
   return element("h3", attrs, children);
 }
+function h4(attrs, children) {
+  return element("h4", attrs, children);
+}
 function nav(attrs, children) {
   return element("nav", attrs, children);
 }
@@ -3507,11 +3510,11 @@ function ul(attrs, children) {
 function a(attrs, children) {
   return element("a", attrs, children);
 }
-function br(attrs) {
-  return element("br", attrs, toList([]));
-}
 function code(attrs, children) {
   return element("code", attrs, children);
+}
+function span(attrs, children) {
+  return element("span", attrs, children);
 }
 function strong(attrs, children) {
   return element("strong", attrs, children);
@@ -6007,128 +6010,102 @@ function choosing_player_heading(players, self_player_id, leading_player_id) {
   );
   return unwrap2(_pipe$1, "Select the options below in order");
 }
-function display_players(players, leading_player_id) {
-  return div(
+function display_players(players, leading_player_id, finished_rounds) {
+  let scores = fold(
+    finished_rounds,
     toList([]),
+    (scores2, round3) => {
+      let round_scores = (() => {
+        let _pipe = round3.player_scores;
+        return map2(_pipe, (score) => {
+          return [score.player.id, score];
+        });
+      })();
+      return fold(
+        round_scores,
+        scores2,
+        (scores3, round_score) => {
+          let $ = find(scores3, (s) => {
+            return s[0] === round_score[0];
+          });
+          if ($.isOk()) {
+            let score = $[0];
+            let rest = (() => {
+              let _pipe = scores3;
+              return filter(_pipe, (s) => {
+                return s[0] !== score[0];
+              });
+            })();
+            return prepend(
+              [
+                score[0],
+                new PlayerScore(
+                  score[1].player,
+                  toList([]),
+                  score[1].score + round_score[1].score
+                )
+              ],
+              rest
+            );
+          } else {
+            return prepend(round_score, scores3);
+          }
+        }
+      );
+    }
+  );
+  return div(
+    toList([class$("flex flex-col")]),
     map2(
       players,
       (player) => {
-        let $ = player.id === leading_player_id;
-        if ($) {
-          return p(
-            toList([]),
-            toList([
-              text(player.name),
-              strong(toList([]), toList([text(" (choosing)")]))
-            ])
+        let score = (() => {
+          let _pipe = find(
+            scores,
+            (score2) => {
+              return score2[0] === player.id;
+            }
           );
-        } else {
-          return p(toList([]), toList([text(player.name)]));
-        }
+          let _pipe$1 = map3(_pipe, (s) => {
+            return s[1].score;
+          });
+          let _pipe$2 = unwrap2(_pipe$1, 0);
+          return to_string2(_pipe$2);
+        })();
+        let extra_class = (() => {
+          let $ = player.id === leading_player_id;
+          if ($) {
+            return " border border-gray-200 shadow";
+          } else {
+            return "";
+          }
+        })();
+        return div(
+          toList([class$("my-1 p-2 rounded flex justify-between" + extra_class)]),
+          toList([
+            text(player.name),
+            strong(toList([]), toList([text(score)]))
+          ])
+        );
       }
     )
   );
 }
-function display_scores(finished_rounds) {
-  let scores = (() => {
-    let _pipe = fold(
-      finished_rounds,
-      toList([]),
-      (scores2, round3) => {
-        let round_scores = (() => {
-          let _pipe2 = round3.player_scores;
-          return map2(
-            _pipe2,
-            (score) => {
-              return [score.player.id, score];
-            }
-          );
-        })();
-        return fold(
-          round_scores,
-          scores2,
-          (scores3, round_score) => {
-            let $ = find(
-              scores3,
-              (s) => {
-                return s[0] === round_score[0];
-              }
-            );
-            if ($.isOk()) {
-              let score = $[0];
-              let rest = (() => {
-                let _pipe2 = scores3;
-                return filter(_pipe2, (s) => {
-                  return s[0] !== score[0];
-                });
-              })();
-              return prepend(
-                [
-                  score[0],
-                  new PlayerScore(
-                    score[1].player,
-                    toList([]),
-                    score[1].score + round_score[1].score
-                  )
-                ],
-                rest
-              );
-            } else {
-              return prepend(round_score, scores3);
-            }
-          }
-        );
-      }
-    );
-    return sort(
-      _pipe,
-      (a2, b) => {
-        return compare2(b[1].score, a2[1].score);
-      }
-    );
-  })();
-  return div(
-    toList([]),
-    toList([
-      h2(toList([]), toList([text("Scores")])),
-      ol(
-        toList([]),
-        map2(
-          scores,
-          (score) => {
-            return li(
-              toList([]),
-              toList([
-                text(
-                  score[1].player.name + ": " + to_string2(score[1].score)
-                )
-              ])
-            );
-          }
-        )
-      )
-    ])
-  );
-}
 function display_finished_round(finished_round, round_index) {
-  let is_leading_text = (id2) => {
-    let $ = id2 === finished_round.leading_player_id;
+  let player_text = (player, score) => {
+    let $ = player.id === finished_round.leading_player_id;
     if ($) {
-      return " (choosing)";
+      return player.name + "'s ranking";
     } else {
-      return "";
+      return player.name + "'s guess - " + to_string2(score) + " points";
     }
   };
   return div(
-    toList([class$("border-solid border-2")]),
+    toList([class$("my-3 py-1 border-solid border-l-2 p-2 border-gray-300")]),
     toList([
-      h2(
-        toList([]),
-        toList([
-          text(
-            "Round " + to_string2(round_index + 1) + " scores:"
-          )
-        ])
+      h3(
+        toList([class$("text-xl mb-2 font-bold")]),
+        toList([text("Round " + to_string2(round_index + 1))])
       ),
       div(
         toList([]),
@@ -6153,18 +6130,16 @@ function display_finished_round(finished_round, round_index) {
               return div(
                 toList([]),
                 toList([
-                  h3(
-                    toList([]),
+                  h4(
+                    toList([class$("text-lg")]),
                     toList([
                       text(
-                        player_score.player.name + is_leading_text(
-                          player_score.player.id
-                        ) + " - " + to_string2(player_score.score) + " points"
+                        player_text(player_score.player, player_score.score)
                       )
                     ])
                   ),
                   ol(
-                    toList([]),
+                    toList([class$("list-decimal list-inside p-2")]),
                     (() => {
                       let _pipe$1 = reverse(player_score.words);
                       return map2(
@@ -6472,7 +6447,7 @@ function content(model) {
               })()
             ),
             div(
-              toList([class$("flex items-center justify-between")]),
+              toList([class$("mb-4 flex items-center justify-between")]),
               toList([
                 button(
                   toList([
@@ -6518,11 +6493,24 @@ function content(model) {
     return div(
       toList([class$("flex flex-col m-4")]),
       prepend(
-        display_scores(room.finished_rounds),
+        display_players(
+          room.players,
+          round_state.round.leading_player_id,
+          room.finished_rounds
+        ),
         prepend(
-          display_players(room.players, round_state.round.leading_player_id),
+          hr(toList([class$("my-4 text-gray-400")])),
           prepend(
-            br(toList([])),
+            h2(
+              toList([class$("text-2xl mt-1 mb-3 font-bold")]),
+              toList([
+                text("Previous rounds"),
+                span(
+                  toList([class$("font-normal")]),
+                  toList([text(" (latest first)")])
+                )
+              ])
+            ),
             (() => {
               let _pipe = reverse(room.finished_rounds);
               let _pipe$1 = index_map(_pipe, display_finished_round);
