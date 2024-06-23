@@ -1,6 +1,7 @@
 import gleam/bit_array
 import gleam/bytes_builder
 import gleam/dict.{type Dict}
+import gleam/erlang
 import gleam/erlang/process.{type Subject}
 import gleam/http
 import gleam/http/request
@@ -12,6 +13,9 @@ import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/result
 import gleam/string
+import lustre/attribute
+import lustre/element
+import lustre/element/html
 import mist.{type Connection, type ResponseData}
 import prng/random
 import prng/seed
@@ -176,20 +180,70 @@ pub fn main() {
       handle_message,
     )
 
+  let assert Ok(priv) = erlang.priv_directory("server")
+
   let assert Ok(_) =
     fn(req: request.Request(Connection)) -> response.Response(ResponseData) {
       case req.method {
         http.Options ->
           response.new(200)
           |> response.set_body(mist.Bytes(bytes_builder.new()))
-          |> response.set_header(
-            "Access-Control-Allow-Origin",
-            "http://localhost:1234",
-          )
           |> response.set_header("Access-Control-Allow-Methods", "GET, POST")
           |> response.set_header("Access-Control-Allow-Headers", "content-type")
         http.Get | http.Post ->
           case request.path_segments(req) {
+            [""] | [] ->
+              response.new(200)
+              |> response.prepend_header("content-type", "text/html")
+              |> response.set_body(
+                html.html([], [
+                  html.head([], [
+                    html.meta([attribute.attribute("charset", "UTF-8")]),
+                    html.title([], "A Full Fridge"),
+                    html.script(
+                      [attribute.type_("module"), attribute.src("/client.mjs")],
+                      "",
+                    ),
+                  ]),
+                  html.body([], [html.div([attribute.id("app")], [])]),
+                ])
+                |> element.to_document_string_builder
+                |> bytes_builder.from_string_builder
+                |> mist.Bytes,
+              )
+
+            ["client.mjs"] ->
+              mist.send_file(
+                priv <> "/static/client.mjs",
+                offset: 0,
+                limit: None,
+              )
+              |> result.map(fn(file) {
+                response.new(200)
+                |> response.prepend_header("content-type", "text/javascript")
+                |> response.set_body(file)
+              })
+              |> result.lazy_unwrap(fn() {
+                response.new(404)
+                |> response.set_body(mist.Bytes(bytes_builder.new()))
+              })
+
+            ["client.css"] ->
+              mist.send_file(
+                priv <> "/static/client.css",
+                offset: 0,
+                limit: None,
+              )
+              |> result.map(fn(file) {
+                response.new(200)
+                |> response.prepend_header("content-type", "text/css")
+                |> response.set_body(file)
+              })
+              |> result.lazy_unwrap(fn() {
+                response.new(404)
+                |> response.set_body(mist.Bytes(bytes_builder.new()))
+              })
+
             ["ws", player_id, player_name] ->
               mist.websocket(
                 request: req,

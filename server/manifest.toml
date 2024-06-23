@@ -15,6 +15,7 @@ packages = [
   { name = "gramps", version = "2.0.2", build_tools = ["gleam"], requirements = ["gleam_crypto", "gleam_erlang", "gleam_http", "gleam_stdlib"], otp_app = "gramps", source = "hex", outer_checksum = "99A1BC8462E502282097D92CD7053043B714B91DC78E8AEB7D86AB8FF71E016F" },
   { name = "hpack_erl", version = "0.3.0", build_tools = ["rebar3"], requirements = [], otp_app = "hpack", source = "hex", outer_checksum = "D6137D7079169D8C485C6962DFE261AF5B9EF60FBC557344511C1E65E3D95FB0" },
   { name = "logging", version = "1.1.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "logging", source = "hex", outer_checksum = "A996064F04EF6E67F0668FD0ACFB309830B05D0EE3A0C11BBBD2D4464334F792" },
+  { name = "lustre", version = "4.3.0", build_tools = ["gleam"], requirements = ["gleam_erlang", "gleam_json", "gleam_otp", "gleam_stdlib"], otp_app = "lustre", source = "hex", outer_checksum = "43642C0602D3E2D6FEC3E24173D68A1F8E646969B53A2B0A5EB61238DDA739C4" },
   { name = "mist", version = "1.2.0", build_tools = ["gleam"], requirements = ["birl", "gleam_erlang", "gleam_http", "gleam_otp", "gleam_stdlib", "glisten", "gramps", "hpack_erl", "logging"], otp_app = "mist", source = "hex", outer_checksum = "109B4D64E68C104CC23BB3CC5441ECD479DD7444889DA01113B75C6AF0F0E17B" },
   { name = "prng", version = "3.0.3", build_tools = ["gleam"], requirements = ["gleam_bitwise", "gleam_stdlib"], otp_app = "prng", source = "hex", outer_checksum = "53006736FE23A0F61828C95B505193E10905D8DB76E128F1642D3E571E08F589" },
   { name = "ranger", version = "1.2.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "ranger", source = "hex", outer_checksum = "1566C272B1D141B3BBA38B25CB761EF56E312E79EC0E2DFD4D3C19FB0CC1F98C" },
@@ -28,6 +29,7 @@ gleam_http = { version = ">= 3.6.0 and < 4.0.0" }
 gleam_otp = { version = ">= 0.10.0 and < 1.0.0" }
 gleam_stdlib = { version = ">= 0.34.0 and < 2.0.0" }
 gleeunit = { version = ">= 1.0.0 and < 2.0.0" }
+lustre = { version = ">= 4.3.0 and < 5.0.0"}
 mist = { version = ">= 1.0.0 and < 2.0.0" }
-prng = { version = ">= 3.0.3 and < 4.0.0"}
+prng = { version = ">= 3.0.3 and < 4.0.0" }
 shared = { path = "../shared" }
