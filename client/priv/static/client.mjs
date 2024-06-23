@@ -4000,6 +4000,18 @@ function icon(attrs, path2) {
     ])
   );
 }
+function hamburger_menu(attrs) {
+  return icon(
+    attrs,
+    "M1.5 3C1.22386 3 1 3.22386 1 3.5C1 3.77614 1.22386 4 1.5 4H13.5C13.7761 4 14 3.77614 14 3.5C14 3.22386 13.7761 3 13.5 3H1.5ZM1 7.5C1 7.22386 1.22386 7 1.5 7H13.5C13.7761 7 14 7.22386 14 7.5C14 7.77614 13.7761 8 13.5 8H1.5C1.22386 8 1 7.77614 1 7.5ZM1 11.5C1 11.2239 1.22386 11 1.5 11H13.5C13.7761 11 14 11.2239 14 11.5C14 11.7761 13.7761 12 13.5 12H1.5C1.22386 12 1 11.7761 1 11.5Z"
+  );
+}
+function close(attrs) {
+  return icon(
+    attrs,
+    "M12.8536 2.85355C13.0488 2.65829 13.0488 2.34171 12.8536 2.14645C12.6583 1.95118 12.3417 1.95118 12.1464 2.14645L7.5 6.79289L2.85355 2.14645C2.65829 1.95118 2.34171 1.95118 2.14645 2.14645C1.95118 2.34171 1.95118 2.65829 2.14645 2.85355L6.79289 7.5L2.14645 12.1464C1.95118 12.3417 1.95118 12.6583 2.14645 12.8536C2.34171 13.0488 2.65829 13.0488 2.85355 12.8536L7.5 8.20711L12.1464 12.8536C12.3417 13.0488 12.6583 13.0488 12.8536 12.8536C13.0488 12.6583 13.0488 12.3417 12.8536 12.1464L8.20711 7.5L12.8536 2.85355Z"
+  );
+}
 function plus(attrs) {
   return icon(
     attrs,
@@ -4985,13 +4997,14 @@ var NotInRoom = class extends CustomType {
   }
 };
 var InRoom = class extends CustomType {
-  constructor(uri, player_id, room_code, player_name, active_game) {
+  constructor(uri, player_id, room_code, player_name, active_game, display_state) {
     super();
     this.uri = uri;
     this.player_id = player_id;
     this.room_code = room_code;
     this.player_name = player_name;
     this.active_game = active_game;
+    this.display_state = display_state;
   }
 };
 var ActiveGame = class extends CustomType {
@@ -5001,6 +5014,19 @@ var ActiveGame = class extends CustomType {
     this.room = room;
     this.round = round3;
     this.add_word_input = add_word_input;
+  }
+};
+var Round2 = class extends CustomType {
+};
+var Scores = class extends CustomType {
+};
+var WordList2 = class extends CustomType {
+};
+var DisplayState = class extends CustomType {
+  constructor(view2, menu_open) {
+    super();
+    this.view = view2;
+    this.menu_open = menu_open;
   }
 };
 var RoundState = class extends CustomType {
@@ -5039,6 +5065,18 @@ var StartGame = class extends CustomType {
 var JoinGame = class extends CustomType {
 };
 var JoinedRoom = class extends CustomType {
+  constructor(x0) {
+    super();
+    this[0] = x0;
+  }
+};
+var ShowMenu = class extends CustomType {
+  constructor(x0) {
+    super();
+    this[0] = x0;
+  }
+};
+var SetView = class extends CustomType {
   constructor(x0) {
     super();
     this[0] = x0;
@@ -5113,6 +5151,7 @@ function handle_ws_message(model, msg) {
     let room_code = model.room_code;
     let player_name = model.player_name;
     let active_game = model.active_game[0];
+    let display_state = model.display_state;
     let $ = decode_websocket_response(msg);
     if ($.isOk() && $[0] instanceof InitialRoomState) {
       let room = $[0][0];
@@ -5138,7 +5177,8 @@ function handle_ws_message(model, msg) {
                 active_game.round
               )
             })
-          )
+          ),
+          display_state
         ),
         none()
       ];
@@ -5156,7 +5196,8 @@ function handle_ws_message(model, msg) {
           player_id,
           room_code,
           player_name,
-          new Some(active_game.withFields({ room }))
+          new Some(active_game.withFields({ room })),
+          display_state
         ),
         none()
       ];
@@ -5174,7 +5215,8 @@ function handle_ws_message(model, msg) {
           player_id,
           room_code,
           player_name,
-          new Some(active_game.withFields({ room }))
+          new Some(active_game.withFields({ room })),
+          display_state
         ),
         none()
       ];
@@ -5190,7 +5232,8 @@ function handle_ws_message(model, msg) {
             active_game.withFields({
               round: new Some(new RoundState(round3, toList([]), false))
             })
-          )
+          ),
+          display_state
         ),
         none()
       ];
@@ -5219,7 +5262,8 @@ function handle_ws_message(model, msg) {
                 );
               })()
             })
-          )
+          ),
+          display_state
         ),
         none()
       ];
@@ -5270,7 +5314,14 @@ function update2(model, msg) {
     let room_code = msg[0][0].room_code;
     let player_id = msg[0][0].player_id;
     return [
-      new InRoom(uri, player_id, room_code, "", new None()),
+      new InRoom(
+        uri,
+        player_id,
+        room_code,
+        "",
+        new None(),
+        new DisplayState(new Round2(), false)
+      ),
       push(
         relative("/play").withFields({
           query: new Some(query_to_string(toList([["game", room_code]])))
@@ -5330,6 +5381,43 @@ function update2(model, msg) {
     let room_code = model.room_code;
     let $ = writeText(room_code);
     return [model, none()];
+  } else if (model instanceof InRoom && msg instanceof ShowMenu) {
+    let uri = model.uri;
+    let player_id = model.player_id;
+    let room_code = model.room_code;
+    let player_name = model.player_name;
+    let active_game = model.active_game;
+    let display_state = model.display_state;
+    let val = msg[0];
+    return [
+      new InRoom(
+        uri,
+        player_id,
+        room_code,
+        player_name,
+        active_game,
+        display_state.withFields({ menu_open: val })
+      ),
+      none()
+    ];
+  } else if (model instanceof InRoom && msg instanceof SetView) {
+    let uri = model.uri;
+    let player_id = model.player_id;
+    let room_code = model.room_code;
+    let player_name = model.player_name;
+    let active_game = model.active_game;
+    let view$1 = msg[0];
+    return [
+      new InRoom(
+        uri,
+        player_id,
+        room_code,
+        player_name,
+        active_game,
+        new DisplayState(view$1, false)
+      ),
+      none()
+    ];
   } else if (model instanceof InRoom && msg instanceof OnRouteChange && msg[1] instanceof Play && msg[1].room_code instanceof Some && model.room_code !== msg[1].room_code[0]) {
     let uri = model.uri;
     let room_code = model.room_code;
@@ -5353,9 +5441,10 @@ function update2(model, msg) {
     let uri = model.uri;
     let player_id = model.player_id;
     let room_code = model.room_code;
+    let display = model.display_state;
     let player_name = msg[0];
     return [
-      new InRoom(uri, player_id, room_code, player_name, new None()),
+      new InRoom(uri, player_id, room_code, player_name, new None(), display),
       none()
     ];
   } else if (model instanceof InRoom && model.active_game instanceof None && msg instanceof SetPlayerName) {
@@ -5394,12 +5483,13 @@ function update2(model, msg) {
     let player_id = model.player_id;
     let room_code = model.room_code;
     let player_name = model.player_name;
+    let display = model.display_state;
     let ws_event = msg[0];
     if (ws_event instanceof InvalidUrl) {
       throw makeError(
         "panic",
         "client",
-        263,
+        320,
         "update",
         "panic expression evaluated",
         {}
@@ -5412,7 +5502,8 @@ function update2(model, msg) {
           player_id,
           room_code,
           player_name,
-          new Some(new ActiveGame(socket, new None(), new None(), ""))
+          new Some(new ActiveGame(socket, new None(), new None(), "")),
+          display
         ),
         none()
       ];
@@ -5423,7 +5514,14 @@ function update2(model, msg) {
       return [model, none()];
     } else {
       return [
-        new InRoom(uri, player_id, room_code, player_name, new None()),
+        new InRoom(
+          uri,
+          player_id,
+          room_code,
+          player_name,
+          new None(),
+          new DisplayState(new Round2(), false)
+        ),
         none()
       ];
     }
@@ -5436,13 +5534,15 @@ function update2(model, msg) {
     let room = model.active_game[0].room;
     let round3 = model.active_game[0].round;
     let add_word_input = model.active_game[0].add_word_input;
+    let display_state = model.display_state;
     return [
       new InRoom(
         uri,
         player_id,
         room_code,
         player_name,
-        new Some(new ActiveGame(ws, room, round3, ""))
+        new Some(new ActiveGame(ws, room, round3, "")),
+        display_state
       ),
       send2(ws, encode_request(new AddWord(add_word_input)))
     ];
@@ -5471,6 +5571,7 @@ function update2(model, msg) {
     let room_code = model.room_code;
     let player_name = model.player_name;
     let active_game = model.active_game[0];
+    let display_state = model.display_state;
     let value3 = msg[0];
     return [
       new InRoom(
@@ -5478,7 +5579,8 @@ function update2(model, msg) {
         player_id,
         room_code,
         player_name,
-        new Some(active_game.withFields({ add_word_input: value3 }))
+        new Some(active_game.withFields({ add_word_input: value3 })),
+        display_state
       ),
       none()
     ];
@@ -5497,6 +5599,7 @@ function update2(model, msg) {
     let room = model.active_game[0].room;
     let round_state = model.active_game[0].round[0];
     let add_word_input = model.active_game[0].add_word_input;
+    let display_state = model.display_state;
     let word = msg[0];
     return [
       new InRoom(
@@ -5526,7 +5629,8 @@ function update2(model, msg) {
             ),
             add_word_input
           )
-        )
+        ),
+        display_state
       ),
       none()
     ];
@@ -5539,6 +5643,7 @@ function update2(model, msg) {
     let room = model.active_game[0].room;
     let round_state = model.active_game[0].round[0];
     let add_word_input = model.active_game[0].add_word_input;
+    let display_state = model.display_state;
     return [
       new InRoom(
         uri,
@@ -5552,7 +5657,8 @@ function update2(model, msg) {
             new Some(round_state.withFields({ ordered_words: toList([]) })),
             add_word_input
           )
-        )
+        ),
+        display_state
       ),
       none()
     ];
@@ -5565,6 +5671,7 @@ function update2(model, msg) {
     let room = model.active_game[0].room;
     let round_state = model.active_game[0].round[0];
     let add_word_input = model.active_game[0].add_word_input;
+    let display_state = model.display_state;
     return [
       new InRoom(
         uri,
@@ -5578,7 +5685,8 @@ function update2(model, msg) {
             new Some(round_state.withFields({ submitted: true })),
             add_word_input
           )
-        )
+        ),
+        display_state
       ),
       send2(
         ws,
@@ -5681,7 +5789,17 @@ function init4(_) {
       let id2 = rejoin[0][0];
       let name = rejoin[0][1];
       let msg = rejoin[0][2];
-      return [new InRoom(uri$1, id2, room_code, name, new None()), msg];
+      return [
+        new InRoom(
+          uri$1,
+          id2,
+          room_code,
+          name,
+          new None(),
+          new DisplayState(new Round2(), false)
+        ),
+        msg
+      ];
     } else {
       return [
         new NotInRoom(
@@ -5775,7 +5893,7 @@ function header(model) {
         )
       ])
     );
-  } else if (model instanceof InRoom) {
+  } else if (model instanceof InRoom && model.display_state instanceof DisplayState && !model.display_state.menu_open) {
     let room_code = model.room_code;
     return div(
       toList([class$("flex bg-green-700 text-gray-100")]),
@@ -5796,18 +5914,45 @@ function header(model) {
             )
           ])
         ),
-        nav(
-          toList([class$("flex items-center")]),
+        button(
           toList([
-            link2(
-              "/",
+            on_click(new ShowMenu(true)),
+            class$("ml-auto px-3 py-2")
+          ]),
+          toList([
+            text("Menu"),
+            hamburger_menu(toList([class$("ml-2")]))
+          ])
+        )
+      ])
+    );
+  } else if (model instanceof InRoom && model.display_state instanceof DisplayState && model.display_state.menu_open) {
+    let room_code = model.room_code;
+    return div(
+      toList([class$("flex bg-green-700 text-gray-100")]),
+      toList([
+        h1(
+          toList([class$("text-xl my-5 mx-2")]),
+          toList([
+            text("Game:"),
+            code(
               toList([
-                exit(toList([class$("mr-2")])),
-                text("Leave game")
+                on_click(new CopyRoomCode()),
+                attribute("title", "Copy"),
+                class$(
+                  "mx-1 px-1 text-gray-100 border-dashed border-2 rounded-sm border-transparent hover:border-slate-500 hover:bg-green-200 hover:text-gray-800 cursor-pointer"
+                )
               ]),
-              "flex items-center"
+              toList([text(room_code)])
             )
           ])
+        ),
+        button(
+          toList([
+            on_click(new ShowMenu(false)),
+            class$("ml-auto px-3 py-2")
+          ]),
+          toList([text("Close"), close(toList([class$("ml-2")]))])
         )
       ])
     );
@@ -6042,6 +6187,140 @@ function display_finished_round(finished_round, round_index) {
     ])
   );
 }
+function display_menu(current_view) {
+  return div(
+    toList([class$("my-4 mx-2 max-w-90 flex flex-col items-center")]),
+    toList([
+      button(
+        toList([
+          on_click(new SetView(new Round2())),
+          disabled(isEqual(current_view, new Round2())),
+          class$("underline p-2 disabled:no-underline")
+        ]),
+        toList([text("Current round")])
+      ),
+      button(
+        toList([
+          on_click(new SetView(new Scores())),
+          disabled(isEqual(current_view, new Scores())),
+          class$("underline p-2 disabled:no-underline")
+        ]),
+        toList([text("View scores")])
+      ),
+      button(
+        toList([
+          on_click(new SetView(new WordList2())),
+          disabled(isEqual(current_view, new WordList2())),
+          class$("underline p-2 disabled:no-underline")
+        ]),
+        toList([text("Update list")])
+      ),
+      hr(toList([class$("mt-4 mb-2 mx-2 w-4/5")])),
+      link2(
+        "/",
+        toList([
+          exit(toList([class$("mr-2")])),
+          text("Leave game")
+        ]),
+        "flex items-center p-2"
+      )
+    ])
+  );
+}
+function display_full_word_list(room, add_word_input) {
+  return toList([
+    form(
+      toList([
+        on_submit(new AddWord2()),
+        class$("my-2 flex items-center flex-wrap")
+      ]),
+      toList([
+        label(
+          toList([for$("add-word-input"), class$("mr-2")]),
+          toList([text("Add to list")])
+        ),
+        div(
+          toList([class$("flex max-w-80 min-w-56 flex-auto")]),
+          toList([
+            input2(
+              toList([
+                id("add-word-input"),
+                type_("text"),
+                placeholder("A full fridge"),
+                class$(
+                  "my-2 p-2 border-2 rounded placeholder:text-slate-300 placeholder:opacity-50 flex-auto w-24"
+                ),
+                on_input(
+                  (var0) => {
+                    return new UpdateAddWordInput(var0);
+                  }
+                ),
+                value(add_word_input)
+              ])
+            ),
+            button(
+              toList([
+                type_("submit"),
+                class$(
+                  "py-2 px-3 ml-2 bg-green-200 hover:bg-green-300 rounded flex-none self-center"
+                )
+              ]),
+              toList([
+                text("Add"),
+                plus(toList([class$("ml-2")]))
+              ])
+            )
+          ])
+        )
+      ])
+    ),
+    button(
+      toList([
+        on_click(new AddRandomWord2()),
+        class$(
+          "p-2 rounded border-solid border border-gray-200 hover:bg-emerald-50"
+        )
+      ]),
+      toList([text("Add random \u{1F3B2}")])
+    ),
+    div(
+      toList([]),
+      toList([
+        h2(
+          toList([class$("text-lg my-2")]),
+          toList([text("List of words:")])
+        ),
+        ul(
+          toList([]),
+          map2(
+            room.word_list,
+            (word) => {
+              return li(
+                toList([
+                  class$(
+                    "flex justify-between items-center hover:bg-slate-100 pl-3 my-1"
+                  )
+                ]),
+                toList([
+                  text(word),
+                  button(
+                    toList([
+                      on_click(new RemoveWord2(word)),
+                      class$(
+                        "rounded text-red-800 bg-red-50 border border-solid border-red-100 py-1 px-2 hover:bg-red-100"
+                      )
+                    ]),
+                    toList([cross(toList([]))])
+                  )
+                ])
+              );
+            }
+          )
+        )
+      ])
+    )
+  ]);
+}
 function content(model) {
   if (model instanceof NotInRoom && model.route instanceof Home) {
     return div(
@@ -6128,13 +6407,13 @@ function content(model) {
         )
       ])
     );
-  } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].room instanceof Some && model.active_game[0].round instanceof Some) {
+  } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].room instanceof Some && model.active_game[0].round instanceof Some && model.display_state instanceof DisplayState && model.display_state.view instanceof Round2 && !model.display_state.menu_open) {
     let player_id = model.player_id;
     let room = model.active_game[0].room[0];
     let round_state = model.active_game[0].round[0];
     return div(
       toList([class$("flex flex-col m-4")]),
-      prepend(
+      toList([
         div(
           toList([]),
           toList([
@@ -6230,33 +6509,46 @@ function content(model) {
               ])
             )
           ])
-        ),
+        )
+      ])
+    );
+  } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].room instanceof Some && model.active_game[0].round instanceof Some && model.display_state instanceof DisplayState && model.display_state.view instanceof Scores && !model.display_state.menu_open) {
+    let room = model.active_game[0].room[0];
+    let round_state = model.active_game[0].round[0];
+    return div(
+      toList([class$("flex flex-col m-4")]),
+      prepend(
+        display_scores(room.finished_rounds),
         prepend(
-          br(toList([])),
+          display_players(room.players, round_state.round.leading_player_id),
           prepend(
-            display_scores(room.finished_rounds),
-            prepend(
-              display_players(room.players, round_state.round.leading_player_id),
-              prepend(
-                br(toList([])),
-                (() => {
-                  let _pipe = reverse(room.finished_rounds);
-                  let _pipe$1 = index_map(_pipe, display_finished_round);
-                  return reverse(_pipe$1);
-                })()
-              )
-            )
+            br(toList([])),
+            (() => {
+              let _pipe = reverse(room.finished_rounds);
+              let _pipe$1 = index_map(_pipe, display_finished_round);
+              return reverse(_pipe$1);
+            })()
           )
         )
       )
     );
+  } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].room instanceof Some && model.active_game[0].round instanceof Some && model.display_state instanceof DisplayState && model.display_state.view instanceof WordList2 && !model.display_state.menu_open) {
+    let room = model.active_game[0].room[0];
+    let add_word_input = model.active_game[0].add_word_input;
+    return div(
+      toList([class$("flex flex-col p-4 max-h-full overflow-y-auto")]),
+      display_full_word_list(room, add_word_input)
+    );
+  } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].room instanceof Some && model.active_game[0].round instanceof Some && model.display_state instanceof DisplayState && model.display_state.menu_open) {
+    let view$1 = model.display_state.view;
+    return display_menu(view$1);
   } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].room instanceof Some && model.active_game[0].round instanceof None) {
     let player_id = model.player_id;
     let room = model.active_game[0].room[0];
     let add_word_input = model.active_game[0].add_word_input;
     return div(
       toList([class$("flex flex-col p-4 max-h-full overflow-y-auto")]),
-      toList([
+      prepend(
         div(
           toList([]),
           toList([
@@ -6296,107 +6588,22 @@ function content(model) {
             )
           ])
         ),
-        hr(toList([class$("my-2 text-gray-300")])),
-        p(
-          toList([]),
-          toList([
-            text("Please add some things to the list. "),
-            text(
-              "Each round, 5 things will be picked at random from this list."
-            )
-          ])
-        ),
-        form(
-          toList([
-            on_submit(new AddWord2()),
-            class$("my-2 flex items-center flex-wrap")
-          ]),
-          toList([
-            label(
-              toList([for$("add-word-input"), class$("mr-2")]),
-              toList([text("Add to list")])
-            ),
-            div(
-              toList([class$("flex max-w-80 min-w-56 flex-auto")]),
+        prepend(
+          hr(toList([class$("my-2 text-gray-300")])),
+          prepend(
+            p(
+              toList([]),
               toList([
-                input2(
-                  toList([
-                    id("add-word-input"),
-                    type_("text"),
-                    placeholder("A full fridge"),
-                    class$(
-                      "my-2 p-2 border-2 rounded placeholder:text-slate-300 placeholder:opacity-50 flex-auto w-24"
-                    ),
-                    on_input(
-                      (var0) => {
-                        return new UpdateAddWordInput(var0);
-                      }
-                    ),
-                    value(add_word_input)
-                  ])
-                ),
-                button(
-                  toList([
-                    type_("submit"),
-                    class$(
-                      "py-2 px-3 ml-2 bg-green-200 hover:bg-green-300 rounded flex-none self-center"
-                    )
-                  ]),
-                  toList([
-                    text("Add"),
-                    plus(toList([class$("ml-2")]))
-                  ])
+                text("Please add some things to the list. "),
+                text(
+                  "Each round, 5 things will be picked at random from this list."
                 )
               ])
-            )
-          ])
-        ),
-        button(
-          toList([
-            on_click(new AddRandomWord2()),
-            class$(
-              "p-2 rounded border-solid border border-gray-200 hover:bg-emerald-50"
-            )
-          ]),
-          toList([text("Add random \u{1F3B2}")])
-        ),
-        div(
-          toList([]),
-          toList([
-            h2(
-              toList([class$("text-lg my-2")]),
-              toList([text("List of words:")])
             ),
-            ul(
-              toList([]),
-              map2(
-                room.word_list,
-                (word) => {
-                  return li(
-                    toList([
-                      class$(
-                        "flex justify-between items-center hover:bg-slate-100 pl-3 my-1"
-                      )
-                    ]),
-                    toList([
-                      text(word),
-                      button(
-                        toList([
-                          on_click(new RemoveWord2(word)),
-                          class$(
-                            "rounded text-red-800 bg-red-50 border border-solid border-red-100 py-1 px-2 hover:bg-red-100"
-                          )
-                        ]),
-                        toList([cross(toList([]))])
-                      )
-                    ])
-                  );
-                }
-              )
-            )
-          ])
+            display_full_word_list(room, add_word_input)
+          )
         )
-      ])
+      )
     );
   } else if (model instanceof InRoom && model.active_game instanceof None) {
     let player_name = model.player_name;
@@ -6490,7 +6697,7 @@ function main() {
     throw makeError(
       "assignment_no_match",
       "client",
-      86,
+      102,
       "main",
       "Assignment pattern did not match",
       { value: $ }
