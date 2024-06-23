@@ -31,6 +31,7 @@ pub type Model {
     join_room_err: Option(String),
   )
   InRoom(
+    uri: uri.Uri,
     player_id: shared.PlayerId,
     room_code: shared.RoomCode,
     player_name: String,
@@ -116,6 +117,8 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
             local_storage,
             "room_code",
           ))
+          let uri.Uri(_, _, host, _, _, _, _) = uri
+          let host = option.unwrap(host, "localhost")
 
           case room_code == stored_room_code {
             True ->
@@ -123,7 +126,7 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
                 id,
                 name,
                 ws.init(
-                  "ws://localhost:3000/ws/" <> id <> "/" <> name,
+                  "ws://" <> host <> ":3000/ws/" <> id <> "/" <> name,
                   WebSocketEvent,
                 ),
               ))
@@ -134,7 +137,7 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
           }
         })
       case rejoin {
-        Ok(#(id, name, msg)) -> #(InRoom(id, room_code, name, None), msg)
+        Ok(#(id, name, msg)) -> #(InRoom(uri, id, room_code, name, None), msg)
         Error(_) -> #(
           NotInRoom(
             uri,
@@ -142,7 +145,7 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
             room_code,
             Some("Sorry, please try joining again."),
           ),
-          effect.batch([join_game(room_code), modem.init(on_url_change)]),
+          effect.batch([join_game(uri, room_code), modem.init(on_url_change)]),
         )
       }
     }
@@ -159,12 +162,13 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
 
 pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
   case model, msg {
-    NotInRoom(_, _, _, _), StartGame -> #(model, start_game())
+    NotInRoom(uri, _, _, _), StartGame -> #(model, start_game(uri))
     NotInRoom(uri, _, _, _),
       JoinedRoom(Ok(shared.RoomResponse(room_code, player_id)))
     -> {
       #(
         InRoom(
+          uri: uri,
           player_id: player_id,
           room_code: room_code,
           player_name: "",
@@ -196,7 +200,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       OnRouteChange(uri, Play(Some(room_code)))
     -> #(
       NotInRoom(uri, Play(Some(room_code)), room_code_input, None),
-      join_game(room_code),
+      join_game(uri, room_code),
     )
     NotInRoom(_, _route, room_code_input, _err), OnRouteChange(uri, route) -> #(
       NotInRoom(uri, route, room_code_input, None),
@@ -206,24 +210,24 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       NotInRoom(uri, route, string.uppercase(room_code), None),
       effect.none(),
     )
-    NotInRoom(_, _, room_code_input, _), JoinGame -> #(
+    NotInRoom(uri, _, room_code_input, _), JoinGame -> #(
       model,
-      join_game(room_code_input),
+      join_game(uri, room_code_input),
     )
     NotInRoom(_, _, _, _), UpdatePlayerName(_) -> #(model, effect.none())
     NotInRoom(_, _, _, _), _ -> #(model, effect.none())
-    InRoom(_, _, _, _), OnRouteChange(_uri, Play(Some(_room_code))) -> #(
+    InRoom(_, _, _, _, _), OnRouteChange(_uri, Play(Some(_room_code))) -> #(
       model,
       effect.none(),
     )
-    InRoom(_, _, _, _), OnRouteChange(uri, route) -> #(
+    InRoom(_, _, _, _, _), OnRouteChange(uri, route) -> #(
       NotInRoom(uri, route, "", None),
       effect.none(),
     )
-    InRoom(player_id, room_code, _player_name, None),
+    InRoom(uri, player_id, room_code, _player_name, None),
       UpdatePlayerName(player_name)
-    -> #(InRoom(player_id, room_code, player_name, None), effect.none())
-    InRoom(player_id, room_code, player_name, None), SetPlayerName -> {
+    -> #(InRoom(uri, player_id, room_code, player_name, None), effect.none())
+    InRoom(uri, player_id, room_code, player_name, None), SetPlayerName -> {
       let _ =
         storage.local()
         |> result.try(fn(local_storage) {
@@ -233,21 +237,22 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
             storage.set_item(local_storage, "room_code", room_code),
           ])
         })
+      let uri.Uri(_, _, host, _, _, _, _) = uri
+      let host = option.unwrap(host, "localhost")
       #(
         model,
         ws.init(
-          "ws://localhost:3000/ws/" <> player_id <> "/" <> player_name,
+          "ws://" <> host <> ":3000/ws/" <> player_id <> "/" <> player_name,
           WebSocketEvent,
         ),
       )
     }
-    InRoom(player_id, room_code, player_name, _), WebSocketEvent(ws_event)
-    | InRoom(player_id, room_code, player_name, _), WebSocketEvent(ws_event)
-    -> {
+    InRoom(uri, player_id, room_code, player_name, _), WebSocketEvent(ws_event) -> {
       case ws_event {
         ws.InvalidUrl -> panic
         ws.OnOpen(socket) -> #(
           InRoom(
+            uri,
             player_id: player_id,
             room_code: room_code,
             player_name: player_name,
@@ -263,12 +268,13 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         ws.OnTextMessage(msg) -> handle_ws_message(model, msg)
         ws.OnBinaryMessage(_msg) -> #(model, effect.none())
         ws.OnClose(_reason) -> #(
-          InRoom(player_id, room_code, player_name, None),
+          InRoom(uri, player_id, room_code, player_name, None),
           effect.none(),
         )
       }
     }
     InRoom(
+      uri,
       player_id,
       room_code,
       player_name,
@@ -279,6 +285,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
     -> {
       #(
         InRoom(
+          uri,
           player_id,
           room_code,
           player_name,
@@ -287,7 +294,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         ws.send(ws, shared.encode_request(shared.AddWord(add_word_input))),
       )
     }
-    InRoom(_player_id, _room_code, _player_name, Some(active_game)),
+    InRoom(_uri, _player_id, _room_code, _player_name, Some(active_game)),
       AddRandomWord
     -> {
       #(
@@ -295,7 +302,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         ws.send(active_game.ws, shared.encode_request(shared.AddRandomWord)),
       )
     }
-    InRoom(_player_id, _room_code, _player_name, Some(active_game)),
+    InRoom(_uri, _player_id, _room_code, _player_name, Some(active_game)),
       RemoveWord(word)
     -> {
       #(
@@ -303,11 +310,12 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         ws.send(active_game.ws, shared.encode_request(shared.RemoveWord(word))),
       )
     }
-    InRoom(player_id, room_code, player_name, Some(active_game)),
+    InRoom(uri, player_id, room_code, player_name, Some(active_game)),
       UpdateAddWordInput(value)
     -> {
       #(
         InRoom(
+          uri,
           player_id,
           room_code,
           player_name,
@@ -316,13 +324,16 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         effect.none(),
       )
     }
-    InRoom(_player_id, _room_code, _player_name, Some(active_game)), StartRound -> {
+    InRoom(_uri, _player_id, _room_code, _player_name, Some(active_game)),
+      StartRound
+    -> {
       #(
         model,
         ws.send(active_game.ws, shared.encode_request(shared.StartRound)),
       )
     }
     InRoom(
+      uri,
       player_id,
       room_code,
       player_name,
@@ -332,6 +343,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
     -> {
       #(
         InRoom(
+          uri,
           player_id,
           room_code,
           player_name,
@@ -355,6 +367,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       )
     }
     InRoom(
+      uri,
       player_id,
       room_code,
       player_name,
@@ -364,6 +377,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
     -> {
       #(
         InRoom(
+          uri,
           player_id,
           room_code,
           player_name,
@@ -378,6 +392,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       )
     }
     InRoom(
+      uri,
       player_id,
       room_code,
       player_name,
@@ -387,6 +402,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
     -> {
       #(
         InRoom(
+          uri,
           player_id,
           room_code,
           player_name,
@@ -405,7 +421,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         ),
       )
     }
-    InRoom(_player_id, _room_code, _player_name, _active_game), _ -> #(
+    InRoom(_uri, _player_id, _room_code, _player_name, _active_game), _ -> #(
       model,
       effect.none(),
     )
@@ -414,11 +430,15 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
 
 fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) {
   case model {
-    NotInRoom(_, _, _, _) | InRoom(_, _, _, None) -> #(model, effect.none())
-    InRoom(player_id, room_code, player_name, Some(active_game)) ->
+    NotInRoom(_, _, _, _) | InRoom(_uri, _, _, _, None) -> #(
+      model,
+      effect.none(),
+    )
+    InRoom(uri, player_id, room_code, player_name, Some(active_game)) ->
       case shared.decode_websocket_response(msg) {
         Ok(shared.InitialRoomState(room)) -> #(
           InRoom(
+            uri,
             player_id: player_id,
             room_code: room_code,
             player_name: player_name,
@@ -449,6 +469,7 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
             })
           #(
             InRoom(
+              uri,
               player_id: player_id,
               room_code: room_code,
               player_name: player_name,
@@ -464,6 +485,7 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
             })
           #(
             InRoom(
+              uri,
               player_id: player_id,
               room_code: room_code,
               player_name: player_name,
@@ -474,6 +496,7 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
         }
         Ok(shared.RoundInfo(round)) -> #(
           InRoom(
+            uri,
             player_id: player_id,
             room_code: room_code,
             player_name: player_name,
@@ -489,6 +512,7 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
         Ok(shared.RoundResult(finished_round)) -> {
           #(
             InRoom(
+              uri,
               player_id,
               room_code,
               player_name,
@@ -519,16 +543,20 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
   }
 }
 
-fn start_game() {
+fn start_game(uri: uri.Uri) {
+  let uri.Uri(_, _, host, _, _, _, _) = uri
+  let host = option.unwrap(host, "localhost")
   lustre_http.get(
-    "http://localhost:3000/createroom",
+    "http://" <> host <> ":3000/createroom",
     lustre_http.expect_json(shared.decode_http_response_json, JoinedRoom),
   )
 }
 
-fn join_game(room_code) {
+fn join_game(uri, room_code) {
+  let uri.Uri(_, _, host, _, _, _, _) = uri
+  let host = option.unwrap(host, "localhost")
   lustre_http.post(
-    "http://localhost:3000/joinroom",
+    "http://" <> host <> ":3000/joinroom",
     shared.encode_http_request(shared.JoinRoomRequest(room_code)),
     lustre_http.expect_json(shared.decode_http_response_json, JoinedRoom),
   )
@@ -593,7 +621,7 @@ fn header(model: Model) {
         ]),
         html.h1([attribute.class("text-2xl my-5")], [element.text("Join game")]),
       ])
-    InRoom(_, room_code, _, _) ->
+    InRoom(_uri, _, room_code, _, _) ->
       html.div([], [
         html.nav([attribute.class("flex items-center")], [
           link("/", [element.text("Leave game")]),
@@ -652,6 +680,7 @@ fn content(model: Model) {
         ],
       )
     InRoom(
+      _uri,
       _player_id,
       _room_code,
       _player_name,
@@ -703,6 +732,7 @@ fn content(model: Model) {
         |> list.reverse
       ])
     InRoom(
+      _uri,
       player_id,
       _room_code,
       _player_name,
@@ -764,7 +794,7 @@ fn content(model: Model) {
           ),
         ]),
       ])
-    InRoom(_player_id, _room_code, player_name, None) ->
+    InRoom(_uri, _player_id, _room_code, player_name, None) ->
       html.div([attribute.class("flex flex-col m-4")], [
         html.form(
           [event.on_submit(SetPlayerName), attribute.class("flex flex-col m-4")],
@@ -787,6 +817,7 @@ fn content(model: Model) {
         ),
       ])
     InRoom(
+      _uri,
       _player_id,
       room_code,
       player_name,
@@ -874,7 +905,7 @@ fn display_finished_round(
 ) {
   let is_leading_text = fn(id) {
     case id == finished_round.leading_player_id {
-      True -> " (main player)"
+      True -> " (choosing)"
       False -> ""
     }
   }
@@ -903,9 +934,9 @@ fn display_finished_round(
               element.text(
                 player_score.player.name
                 <> is_leading_text(player_score.player.id)
-                <> " ("
+                <> " - "
                 <> int.to_string(player_score.score)
-                <> " points)",
+                <> " points",
               ),
             ]),
             html.ol(

@@ -4963,8 +4963,9 @@ var NotInRoom = class extends CustomType {
   }
 };
 var InRoom = class extends CustomType {
-  constructor(player_id, room_code, player_name, active_game) {
+  constructor(uri, player_id, room_code, player_name, active_game) {
     super();
+    this.uri = uri;
     this.player_id = player_id;
     this.room_code = room_code;
     this.player_name = player_name;
@@ -5083,6 +5084,7 @@ function handle_ws_message(model, msg) {
   } else if (model instanceof InRoom && model.active_game instanceof None) {
     return [model, none()];
   } else {
+    let uri = model.uri;
     let player_id = model.player_id;
     let room_code = model.room_code;
     let player_name = model.player_name;
@@ -5092,6 +5094,7 @@ function handle_ws_message(model, msg) {
       let room = $[0][0];
       return [
         new InRoom(
+          uri,
           player_id,
           room_code,
           player_name,
@@ -5125,6 +5128,7 @@ function handle_ws_message(model, msg) {
       );
       return [
         new InRoom(
+          uri,
           player_id,
           room_code,
           player_name,
@@ -5142,6 +5146,7 @@ function handle_ws_message(model, msg) {
       );
       return [
         new InRoom(
+          uri,
           player_id,
           room_code,
           player_name,
@@ -5153,6 +5158,7 @@ function handle_ws_message(model, msg) {
       let round3 = $[0][0];
       return [
         new InRoom(
+          uri,
           player_id,
           room_code,
           player_name,
@@ -5168,6 +5174,7 @@ function handle_ws_message(model, msg) {
       let finished_round = $[0][0];
       return [
         new InRoom(
+          uri,
           player_id,
           room_code,
           player_name,
@@ -5203,9 +5210,11 @@ function handle_ws_message(model, msg) {
     }
   }
 }
-function start_game() {
+function start_game(uri) {
+  let host = uri.host;
+  let host$1 = unwrap(host, "localhost");
   return get2(
-    "http://localhost:3000/createroom",
+    "http://" + host$1 + ":3000/createroom",
     expect_json(
       decode_http_response_json,
       (var0) => {
@@ -5214,9 +5223,11 @@ function start_game() {
     )
   );
 }
-function join_game(room_code) {
+function join_game(uri, room_code) {
+  let host = uri.host;
+  let host$1 = unwrap(host, "localhost");
   return post(
-    "http://localhost:3000/joinroom",
+    "http://" + host$1 + ":3000/joinroom",
     encode_http_request(new JoinRoomRequest(room_code)),
     expect_json(
       decode_http_response_json,
@@ -5228,13 +5239,14 @@ function join_game(room_code) {
 }
 function update2(model, msg) {
   if (model instanceof NotInRoom && msg instanceof StartGame) {
-    return [model, start_game()];
+    let uri = model.uri;
+    return [model, start_game(uri)];
   } else if (model instanceof NotInRoom && msg instanceof JoinedRoom && msg[0].isOk() && msg[0][0] instanceof RoomResponse) {
     let uri = model.uri;
     let room_code = msg[0][0].room_code;
     let player_id = msg[0][0].player_id;
     return [
-      new InRoom(player_id, room_code, "", new None()),
+      new InRoom(uri, player_id, room_code, "", new None()),
       push(
         relative("/play").withFields({
           query: new Some(query_to_string(toList([["game", room_code]])))
@@ -5264,7 +5276,7 @@ function update2(model, msg) {
         room_code_input,
         new None()
       ),
-      join_game(room_code)
+      join_game(uri, room_code)
     ];
   } else if (model instanceof NotInRoom && msg instanceof OnRouteChange) {
     let room_code_input = model.room_code_input;
@@ -5283,8 +5295,9 @@ function update2(model, msg) {
       none()
     ];
   } else if (model instanceof NotInRoom && msg instanceof JoinGame) {
+    let uri = model.uri;
     let room_code_input = model.room_code_input;
-    return [model, join_game(room_code_input)];
+    return [model, join_game(uri, room_code_input)];
   } else if (model instanceof NotInRoom && msg instanceof UpdatePlayerName) {
     return [model, none()];
   } else if (model instanceof NotInRoom) {
@@ -5296,14 +5309,16 @@ function update2(model, msg) {
     let route = msg[1];
     return [new NotInRoom(uri, route, "", new None()), none()];
   } else if (model instanceof InRoom && model.active_game instanceof None && msg instanceof UpdatePlayerName) {
+    let uri = model.uri;
     let player_id = model.player_id;
     let room_code = model.room_code;
     let player_name = msg[0];
     return [
-      new InRoom(player_id, room_code, player_name, new None()),
+      new InRoom(uri, player_id, room_code, player_name, new None()),
       none()
     ];
   } else if (model instanceof InRoom && model.active_game instanceof None && msg instanceof SetPlayerName) {
+    let uri = model.uri;
     let player_id = model.player_id;
     let room_code = model.room_code;
     let player_name = model.player_name;
@@ -5322,16 +5337,19 @@ function update2(model, msg) {
         }
       );
     })();
+    let host = uri.host;
+    let host$1 = unwrap(host, "localhost");
     return [
       model,
       init2(
-        "ws://localhost:3000/ws/" + player_id + "/" + player_name,
+        "ws://" + host$1 + ":3000/ws/" + player_id + "/" + player_name,
         (var0) => {
           return new WebSocketEvent(var0);
         }
       )
     ];
   } else if (model instanceof InRoom && msg instanceof WebSocketEvent) {
+    let uri = model.uri;
     let player_id = model.player_id;
     let room_code = model.room_code;
     let player_name = model.player_name;
@@ -5340,7 +5358,7 @@ function update2(model, msg) {
       throw makeError(
         "panic",
         "client",
-        248,
+        252,
         "update",
         "panic expression evaluated",
         {}
@@ -5349,6 +5367,7 @@ function update2(model, msg) {
       let socket = ws_event[0];
       return [
         new InRoom(
+          uri,
           player_id,
           room_code,
           player_name,
@@ -5363,47 +5382,12 @@ function update2(model, msg) {
       return [model, none()];
     } else {
       return [
-        new InRoom(player_id, room_code, player_name, new None()),
-        none()
-      ];
-    }
-  } else if (model instanceof InRoom && msg instanceof WebSocketEvent) {
-    let player_id = model.player_id;
-    let room_code = model.room_code;
-    let player_name = model.player_name;
-    let ws_event = msg[0];
-    if (ws_event instanceof InvalidUrl) {
-      throw makeError(
-        "panic",
-        "client",
-        248,
-        "update",
-        "panic expression evaluated",
-        {}
-      );
-    } else if (ws_event instanceof OnOpen) {
-      let socket = ws_event[0];
-      return [
-        new InRoom(
-          player_id,
-          room_code,
-          player_name,
-          new Some(new ActiveGame(socket, new None(), new None(), ""))
-        ),
-        none()
-      ];
-    } else if (ws_event instanceof OnTextMessage) {
-      let msg$1 = ws_event[0];
-      return handle_ws_message(model, msg$1);
-    } else if (ws_event instanceof OnBinaryMessage) {
-      return [model, none()];
-    } else {
-      return [
-        new InRoom(player_id, room_code, player_name, new None()),
+        new InRoom(uri, player_id, room_code, player_name, new None()),
         none()
       ];
     }
   } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && msg instanceof AddWord2 && model.active_game[0].add_word_input !== "") {
+    let uri = model.uri;
     let player_id = model.player_id;
     let room_code = model.room_code;
     let player_name = model.player_name;
@@ -5413,6 +5397,7 @@ function update2(model, msg) {
     let add_word_input = model.active_game[0].add_word_input;
     return [
       new InRoom(
+        uri,
         player_id,
         room_code,
         player_name,
@@ -5440,6 +5425,7 @@ function update2(model, msg) {
       )
     ];
   } else if (model instanceof InRoom && model.active_game instanceof Some && msg instanceof UpdateAddWordInput) {
+    let uri = model.uri;
     let player_id = model.player_id;
     let room_code = model.room_code;
     let player_name = model.player_name;
@@ -5447,6 +5433,7 @@ function update2(model, msg) {
     let value3 = msg[0];
     return [
       new InRoom(
+        uri,
         player_id,
         room_code,
         player_name,
@@ -5461,6 +5448,7 @@ function update2(model, msg) {
       send2(active_game.ws, encode_request(new StartRound()))
     ];
   } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].round instanceof Some && msg instanceof AddNextPreferedWord) {
+    let uri = model.uri;
     let player_id = model.player_id;
     let room_code = model.room_code;
     let player_name = model.player_name;
@@ -5471,6 +5459,7 @@ function update2(model, msg) {
     let word = msg[0];
     return [
       new InRoom(
+        uri,
         player_id,
         room_code,
         player_name,
@@ -5501,6 +5490,7 @@ function update2(model, msg) {
       none()
     ];
   } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].round instanceof Some && msg instanceof ClearOrderedWords) {
+    let uri = model.uri;
     let player_id = model.player_id;
     let room_code = model.room_code;
     let player_name = model.player_name;
@@ -5510,6 +5500,7 @@ function update2(model, msg) {
     let add_word_input = model.active_game[0].add_word_input;
     return [
       new InRoom(
+        uri,
         player_id,
         room_code,
         player_name,
@@ -5525,6 +5516,7 @@ function update2(model, msg) {
       none()
     ];
   } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].round instanceof Some && msg instanceof SubmitOrderedWords2) {
+    let uri = model.uri;
     let player_id = model.player_id;
     let room_code = model.room_code;
     let player_name = model.player_name;
@@ -5534,6 +5526,7 @@ function update2(model, msg) {
     let add_word_input = model.active_game[0].add_word_input;
     return [
       new InRoom(
+        uri,
         player_id,
         room_code,
         player_name,
@@ -5614,6 +5607,8 @@ function init4(_) {
                   return try$(
                     getItem(local_storage, "room_code"),
                     (stored_room_code) => {
+                      let host = uri$1.host;
+                      let host$1 = unwrap(host, "localhost");
                       let $1 = room_code === stored_room_code;
                       if ($1) {
                         return new Ok(
@@ -5621,7 +5616,7 @@ function init4(_) {
                             id2,
                             name,
                             init2(
-                              "ws://localhost:3000/ws/" + id2 + "/" + name,
+                              "ws://" + host$1 + ":3000/ws/" + id2 + "/" + name,
                               (var0) => {
                                 return new WebSocketEvent(var0);
                               }
@@ -5645,7 +5640,7 @@ function init4(_) {
       let id2 = rejoin[0][0];
       let name = rejoin[0][1];
       let msg = rejoin[0][2];
-      return [new InRoom(id2, room_code, name, new None()), msg];
+      return [new InRoom(uri$1, id2, room_code, name, new None()), msg];
     } else {
       return [
         new NotInRoom(
@@ -5655,7 +5650,7 @@ function init4(_) {
           new Some("Sorry, please try joining again.")
         ),
         batch(
-          toList([join_game(room_code), init3(on_url_change)])
+          toList([join_game(uri$1, room_code), init3(on_url_change)])
         )
       ];
     }
@@ -5859,7 +5854,7 @@ function display_finished_round(finished_round, round_index) {
   let is_leading_text = (id2) => {
     let $ = id2 === finished_round.leading_player_id;
     if ($) {
-      return " (main player)";
+      return " (choosing)";
     } else {
       return "";
     }
@@ -5904,7 +5899,7 @@ function display_finished_round(finished_round, round_index) {
                       text(
                         player_score.player.name + is_leading_text(
                           player_score.player.id
-                        ) + " (" + to_string2(player_score.score) + " points)"
+                        ) + " - " + to_string2(player_score.score) + " points"
                       )
                     ])
                   ),
@@ -6256,7 +6251,7 @@ function main() {
     throw makeError(
       "assignment_no_match",
       "client",
-      85,
+      86,
       "main",
       "Assignment pattern did not match",
       { value: $ }
