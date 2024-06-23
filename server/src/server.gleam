@@ -192,26 +192,6 @@ pub fn main() {
           |> response.set_header("Access-Control-Allow-Headers", "content-type")
         http.Get | http.Post ->
           case request.path_segments(req) {
-            [""] | [] ->
-              response.new(200)
-              |> response.prepend_header("content-type", "text/html")
-              |> response.set_body(
-                html.html([], [
-                  html.head([], [
-                    html.meta([attribute.attribute("charset", "UTF-8")]),
-                    html.title([], "A Full Fridge"),
-                    html.script(
-                      [attribute.type_("module"), attribute.src("/client.mjs")],
-                      "",
-                    ),
-                  ]),
-                  html.body([], [html.div([attribute.id("app")], [])]),
-                ])
-                |> element.to_document_string_builder
-                |> bytes_builder.from_string_builder
-                |> mist.Bytes,
-              )
-
             ["client.mjs"] ->
               mist.send_file(
                 priv <> "/static/client.mjs",
@@ -259,7 +239,25 @@ pub fn main() {
               |> result.unwrap_both
             }
 
-            _ -> not_found()
+            _ ->
+              response.new(200)
+              |> response.prepend_header("content-type", "text/html")
+              |> response.set_body(
+                html.html([], [
+                  html.head([], [
+                    html.meta([attribute.attribute("charset", "UTF-8")]),
+                    html.title([], "A Full Fridge"),
+                    html.script(
+                      [attribute.type_("module"), attribute.src("/client.mjs")],
+                      "",
+                    ),
+                  ]),
+                  html.body([], [html.div([attribute.id("app")], [])]),
+                ])
+                |> element.to_document_string_builder
+                |> bytes_builder.from_string_builder
+                |> mist.Bytes,
+              )
           }
           |> response.set_header(
             "Access-Control-Allow-Origin",
@@ -271,7 +269,7 @@ pub fn main() {
       }
     }
     |> mist.new
-    |> mist.port(3000)
+    |> mist.port(8080)
     |> mist.start_http
 
   process.sleep_forever()
