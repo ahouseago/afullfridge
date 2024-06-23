@@ -7,7 +7,7 @@ import gleam/result
 import gleam/string
 import gleam/uri
 import lustre
-import lustre/attribute
+import lustre/attribute.{class}
 import lustre/effect
 import lustre/element
 import lustre/element/html
@@ -20,6 +20,7 @@ import lustre/ui/util/styles
 import lustre_http
 import lustre_websocket as ws
 import modem
+import plinth/browser/clipboard
 import plinth/javascript/storage
 import shared
 
@@ -68,6 +69,7 @@ pub type Msg {
   JoinGame
   JoinedRoom(Result(shared.HttpResponse, lustre_http.HttpError))
 
+  CopyRoomCode
   UpdateRoomCode(String)
   UpdatePlayerName(String)
   SetPlayerName
@@ -216,6 +218,17 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
     )
     NotInRoom(_, _, _, _), UpdatePlayerName(_) -> #(model, effect.none())
     NotInRoom(_, _, _, _), _ -> #(model, effect.none())
+    InRoom(_, _, room_code, _, _), CopyRoomCode -> {
+      let _ = clipboard.write_text(room_code)
+      #(model, effect.none())
+    }
+    InRoom(uri, _, room_code, _, _),
+      OnRouteChange(_uri, Play(Some(new_room_code)))
+      if room_code != new_room_code
+    -> #(
+      NotInRoom(uri, Play(Some(new_room_code)), new_room_code, None),
+      join_game(uri, room_code),
+    )
     InRoom(_, _, _, _, _), OnRouteChange(_uri, Play(Some(_room_code))) -> #(
       model,
       effect.none(),
@@ -589,10 +602,10 @@ pub fn view(model: Model) -> element.Element(Msg) {
   html.div([], [styles.elements(), header(model), content])
 }
 
-fn link(href, content) {
+fn link(href, content, class_name) {
   html.a(
     [
-      attribute.class("p-2 underline border-solid rounded m-2"),
+      class("p-2 underline border-solid rounded m-2 " <> class_name),
       attribute.href(href),
     ],
     content,
@@ -602,42 +615,52 @@ fn link(href, content) {
 fn header(model: Model) {
   case model {
     NotInRoom(_, Home, _, _) ->
-      html.h1([attribute.class("text-4xl my-10 text-center")], [
+      html.h1([class("text-4xl my-10 text-center")], [
         element.text("A Full Fridge"),
       ])
     NotInRoom(_, Play(Some(_)), _, _) ->
       html.div([], [
-        html.nav([attribute.class("flex items-center")], [
-          link("/", [element.text("Home")]),
+        html.nav([class("flex items-center")], [
+          link("/", [element.text("Home")], ""),
         ]),
-        html.h1([attribute.class("text-2xl my-5")], [
-          element.text("Joining game..."),
-        ]),
+        html.h1([class("text-2xl my-5")], [element.text("Joining game...")]),
       ])
     NotInRoom(_, Play(None), _, _) ->
       html.div([], [
-        html.nav([attribute.class("flex items-center")], [
-          link("/", [element.text("Home")]),
+        html.nav([class("flex items-center")], [
+          link("/", [element.text("Home")], ""),
         ]),
-        html.h1([attribute.class("text-2xl my-5")], [element.text("Join game")]),
+        html.h1([class("text-2xl my-5")], [element.text("Join game")]),
       ])
     InRoom(_uri, _, room_code, _, _) ->
-      html.div([], [
-        html.nav([attribute.class("flex items-center")], [
-          link("/", [element.text("Leave game")]),
+      html.div([class("flex bg-green-300")], [
+        html.h1([class("text-xl my-5 mx-2")], [
+          element.text("Game:"),
+          html.code(
+            [
+              event.on_click(CopyRoomCode),
+              attribute.attribute("title", "Copy"),
+              class(
+                "mx-1 px-1 border-dashed border rounded-sm border-white hover:border-slate-500 hover:bg-gray-200 cursor-pointer",
+              ),
+            ],
+            [element.text(room_code)],
+          ),
         ]),
-        html.h1([attribute.class("text-2xl my-5")], [
-          element.text("Game: " <> room_code),
+        html.nav([class("flex items-center")], [
+          link(
+            "/",
+            [icon.exit([class("mr-2")]), element.text("Leave game")],
+            "flex items-center",
+          ),
         ]),
       ])
     NotInRoom(_, NotFound, _, _) ->
       html.div([], [
-        html.nav([attribute.class("flex items-center")], [
-          link("/", [element.text("Home")]),
+        html.nav([class("flex items-center")], [
+          link("/", [element.text("Home")], ""),
         ]),
-        html.h1([attribute.class("text-2xl my-5")], [
-          element.text("Page not found"),
-        ]),
+        html.h1([class("text-2xl my-5")], [element.text("Page not found")]),
       ])
   }
 }
@@ -645,40 +668,38 @@ fn header(model: Model) {
 fn content(model: Model) {
   case model {
     NotInRoom(_, Home, _, _) ->
-      html.div([], [
-        html.p([attribute.class("mx-4 text-lg")], [
-          element.text("Welcome to "),
-          html.span([], [element.text("A Full Fridge")]),
-          element.text(", a game about preferences best played with friends."),
+      html.div([class("text-center")], [
+        html.p([class("mx-4 text-lg mb-8")], [
+          element.text("A game about preferences best played with friends."),
         ]),
-        button.button([event.on_click(StartGame)], [
-          element.text("Start new game"),
+        html.div([class("flex flex-col items-center")], [
+          button.button(
+            [event.on_click(StartGame), button.success(), class("w-36")],
+            [element.text("Start new game")],
+          ),
+          link("/play", [element.text("Join a game")], "w-36"),
         ]),
-        link("/play", [element.text("Join a game")]),
       ])
     NotInRoom(_, _, _, Some(err)) -> element.text(err)
     NotInRoom(_, Play(Some(room_code)), _, None) ->
       element.text("Joining room " <> room_code <> "...")
     NotInRoom(_, Play(None), room_code_input, None) ->
-      html.form(
-        [event.on_submit(JoinGame), attribute.class("flex flex-col m-4")],
-        [
-          html.label([attribute.for("room-code-input")], [
-            element.text("Enter game code:"),
-          ]),
-          input.input([
-            attribute.id("room-code-input"),
-            attribute.placeholder("ABCD"),
-            attribute.type_("text"),
-            attribute.class(
-              "my-2 p-2 border-2 rounded placeholder:text-slate-300 placeholder:tracking-widest font-mono",
-            ),
-            event.on_input(UpdateRoomCode),
-            attribute.value(room_code_input),
-          ]),
-          button.button([attribute.type_("submit")], [element.text("Join")]),
-        ],
-      )
+      html.form([event.on_submit(JoinGame), class("flex flex-col m-4")], [
+        html.label([attribute.for("room-code-input")], [
+          element.text("Enter game code:"),
+        ]),
+        input.input([
+          attribute.id("room-code-input"),
+          attribute.placeholder("ABCD"),
+          attribute.type_("text"),
+          class(
+            "my-2 p-2 border-2 rounded placeholder:text-slate-300 placeholder:tracking-widest font-mono",
+          ),
+          event.on_input(UpdateRoomCode),
+          attribute.value(room_code_input),
+        ]),
+        button.button([attribute.type_("submit")], [element.text("Join")]),
+      ])
     InRoom(
       _uri,
       _player_id,
@@ -686,7 +707,7 @@ fn content(model: Model) {
       _player_name,
       Some(ActiveGame(_ws, Some(room), Some(round_state), _add_word_input)),
     ) ->
-      html.div([attribute.class("flex flex-col m-4")], [
+      html.div([class("flex flex-col m-4")], [
         display_players(room.players, round_state.round.leading_player_id),
         ui.prose([], [
           html.h2([], [element.text("Words:")]),
@@ -738,7 +759,7 @@ fn content(model: Model) {
       _player_name,
       Some(ActiveGame(_ws, Some(room), None, add_word_input)),
     ) ->
-      ui.prose([attribute.class("flex flex-col m-4")], [
+      ui.prose([class("flex flex-col m-4")], [
         html.div([], [
           button.button([event.on_click(StartRound)], [
             element.text("Start game"),
@@ -768,7 +789,7 @@ fn content(model: Model) {
           input.input([
             attribute.id("add-word-input"),
             attribute.type_("text"),
-            attribute.class(
+            class(
               "my-2 p-2 border-2 rounded placeholder:text-slate-300 placeholder:tracking-widest font-mono",
             ),
             event.on_input(UpdateAddWordInput),
@@ -795,26 +816,21 @@ fn content(model: Model) {
         ]),
       ])
     InRoom(_uri, _player_id, _room_code, player_name, None) ->
-      html.div([attribute.class("flex flex-col m-4")], [
-        html.form(
-          [event.on_submit(SetPlayerName), attribute.class("flex flex-col m-4")],
-          [
-            html.label([attribute.for("name-input")], [element.text("Name:")]),
-            input.input([
-              attribute.id("name-input"),
-              attribute.placeholder("Enter name..."),
-              event.on_input(UpdatePlayerName),
-              attribute.value(player_name),
-              attribute.type_("text"),
-              attribute.class(
-                "my-2 p-2 border-2 rounded placeholder:text-slate-300",
-              ),
-            ]),
-            button.button([attribute.type_("submit")], [
-              element.text("Set name"),
-            ]),
-          ],
-        ),
+      html.div([class("flex flex-col m-4")], [
+        html.form([event.on_submit(SetPlayerName), class("flex flex-col m-4")], [
+          html.label([attribute.for("name-input")], [element.text("Name:")]),
+          input.input([
+            attribute.id("name-input"),
+            attribute.placeholder("Enter name..."),
+            event.on_input(UpdatePlayerName),
+            attribute.value(player_name),
+            attribute.type_("text"),
+            class(
+              "my-2 p-2 border-2 rounded placeholder:text-slate-300 placeholder:opacity-50",
+            ),
+          ]),
+          button.button([attribute.type_("submit")], [element.text("Set name")]),
+        ]),
       ])
     InRoom(
       _uri,
@@ -823,7 +839,7 @@ fn content(model: Model) {
       player_name,
       Some(ActiveGame(_ws, None, _round, _)),
     ) -> {
-      html.div([attribute.class("flex flex-col m-4")], [
+      html.div([class("flex flex-col m-4")], [
         html.div([], [
           html.h2([], [element.text(player_name)]),
           element.text("Connecting to room " <> room_code <> "..."),
@@ -910,7 +926,7 @@ fn display_finished_round(
     }
   }
 
-  ui.prose([attribute.class("border-solid border-2")], [
+  ui.prose([class("border-solid border-2")], [
     html.h2([], [
       element.text("Round " <> int.to_string(round_index + 1) <> " scores:"),
     ]),
