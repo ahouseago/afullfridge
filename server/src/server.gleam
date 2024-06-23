@@ -224,9 +224,9 @@ pub fn main() {
                 |> response.set_body(mist.Bytes(bytes_builder.new()))
               })
 
-            ["lustre_ui.css"] ->
+            ["lustre-ui.css"] ->
               mist.send_file(
-                priv <> "/static/lustre_ui.css",
+                priv <> "/static/lustre-ui.css",
                 offset: 0,
                 limit: None,
               )
@@ -262,10 +262,17 @@ pub fn main() {
                 html.html([], [
                   html.head([], [
                     html.meta([attribute.attribute("charset", "UTF-8")]),
+                    html.meta([
+                      attribute.name("viewport"),
+                      attribute.attribute(
+                        "content",
+                        "width=device-width, initial-scale=1.0",
+                      ),
+                    ]),
                     html.title([], "A Full Fridge"),
                     html.link([
                       attribute.rel("stylesheet"),
-                      attribute.href("/lustre_ui.css"),
+                      attribute.href("/lustre-ui.css"),
                     ]),
                     html.link([
                       attribute.rel("stylesheet"),
