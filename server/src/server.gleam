@@ -13,6 +13,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/result
 import gleam/string
+import gleam/uri
 import lustre/attribute
 import lustre/element
 import lustre/element/html
@@ -243,7 +244,12 @@ pub fn main() {
             ["ws", player_id, player_name] ->
               mist.websocket(
                 request: req,
-                on_init: on_init(state_subject, player_id, player_name),
+                on_init: on_init(
+                  state_subject,
+                  player_id,
+                  uri.percent_decode(player_name)
+                    |> result.unwrap(player_name),
+                ),
                 on_close: fn(websocket) { process.send(websocket, Shutdown) },
                 handler: handle_ws_message,
               )
