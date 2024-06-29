@@ -245,6 +245,7 @@ pub fn main() {
               mist.websocket(
                 request: req,
                 on_init: on_init(
+                  _,
                   state_subject,
                   player_id,
                   uri.percent_decode(player_name)
@@ -384,55 +385,51 @@ fn handle_join_request(
 }
 
 fn on_init(
+  _conn: mist.WebsocketConnection,
   game: Subject(Message),
   connection_id: ConnectionId,
   player_name: String,
+) -> #(
+  Subject(WebsocketConnectionUpdate),
+  Option(process.Selector(shared.WebsocketResponse)),
 ) {
-  fn(_conn: mist.WebsocketConnection) -> #(
-    Subject(WebsocketConnectionUpdate),
-    Option(process.Selector(shared.WebsocketResponse)),
-  ) {
-    let self = process.new_subject()
-    let assert Ok(connection_subject) =
-      actor.start(
-        WebsocketConnection(connection_id),
-        fn(update, connection_state) {
-          case update {
-            Request(req) -> {
-              let WebsocketConnection(id) = connection_state
-              process.send(
-                game,
-                ProcessWebsocketRequest(from: id, message: req),
-              )
-              actor.continue(connection_state)
-            }
-            Response(resp) -> {
-              process.send(self, resp)
-              actor.continue(connection_state)
-            }
-            Shutdown -> {
-              case connection_state {
-                WebsocketConnection(id) -> {
-                  process.send(game, DeleteConnection(id))
-                  io.println("Player " <> id <> " disconnected.")
-                }
-              }
-              actor.Stop(process.Normal)
-            }
+  let self = process.new_subject()
+  let assert Ok(connection_subject) =
+    actor.start(
+      WebsocketConnection(connection_id),
+      fn(update, connection_state) {
+        case update {
+          Request(req) -> {
+            let WebsocketConnection(id) = connection_state
+            process.send(game, ProcessWebsocketRequest(from: id, message: req))
+            actor.continue(connection_state)
           }
-        },
-      )
-
-    process.send(
-      game,
-      NewConnection(connection_id, process.send(self, _), player_name),
+          Response(resp) -> {
+            process.send(self, resp)
+            actor.continue(connection_state)
+          }
+          Shutdown -> {
+            case connection_state {
+              WebsocketConnection(id) -> {
+                process.send(game, DeleteConnection(id))
+                io.println("Player " <> id <> " disconnected.")
+              }
+            }
+            actor.Stop(process.Normal)
+          }
+        }
+      },
     )
 
-    #(
-      connection_subject,
-      Some(process.selecting(process.new_selector(), self, fn(a) { a })),
-    )
-  }
+  process.send(
+    game,
+    NewConnection(connection_id, process.send(self, _), player_name),
+  )
+
+  #(
+    connection_subject,
+    Some(process.selecting(process.new_selector(), self, fn(a) { a })),
+  )
 }
 
 fn handle_ws_message(
