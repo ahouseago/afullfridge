@@ -207,20 +207,15 @@ fn handle_create_room_request(
   game,
   _req: request.Request(Connection),
 ) -> Result(response.Response(ResponseData), response.Response(ResponseData)) {
-  process.try_call(game, game.CreateRoom, 2)
-  |> result.map_error(fn(_call_result) {
-    internal_error("failed to create room")
+  process.call(game, game.CreateRoom, 2)
+  |> result.map(fn(room) {
+    response.new(200)
+    |> response.set_body(mist.Bytes(
+      shared.encode_http_response(shared.RoomResponse(room.0, room.1))
+      |> bytes_builder.from_string,
+    ))
   })
-  |> result.try(fn(create_room_result) {
-    result.map(create_room_result, fn(room) {
-      response.new(200)
-      |> response.set_body(mist.Bytes(
-        shared.encode_http_response(shared.RoomResponse(room.0, room.1))
-        |> bytes_builder.from_string,
-      ))
-    })
-    |> result.map_error(fn(_) { internal_error("creating room") })
-  })
+  |> result.map_error(fn(_) { internal_error("creating room") })
 }
 
 fn handle_join_request(
@@ -243,18 +238,14 @@ fn handle_join_request(
 
   case shared.decode_http_request(body) {
     Ok(shared.JoinRoomRequest(room_code)) -> {
-      process.try_call(game, game.GetRoom(_, room_code), 5)
+      process.call(game, game.GetRoom(_, room_code), 5)
       |> result.map_error(fn(_) { not_found() })
       |> result.try(fn(_room) {
-        use join_room <- result.try(
-          process.try_call(game, game.AddPlayerToRoom(_, room_code), 2)
-          |> result.map_error(fn(_call_error) {
-            internal_error("adding player to room")
-          }),
-        )
         use player_id <- result.map(
-          join_room
-          |> result.map_error(fn(reason) { internal_error(reason) }),
+          process.call(game, game.AddPlayerToRoom(_, room_code), 2)
+          |> result.map_error(fn(reason) {
+            internal_error(reason)
+          }),
         )
         response.new(200)
         |> response.set_body(
