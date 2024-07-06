@@ -22,35 +22,36 @@ import prng/random
 import prng/seed
 import random_word
 import shared.{
-  type Player, type PlayerName, type Room, type RoomCode, AddWord, ListWords,
-  Player, Room, Round, StartRound, SubmitOrderedWords,
+  type Player, type PlayerId, type PlayerName, type Room, type RoomCode, AddWord,
+  ListWords, Player, PlayerId, PlayerName, Room, RoomCode, Round, StartRound,
+  SubmitOrderedWords,
 }
-
-type ConnectionId =
-  String
 
 // A subject for each websocket connection.
 type ConnectionSubject =
   Subject(WebsocketConnectionUpdate)
 
 type WebsocketConnection {
-  WebsocketConnection(id: ConnectionId)
+  WebsocketConnection(id: shared.PlayerId)
 }
 
 // These messages are the ways to communicate with the game state actor.
 type Message {
   NewConnection(
-    player_id: ConnectionId,
+    player_id: shared.PlayerId,
     send_message: fn(shared.WebsocketResponse) -> Nil,
     player_name: PlayerName,
   )
-  DeleteConnection(ConnectionId)
-  ProcessWebsocketRequest(from: ConnectionId, message: shared.WebsocketRequest)
+  DeleteConnection(shared.PlayerId)
+  ProcessWebsocketRequest(
+    from: shared.PlayerId,
+    message: shared.WebsocketRequest,
+  )
 
   GetRoom(reply_with: Subject(Result(Room, Nil)), room_code: RoomCode)
-  CreateRoom(reply_with: Subject(Result(#(RoomCode, ConnectionId), Nil)))
+  CreateRoom(reply_with: Subject(Result(#(RoomCode, shared.PlayerId), Nil)))
   AddPlayerToRoom(
-    reply_with: Subject(Result(ConnectionId, String)),
+    reply_with: Subject(Result(shared.PlayerId, String)),
     room_code: RoomCode,
   )
 }
@@ -66,7 +67,7 @@ type Message {
 // communicating over its websocket.
 type WebsocketConnectionUpdate {
   // Sent once set up so the websocket connection actor can set its internal state.
-  // SetupConnection(id: ConnectionId, room_code: RoomCode)
+  // SetupConnection(id: shared.PlayerId, room_code: RoomCode)
   // Sent to the actor from the state manager, which is then sent over the websocket.
   Request(shared.WebsocketRequest)
   // Sent to the actor to pass on to the state manager.
@@ -77,8 +78,8 @@ type WebsocketConnectionUpdate {
 
 type PlayerConnection {
   // Before the websocket has been established
-  DisconnectedPlayer(id: ConnectionId, room_code: RoomCode)
-  ConnectedPlayer(id: ConnectionId, room_code: RoomCode, name: PlayerName)
+  DisconnectedPlayer(id: shared.PlayerId, room_code: RoomCode)
+  ConnectedPlayer(id: shared.PlayerId, room_code: RoomCode, name: PlayerName)
 }
 
 type RoomCodeGenerator {
@@ -89,9 +90,9 @@ type StateWithSubject(connection_subject) {
   State(
     next_player_id: Int,
     room_code_generator: RoomCodeGenerator,
-    players: Dict(ConnectionId, PlayerConnection),
+    players: Dict(shared.PlayerId, PlayerConnection),
     rooms: Dict(RoomCode, RoomState),
-    connections: Dict(ConnectionId, fn(shared.WebsocketResponse) -> Nil),
+    connections: Dict(shared.PlayerId, fn(shared.WebsocketResponse) -> Nil),
   )
 }
 
@@ -102,7 +103,7 @@ pub type RoomState {
 pub type InProgressRound {
   InProgressRound(
     words: List(String),
-    leading_player_id: ConnectionId,
+    leading_player_id: shared.PlayerId,
     submitted_word_lists: List(shared.PlayerWithOrderedPreferences),
   )
 }
@@ -112,8 +113,8 @@ type State =
 
 fn get_next_player_id(state: State) {
   let id = state.next_player_id
-  let connection_id = int.to_string(id)
-  #(State(..state, next_player_id: id + 1), connection_id)
+  let player_id = PlayerId(int.to_string(id))
+  #(State(..state, next_player_id: id + 1), player_id)
 }
 
 fn generate_room_code(state: State) {
@@ -134,7 +135,7 @@ fn generate_room_code(state: State) {
         seed: new_seed,
       ),
     ),
-    string.from_utf_codepoints(utf_points),
+    RoomCode(string.from_utf_codepoints(utf_points)),
   )
 }
 
@@ -247,9 +248,10 @@ pub fn main() {
                 on_init: on_init(
                   _,
                   state_subject,
-                  player_id,
+                  PlayerId(player_id),
                   uri.percent_decode(player_name)
-                    |> result.unwrap(player_name),
+                    |> result.unwrap(player_name)
+                    |> PlayerName,
                 ),
                 on_close: fn(websocket) { process.send(websocket, Shutdown) },
                 handler: handle_ws_message,
@@ -362,7 +364,7 @@ fn handle_join_request(
             internal_error("adding player to room")
           }),
         )
-        use connection_id <- result.map(
+        use player_id <- result.map(
           join_room
           |> result.map_error(fn(reason) { internal_error(reason) }),
         )
@@ -372,7 +374,7 @@ fn handle_join_request(
             bytes_builder.from_string(
               shared.encode_http_response(shared.RoomResponse(
                 room_code,
-                connection_id,
+                player_id,
               )),
             ),
           ),
@@ -387,8 +389,8 @@ fn handle_join_request(
 fn on_init(
   _conn: mist.WebsocketConnection,
   game: Subject(Message),
-  connection_id: ConnectionId,
-  player_name: String,
+  player_id: PlayerId,
+  player_name: PlayerName,
 ) -> #(
   Subject(WebsocketConnectionUpdate),
   Option(process.Selector(shared.WebsocketResponse)),
@@ -396,7 +398,7 @@ fn on_init(
   let self = process.new_subject()
   let assert Ok(connection_subject) =
     actor.start(
-      WebsocketConnection(connection_id),
+      WebsocketConnection(player_id),
       fn(update, connection_state) {
         case update {
           Request(req) -> {
@@ -412,7 +414,7 @@ fn on_init(
             case connection_state {
               WebsocketConnection(id) -> {
                 process.send(game, DeleteConnection(id))
-                io.println("Player " <> id <> " disconnected.")
+                io.println("Player " <> shared.player_id_to_string(id) <> " disconnected.")
               }
             }
             actor.Stop(process.Normal)
@@ -423,7 +425,7 @@ fn on_init(
 
   process.send(
     game,
-    NewConnection(connection_id, process.send(self, _), player_name),
+    NewConnection(player_id, process.send(self, _), player_name),
   )
 
   #(
@@ -464,14 +466,14 @@ fn handle_ws_message(
 
 fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
   case msg {
-    NewConnection(connection_id, send_fn, player_name) -> {
-      case dict.get(state.players, connection_id) {
+    NewConnection(player_id, send_fn, player_name) -> {
+      case dict.get(state.players, player_id) {
         Ok(DisconnectedPlayer(id, room_code)) -> {
           io.println(
             "player "
-            <> id
+            <> shared.player_id_to_string(id)
             <> " set up websocket connection in room "
-            <> room_code
+            <> shared.room_code_to_string(room_code)
             <> ".",
           )
           let connections = dict.insert(state.connections, id, send_fn)
@@ -542,9 +544,9 @@ fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
         }
       }
     }
-    DeleteConnection(connection_id) -> {
+    DeleteConnection(player_id) -> {
       let rooms =
-        dict.get(state.players, connection_id)
+        dict.get(state.players, player_id)
         |> result.map(fn(player) { player.room_code })
         |> result.try(fn(room_code) { dict.get(state.rooms, room_code) })
         |> result.try(fn(room_state) {
@@ -552,7 +554,7 @@ fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
             Room(
               ..room_state.room,
               players: list.filter(room_state.room.players, fn(player) {
-                player.id != connection_id
+                player.id != player_id
               }),
             )
           broadcast_message(
@@ -568,7 +570,7 @@ fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
         State(
           ..state,
           rooms: rooms,
-          connections: dict.delete(state.connections, connection_id),
+          connections: dict.delete(state.connections, player_id),
         ),
       )
     }
@@ -579,9 +581,9 @@ fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
       )
     }
     CreateRoom(subj) -> {
-      let #(state, connection_id) = get_next_player_id(state)
+      let #(state, player_id) = get_next_player_id(state)
       let #(state, room_code) = generate_room_code(state)
-      let player = DisconnectedPlayer(id: connection_id, room_code: room_code)
+      let player = DisconnectedPlayer(id: player_id, room_code: room_code)
       let room =
         Room(
           room_code: room_code,
@@ -591,12 +593,12 @@ fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
           finished_rounds: [],
           scoring_method: shared.EqualPositions,
         )
-      actor.send(subj, Ok(#(room_code, connection_id)))
+      actor.send(subj, Ok(#(room_code, player_id)))
       let room_state = RoomState(room: room, round_state: None)
       actor.continue(
         State(
           ..state,
-          players: dict.insert(state.players, connection_id, player),
+          players: dict.insert(state.players, player_id, player),
           rooms: dict.insert(state.rooms, room_code, room_state),
         ),
       )
@@ -610,16 +612,16 @@ fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
     }
     AddPlayerToRoom(subj, room_code) -> {
       result.map(dict.get(state.rooms, room_code), fn(room) {
-        let #(state, connection_id) = get_next_player_id(state)
+        let #(state, player_id) = get_next_player_id(state)
         let player_connection =
-          DisconnectedPlayer(id: connection_id, room_code: room_code)
-        actor.send(subj, Ok(connection_id))
+          DisconnectedPlayer(id: player_id, room_code: room_code)
+        actor.send(subj, Ok(player_id))
         actor.continue(
           State(
             ..state,
             players: dict.insert(
               state.players,
-              connection_id,
+              player_id,
               player_connection,
             ),
             rooms: dict.insert(state.rooms, room_code, room),
@@ -632,7 +634,7 @@ fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
 }
 
 fn broadcast_message(
-  connections: Dict(ConnectionId, fn(shared.WebsocketResponse) -> Nil),
+  connections: Dict(shared.PlayerId, fn(shared.WebsocketResponse) -> Nil),
   to players: List(Player),
   message msg: shared.WebsocketResponse,
 ) {
@@ -643,7 +645,7 @@ fn broadcast_message(
 
 fn handle_websocket_request(
   state: State,
-  from: ConnectionId,
+  from: shared.PlayerId,
   request: shared.WebsocketRequest,
 ) -> Result(State, Nil) {
   use player <- result.map(dict.get(state.players, from))
@@ -939,7 +941,7 @@ fn get_player_scores(
   list.map(round.submitted_word_lists, fn(word_list) {
     let player_name =
       dict.get(player_map, word_list.0)
-      |> result.unwrap(shared.Player("", "Unknown"))
+      |> result.unwrap(shared.Player(PlayerId(""), PlayerName("Unknown")))
     let score = dict.get(scores, word_list.0) |> result.unwrap(0)
     shared.PlayerScore(player_name, word_list.1, score)
   })

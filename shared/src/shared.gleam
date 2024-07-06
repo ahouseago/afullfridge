@@ -5,14 +5,17 @@ import gleam/option.{type Option}
 import gleam/pair
 import gleam/result
 
-pub type PlayerName =
-  String
+pub type PlayerName {
+  PlayerName(String)
+}
 
-pub type PlayerId =
-  String
+pub type PlayerId {
+  PlayerId(String)
+}
 
-pub type RoomCode =
-  String
+pub type RoomCode {
+  RoomCode(String)
+}
 
 pub type HttpRequest {
   CreateRoomRequest
@@ -47,24 +50,6 @@ pub type Player {
   Player(id: PlayerId, name: PlayerName)
 }
 
-fn player_to_json(player: Player) {
-  json.object([
-    #("id", json.string(player.id)),
-    #("name", json.string(player.name)),
-  ])
-}
-
-pub fn player_from_json(
-  player: dynamic.Dynamic,
-) -> Result(Player, List(dynamic.DecodeError)) {
-  player
-  |> dynamic.decode2(
-    Player,
-    dynamic.field("id", dynamic.string),
-    dynamic.field("name", dynamic.string),
-  )
-}
-
 pub type PlayerWithOrderedPreferences =
   #(PlayerId, List(String))
 
@@ -81,11 +66,90 @@ pub type Round {
   )
 }
 
+pub type FinishedRound {
+  FinishedRound(
+    words: List(String),
+    leading_player_id: PlayerId,
+    player_scores: List(PlayerScore),
+  )
+}
+
+pub type PlayerScore {
+  PlayerScore(player: Player, words: List(String), score: Int)
+}
+
+pub type ScoringMethod {
+  // Scores one point for exactly matching the correct list.
+  ExactMatch
+  // Scores one point for every entry that is in the same position as the same
+  // entry in the correct list.
+  EqualPositions
+}
+
+pub type Room {
+  Room(
+    room_code: RoomCode,
+    players: List(Player),
+    // All of the words that can be chosen from to create a round.
+    word_list: List(String),
+    round: Option(Round),
+    finished_rounds: List(FinishedRound),
+    scoring_method: ScoringMethod,
+  )
+}
+
+pub fn player_name_to_string(player_name: PlayerName) -> String {
+  let PlayerName(name) = player_name
+  name
+}
+
+pub fn player_id_to_string(player_id: PlayerId) -> String {
+  let PlayerId(id) = player_id
+  id
+}
+
+pub fn room_code_to_string(room_code: RoomCode) -> String {
+  let RoomCode(code) = room_code
+  code
+}
+
+fn player_id_to_json(id: PlayerId) -> json.Json {
+  player_id_to_string(id) |> json.string
+}
+
+fn room_code_to_json(room_code: RoomCode) -> json.Json {
+  room_code_to_string(room_code) |> json.string
+}
+
+fn player_to_json(player: Player) {
+  json.object([
+    #("id", player.id |> player_id_to_string |> json.string),
+    #("name", player.name |> player_name_to_string |> json.string),
+  ])
+}
+
+fn from_dynamic_string(constructor: fn(String) -> a) {
+  fn(str: dynamic.Dynamic) -> Result(a, List(dynamic.DecodeError)) {
+    str |> dynamic.decode1(constructor, dynamic.string)
+  }
+}
+
+pub fn player_from_json(
+  player: dynamic.Dynamic,
+) -> Result(Player, List(dynamic.DecodeError)) {
+  player
+  |> dynamic.decode2(
+    Player,
+    dynamic.field("id", from_dynamic_string(PlayerId)),
+    dynamic.field("name", from_dynamic_string(PlayerName)),
+  )
+}
+
 pub fn round_to_json(round: Round) -> json.Json {
   json.object([
     #("words", json.array(round.words, of: json.string)),
-    #("leadingPlayerId", json.string(round.leading_player_id)),
-    #("submitted", json.array(round.submitted, of: json.string)),
+    #("leadingPlayerId", player_id_to_json(round.leading_player_id)),
+    #("submitted", json.array(round.submitted, of: player_id_to_json)),
   ])
 }
 
@@ -96,23 +160,15 @@ pub fn round_from_json(
   |> dynamic.decode3(
     Round,
     dynamic.field("words", dynamic.list(dynamic.string)),
-    dynamic.field("leadingPlayerId", dynamic.string),
-    dynamic.field("submitted", dynamic.list(dynamic.string)),
-  )
-}
-
-pub type FinishedRound {
-  FinishedRound(
-    words: List(String),
-    leading_player_id: PlayerId,
-    player_scores: List(PlayerScore),
+    dynamic.field("leadingPlayerId", from_dynamic_string(PlayerId)),
+    dynamic.field("submitted", dynamic.list(from_dynamic_string(PlayerId))),
   )
 }
 
 pub fn finished_round_to_json(round: FinishedRound) -> json.Json {
   json.object([
     #("words", json.array(round.words, of: json.string)),
-    #("leadingPlayerId", json.string(round.leading_player_id)),
+    #("leadingPlayerId", player_id_to_json(round.leading_player_id)),
     #("scores", json.array(round.player_scores, of: player_score_to_json)),
   ])
 }
@@ -124,13 +180,9 @@ pub fn finished_round_from_json(
   |> dynamic.decode3(
     FinishedRound,
     dynamic.field("words", dynamic.list(dynamic.string)),
-    dynamic.field("leadingPlayerId", dynamic.string),
+    dynamic.field("leadingPlayerId", from_dynamic_string(PlayerId)),
     dynamic.field("scores", dynamic.list(player_score_from_json)),
   )
-}
-
-pub type PlayerScore {
-  PlayerScore(player: Player, words: List(String), score: Int)
 }
 
 pub fn player_score_to_json(player_score: PlayerScore) -> json.Json {
@@ -151,14 +203,6 @@ pub fn player_score_from_json(
     dynamic.field("words", dynamic.list(dynamic.string)),
     dynamic.field("score", dynamic.int),
   )
-}
-
-pub type ScoringMethod {
-  // Scores one point for exactly matching the correct list.
-  ExactMatch
-  // Scores one point for every entry that is in the same position as the same
-  // entry in the correct list.
-  EqualPositions
 }
 
 fn scoring_method_to_json(scoring_method: ScoringMethod) -> json.Json {
@@ -182,21 +226,9 @@ fn scoring_method_from_json(
   }
 }
 
-pub type Room {
-  Room(
-    room_code: RoomCode,
-    players: List(Player),
-    // All of the words that can be chosen from to create a round.
-    word_list: List(String),
-    round: Option(Round),
-    finished_rounds: List(FinishedRound),
-    scoring_method: ScoringMethod,
-  )
-}
-
 pub fn room_to_json(room: Room) -> json.Json {
   json.object([
-    #("roomCode", json.string(room.room_code)),
+    #("roomCode", room_code_to_json(room.room_code)),
     #("players", json.array(room.players, of: player_to_json)),
     #("wordList", json.array(room.word_list, of: json.string)),
     #("round", json.nullable(room.round, of: round_to_json)),
@@ -214,12 +246,12 @@ pub fn room_from_json(
   room
   |> dynamic.decode6(
     Room,
-    dynamic.field("roomCode", dynamic.string),
+    dynamic.field("roomCode", from_dynamic_string(RoomCode)),
     dynamic.field("players", dynamic.list(player_from_json)),
     dynamic.field("wordList", dynamic.list(dynamic.string)),
     dynamic.optional_field("round", round_from_json),
     dynamic.field("finishedRounds", dynamic.list(finished_round_from_json)),
-    dynamic.field("scoringMethod", scoring_method_from_json)
+    dynamic.field("scoringMethod", scoring_method_from_json),
   )
 }
 
@@ -227,7 +259,7 @@ pub fn encode_http_request(request: HttpRequest) {
   let #(t, message) =
     case request {
       CreateRoomRequest -> #("createRoom", json.null())
-      JoinRoomRequest(room_code) -> #("joinRoom", json.string(room_code))
+      JoinRoomRequest(room_code) -> #("joinRoom", room_code_to_json(room_code))
     }
     |> pair.map_first(json.string)
   json.object([#("type", t), #("message", message)])
@@ -264,7 +296,7 @@ pub fn decode_http_request(request: String) -> Result(HttpRequest, String) {
     Ok(#("createRoom", _)) -> Ok(CreateRoomRequest)
     Ok(#("joinRoom", msg)) ->
       msg
-      |> dynamic.decode1(JoinRoomRequest, dynamic.string)
+      |> dynamic.decode1(JoinRoomRequest, from_dynamic_string(RoomCode))
     Ok(#(request_type, _)) ->
       Error([dynamic.DecodeError("unknown request type", request_type, [])])
     Error(json.UnexpectedFormat(e)) -> Error(e)
@@ -322,8 +354,8 @@ pub fn encode_http_response(response: HttpResponse) {
       RoomResponse(room_code, player_id) -> #(
         "joinedRoom",
         json.object([
-          #("roomCode", json.string(room_code)),
-          #("playerId", json.string(player_id)),
+          #("roomCode", room_code_to_json(room_code)),
+          #("playerId", player_id_to_json(player_id)),
         ]),
       )
     }
@@ -370,8 +402,8 @@ pub fn decode_http_response_json(
       msg
       |> dynamic.decode2(
         RoomResponse,
-        dynamic.field("roomCode", dynamic.string),
-        dynamic.field("playerId", dynamic.string),
+        dynamic.field("roomCode", from_dynamic_string(RoomCode)),
+        dynamic.field("playerId", from_dynamic_string(PlayerId)),
       )
     Ok(#(request_type, _)) ->
       Error([dynamic.DecodeError("unknown request type", request_type, [])])
@@ -392,8 +424,8 @@ pub fn decode_http_response(request: String) -> Result(HttpResponse, String) {
       msg
       |> dynamic.decode2(
         RoomResponse,
-        dynamic.field("roomCode", dynamic.string),
-        dynamic.field("playerId", dynamic.string),
+        dynamic.field("roomCode", from_dynamic_string(RoomCode)),
+        dynamic.field("playerId", from_dynamic_string(PlayerId)),
       )
     Ok(#(request_type, _)) ->
       Error([dynamic.DecodeError("unknown request type", request_type, [])])

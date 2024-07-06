@@ -4417,6 +4417,24 @@ function null_or(val) {
 }
 
 // build/dev/javascript/shared/shared.mjs
+var PlayerName = class extends CustomType {
+  constructor(x0) {
+    super();
+    this[0] = x0;
+  }
+};
+var PlayerId = class extends CustomType {
+  constructor(x0) {
+    super();
+    this[0] = x0;
+  }
+};
+var RoomCode = class extends CustomType {
+  constructor(x0) {
+    super();
+    this[0] = x0;
+  }
+};
 var CreateRoomRequest = class extends CustomType {
 };
 var JoinRoomRequest = class extends CustomType {
@@ -4538,14 +4556,46 @@ var Room = class extends CustomType {
     this.scoring_method = scoring_method;
   }
 };
+function player_name_to_string(player_name) {
+  let name = player_name[0];
+  return name;
+}
+function player_id_to_string(player_id) {
+  let id2 = player_id[0];
+  return id2;
+}
+function room_code_to_string(room_code) {
+  let code2 = room_code[0];
+  return code2;
+}
+function room_code_to_json(room_code) {
+  let _pipe = room_code_to_string(room_code);
+  return string2(_pipe);
+}
+function from_dynamic_string(constructor) {
+  return (str) => {
+    let _pipe = str;
+    return decode1(constructor, string)(_pipe);
+  };
+}
 function player_from_json(player) {
   let _pipe = player;
   return decode2(
     (var0, var1) => {
       return new Player(var0, var1);
     },
-    field("id", string),
-    field("name", string)
+    field(
+      "id",
+      from_dynamic_string((var0) => {
+        return new PlayerId(var0);
+      })
+    ),
+    field(
+      "name",
+      from_dynamic_string((var0) => {
+        return new PlayerName(var0);
+      })
+    )
   )(_pipe);
 }
 function round_from_json(round3) {
@@ -4555,8 +4605,20 @@ function round_from_json(round3) {
       return new Round(var0, var1, var2);
     },
     field("words", list(string)),
-    field("leadingPlayerId", string),
-    field("submitted", list(string))
+    field(
+      "leadingPlayerId",
+      from_dynamic_string((var0) => {
+        return new PlayerId(var0);
+      })
+    ),
+    field(
+      "submitted",
+      list(
+        from_dynamic_string((var0) => {
+          return new PlayerId(var0);
+        })
+      )
+    )
   )(_pipe);
 }
 function player_score_from_json(player_score) {
@@ -4577,7 +4639,12 @@ function finished_round_from_json(round3) {
       return new FinishedRound(var0, var1, var2);
     },
     field("words", list(string)),
-    field("leadingPlayerId", string),
+    field(
+      "leadingPlayerId",
+      from_dynamic_string((var0) => {
+        return new PlayerId(var0);
+      })
+    ),
     field("scores", list(player_score_from_json))
   )(_pipe);
 }
@@ -4603,7 +4670,12 @@ function room_from_json(room) {
     (var0, var1, var2, var3, var4, var5) => {
       return new Room(var0, var1, var2, var3, var4, var5);
     },
-    field("roomCode", string),
+    field(
+      "roomCode",
+      from_dynamic_string((var0) => {
+        return new RoomCode(var0);
+      })
+    ),
     field("players", list(player_from_json)),
     field("wordList", list(string)),
     optional_field("round", round_from_json),
@@ -4618,7 +4690,7 @@ function encode_http_request(request) {
         return ["createRoom", null$()];
       } else {
         let room_code = request.room_code;
-        return ["joinRoom", string2(room_code)];
+        return ["joinRoom", room_code_to_json(room_code)];
       }
     })();
     return map_first(_pipe, string2);
@@ -4670,8 +4742,18 @@ function decode_http_response_json(response) {
       (var0, var1) => {
         return new RoomResponse(var0, var1);
       },
-      field("roomCode", string),
-      field("playerId", string)
+      field(
+        "roomCode",
+        from_dynamic_string((var0) => {
+          return new RoomCode(var0);
+        })
+      ),
+      field(
+        "playerId",
+        from_dynamic_string((var0) => {
+          return new PlayerId(var0);
+        })
+      )
     )(_pipe);
   } else if ($.isOk()) {
     let request_type = $[0][0];
@@ -5096,12 +5178,10 @@ function handle_ws_message(model, msg) {
   }
 }
 function start_game(uri) {
-  let host = uri.host;
-  let port = uri.port;
-  let host$1 = unwrap(host, "localhost");
-  let port$1 = (() => {
+  let host = unwrap(uri.host, "localhost");
+  let port = (() => {
     let _pipe = map(
-      port,
+      uri.port,
       (port2) => {
         return ":" + to_string2(port2);
       }
@@ -5109,7 +5189,7 @@ function start_game(uri) {
     return unwrap(_pipe, "");
   })();
   return get2(
-    "https://" + host$1 + port$1 + "/createroom",
+    "https://" + host + port + "/createroom",
     expect_json(
       decode_http_response_json,
       (var0) => {
@@ -5119,12 +5199,10 @@ function start_game(uri) {
   );
 }
 function join_game(uri, room_code) {
-  let host = uri.host;
-  let port = uri.port;
-  let host$1 = unwrap(host, "localhost");
-  let port$1 = (() => {
+  let host = unwrap(uri.host, "localhost");
+  let port = (() => {
     let _pipe = map(
-      port,
+      uri.port,
       (port2) => {
         return ":" + to_string2(port2);
       }
@@ -5132,7 +5210,7 @@ function join_game(uri, room_code) {
     return unwrap(_pipe, "");
   })();
   return post(
-    "https://" + host$1 + port$1 + "/joinroom",
+    "https://" + host + port + "/joinroom",
     encode_http_request(new JoinRoomRequest(room_code)),
     expect_json(
       decode_http_response_json,
@@ -5155,13 +5233,17 @@ function update2(model, msg) {
         uri,
         player_id,
         room_code,
-        "",
+        new PlayerName(""),
         new None(),
         new DisplayState(new Round2(), false)
       ),
       push(
         relative("/play").withFields({
-          query: new Some(query_to_string(toList([["game", room_code]])))
+          query: new Some(
+            query_to_string(
+              toList([["game", room_code_to_string(room_code)]])
+            )
+          )
         })
       )
     ];
@@ -5188,7 +5270,7 @@ function update2(model, msg) {
         room_code_input,
         new None()
       ),
-      join_game(uri, room_code)
+      join_game(uri, new RoomCode(room_code))
     ];
   } else if (model instanceof NotInRoom && msg instanceof OnRouteChange) {
     let room_code_input = model.room_code_input;
@@ -5209,14 +5291,14 @@ function update2(model, msg) {
   } else if (model instanceof NotInRoom && msg instanceof JoinGame) {
     let uri = model.uri;
     let room_code_input = model.room_code_input;
-    return [model, join_game(uri, room_code_input)];
+    return [model, join_game(uri, new RoomCode(room_code_input))];
   } else if (model instanceof NotInRoom && msg instanceof UpdatePlayerName) {
     return [model, none()];
   } else if (model instanceof NotInRoom) {
     return [model, none()];
   } else if (model instanceof InRoom && msg instanceof CopyRoomCode) {
     let room_code = model.room_code;
-    let $ = writeText(room_code);
+    let $ = writeText(room_code_to_string(room_code));
     return [model, none()];
   } else if (model instanceof InRoom && msg instanceof ShowMenu) {
     let uri = model.uri;
@@ -5255,9 +5337,9 @@ function update2(model, msg) {
       ),
       none()
     ];
-  } else if (model instanceof InRoom && msg instanceof OnRouteChange && msg[1] instanceof Play && msg[1].room_code instanceof Some && model.room_code !== msg[1].room_code[0]) {
+  } else if (model instanceof InRoom && model.room_code instanceof RoomCode && msg instanceof OnRouteChange && msg[1] instanceof Play && msg[1].room_code instanceof Some && model.room_code[0] !== msg[1].room_code[0]) {
     let uri = model.uri;
-    let room_code = model.room_code;
+    let room_code = model.room_code[0];
     let new_room_code = msg[1].room_code[0];
     return [
       new NotInRoom(
@@ -5266,7 +5348,7 @@ function update2(model, msg) {
         new_room_code,
         new None()
       ),
-      join_game(uri, room_code)
+      join_game(uri, new RoomCode(room_code))
     ];
   } else if (model instanceof InRoom && msg instanceof OnRouteChange && msg[1] instanceof Play && msg[1].room_code instanceof Some) {
     return [model, none()];
@@ -5281,14 +5363,21 @@ function update2(model, msg) {
     let display = model.display_state;
     let player_name = msg[0];
     return [
-      new InRoom(uri, player_id, room_code, player_name, new None(), display),
+      new InRoom(
+        uri,
+        player_id,
+        room_code,
+        new PlayerName(player_name),
+        new None(),
+        display
+      ),
       none()
     ];
-  } else if (model instanceof InRoom && model.active_game instanceof None && msg instanceof SetPlayerName) {
+  } else if (model instanceof InRoom && model.player_id instanceof PlayerId && model.room_code instanceof RoomCode && model.player_name instanceof PlayerName && model.active_game instanceof None && msg instanceof SetPlayerName) {
     let uri = model.uri;
-    let player_id = model.player_id;
-    let room_code = model.room_code;
-    let player_name = model.player_name;
+    let player_id = model.player_id[0];
+    let room_code = model.room_code[0];
+    let player_name = model.player_name[0];
     let $ = (() => {
       let _pipe = localStorage();
       return try$(
@@ -5304,12 +5393,10 @@ function update2(model, msg) {
         }
       );
     })();
-    let host = uri.host;
-    let port = uri.port;
-    let host$1 = unwrap(host, "localhost");
-    let port$1 = (() => {
+    let host = unwrap(uri.host, "localhost");
+    let port = (() => {
       let _pipe = map(
-        port,
+        uri.port,
         (port2) => {
           return ":" + to_string2(port2);
         }
@@ -5319,7 +5406,7 @@ function update2(model, msg) {
     return [
       model,
       init2(
-        "wss://" + host$1 + port$1 + "/ws/" + player_id + "/" + player_name,
+        "wss://" + host + port + "/ws/" + player_id + "/" + player_name,
         (var0) => {
           return new WebSocketEvent(var0);
         }
@@ -5336,7 +5423,7 @@ function update2(model, msg) {
       throw makeError(
         "panic",
         "client",
-        324,
+        345,
         "update",
         "panic expression evaluated",
         {}
@@ -5603,12 +5690,10 @@ function init4(_) {
                   return try$(
                     getItem(local_storage, "room_code"),
                     (stored_room_code) => {
-                      let host = uri$1.host;
-                      let port = uri$1.port;
-                      let host$1 = unwrap(host, "localhost");
-                      let port$1 = (() => {
+                      let host = unwrap(uri$1.host, "localhost");
+                      let port = (() => {
                         let _pipe$1 = map(
-                          port,
+                          uri$1.port,
                           (port2) => {
                             return ":" + to_string2(port2);
                           }
@@ -5622,7 +5707,7 @@ function init4(_) {
                             id2,
                             name,
                             init2(
-                              "wss://" + host$1 + port$1 + "/ws/" + id2 + "/" + name,
+                              "wss://" + host + port + "/ws/" + id2 + "/" + name,
                               (var0) => {
                                 return new WebSocketEvent(var0);
                               }
@@ -5649,9 +5734,9 @@ function init4(_) {
       return [
         new InRoom(
           uri$1,
-          id2,
-          room_code,
-          name,
+          new PlayerId(id2),
+          new RoomCode(room_code),
+          new PlayerName(name),
           new None(),
           new DisplayState(new Round2(), false)
         ),
@@ -5666,7 +5751,10 @@ function init4(_) {
           new Some("Sorry, please try joining again.")
         ),
         batch(
-          toList([join_game(uri$1, room_code), init3(on_url_change)])
+          toList([
+            join_game(uri$1, new RoomCode(room_code)),
+            init3(on_url_change)
+          ])
         )
       ];
     }
@@ -5767,7 +5855,7 @@ function header(model) {
                   "mx-1 px-1 text-gray-100 border-dashed border-2 rounded-sm border-transparent hover:border-slate-500 hover:bg-green-200 hover:text-gray-800 cursor-pointer"
                 )
               ]),
-              toList([text(room_code)])
+              toList([text(room_code_to_string(room_code))])
             )
           ])
         ),
@@ -5800,7 +5888,7 @@ function header(model) {
                   "mx-1 px-1 text-gray-100 border-dashed border-2 rounded-sm border-transparent hover:border-slate-500 hover:bg-green-200 hover:text-gray-800 cursor-pointer"
                 )
               ]),
-              toList([text(room_code)])
+              toList([text(room_code_to_string(room_code))])
             )
           ])
         ),
@@ -5858,15 +5946,15 @@ function choosing_player_heading(players, self_player_id, leading_player_id) {
   let _pipe = find(
     players,
     (player) => {
-      return player.id === leading_player_id;
+      return isEqual(player.id, leading_player_id);
     }
   );
   let _pipe$1 = map3(
     _pipe,
     (player) => {
-      let $ = player.id === self_player_id;
+      let $ = isEqual(player.id, self_player_id);
       if (!$) {
-        return "You are guessing " + player.name + "'s order of preference";
+        return "You are guessing " + player_name_to_string(player.name) + "'s order of preference";
       } else {
         return "It's your turn! Select the things below in your preference order";
       }
@@ -5889,16 +5977,22 @@ function display_players(players, leading_player_id, finished_rounds) {
         round_scores,
         scores2,
         (scores3, round_score) => {
-          let $ = find(scores3, (s) => {
-            return s[0] === round_score[0];
-          });
+          let $ = find(
+            scores3,
+            (s) => {
+              return isEqual(s[0], round_score[0]);
+            }
+          );
           if ($.isOk()) {
             let score = $[0];
             let rest = (() => {
               let _pipe = scores3;
-              return filter(_pipe, (s) => {
-                return s[0] !== score[0];
-              });
+              return filter(
+                _pipe,
+                (s) => {
+                  return !isEqual(s[0], score[0]);
+                }
+              );
             })();
             return prepend(
               [
@@ -5929,7 +6023,7 @@ function display_players(players, leading_player_id, finished_rounds) {
             let _pipe$1 = find(
               scores,
               (score2) => {
-                return score2[0] === player.id;
+                return isEqual(score2[0], player.id);
               }
             );
             let _pipe$2 = map3(_pipe$1, (s) => {
@@ -5939,7 +6033,7 @@ function display_players(players, leading_player_id, finished_rounds) {
             return to_string2(_pipe$3);
           })();
           let extra_class = (() => {
-            let $ = player.id === leading_player_id;
+            let $ = isEqual(player.id, leading_player_id);
             if ($) {
               return " border border-gray-200 shadow";
             } else {
@@ -5951,7 +6045,7 @@ function display_players(players, leading_player_id, finished_rounds) {
               class$("my-1 p-2 rounded flex justify-between" + extra_class)
             ]),
             toList([
-              text(player.name),
+              text(player_name_to_string(player.name)),
               strong(toList([]), toList([text(score)]))
             ])
           );
@@ -5962,11 +6056,13 @@ function display_players(players, leading_player_id, finished_rounds) {
 }
 function display_finished_round(finished_round, round_index) {
   let player_text = (player, score) => {
-    let $ = player.id === finished_round.leading_player_id;
+    let $ = isEqual(player.id, finished_round.leading_player_id);
     if ($) {
-      return player.name + "'s ranking";
+      return player_name_to_string(player.name) + "'s ranking";
     } else {
-      return player.name + "'s guess - " + to_string2(score) + " points";
+      return player_name_to_string(player.name) + "'s guess - " + to_string2(
+        score
+      ) + " points";
     }
   };
   return div(
@@ -5982,8 +6078,8 @@ function display_finished_round(finished_round, round_index) {
           let _pipe = sort(
             finished_round.player_scores,
             (a2, b) => {
-              let $ = a2.player.id === finished_round.leading_player_id;
-              let $1 = b.player.id === finished_round.leading_player_id;
+              let $ = isEqual(a2.player.id, finished_round.leading_player_id);
+              let $1 = isEqual(b.player.id, finished_round.leading_player_id);
               if ($) {
                 return new Lt();
               } else if ($1) {
@@ -6447,18 +6543,18 @@ function content(model) {
                       let _pipe$1 = (() => {
                         let $ = player.name;
                         let $1 = player.id;
-                        if ($ === "" && $1 === player_id) {
+                        if ($ instanceof PlayerName && $[0] === "" && isEqual($1, player_id)) {
                           let id2 = $1;
-                          return id2 + " (you)";
-                        } else if ($1 === player_id) {
-                          let name = $;
+                          return player_id_to_string(id2) + " (you)";
+                        } else if ($ instanceof PlayerName && isEqual($1, player_id)) {
+                          let name = $[0];
                           let id2 = $1;
                           return name + " (you)";
-                        } else if ($ === "") {
+                        } else if ($ instanceof PlayerName && $[0] === "") {
                           let id2 = $1;
-                          return id2;
+                          return player_id_to_string(id2);
                         } else {
-                          let name = $;
+                          let name = $[0];
                           return name;
                         }
                       })();
@@ -6512,7 +6608,7 @@ function content(model) {
                     return new UpdatePlayerName(var0);
                   }
                 ),
-                value(player_name),
+                value(player_name_to_string(player_name)),
                 type_("text"),
                 class$(
                   "my-2 p-2 border-2 rounded placeholder:text-slate-300 placeholder:opacity-50"
@@ -6522,7 +6618,9 @@ function content(model) {
             button(
               toList([
                 type_("submit"),
-                disabled(trim2(player_name) === ""),
+                disabled(
+                  trim2(player_name_to_string(player_name)) === ""
+                ),
                 class$(
                   "p-2 text-lime-900 bg-emerald-100 hover:bg-emerald-200 rounded disabled:bg-emerald-100 disabled:text-lime-700 disabled:opacity-50"
                 )
@@ -6542,8 +6640,13 @@ function content(model) {
         div(
           toList([]),
           toList([
-            h2(toList([]), toList([text(player_name)])),
-            text("Connecting to room " + room_code + "...")
+            h2(
+              toList([]),
+              toList([text(player_name_to_string(player_name))])
+            ),
+            text(
+              "Connecting to room " + room_code_to_string(room_code) + "..."
+            )
           ])
         )
       ])
@@ -6579,7 +6682,7 @@ function main() {
     throw makeError(
       "assignment_no_match",
       "client",
-      101,
+      103,
       "main",
       "Assignment pattern did not match",
       { value: $ }
