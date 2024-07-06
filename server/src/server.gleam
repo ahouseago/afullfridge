@@ -1,59 +1,24 @@
+import game
 import gleam/bit_array
 import gleam/bytes_builder
-import gleam/dict.{type Dict}
 import gleam/erlang
 import gleam/erlang/process.{type Subject}
 import gleam/http
 import gleam/http/request
 import gleam/http/response
-import gleam/int
 import gleam/io
-import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/result
-import gleam/string
 import gleam/uri
 import lustre/attribute
 import lustre/element
 import lustre/element/html
 import mist.{type Connection, type ResponseData}
-import prng/random
-import prng/seed
-import random_word
-import shared.{
-  type Player, type PlayerId, type PlayerName, type Room, type RoomCode, AddWord,
-  ListWords, Player, PlayerId, PlayerName, Room, RoomCode, Round, StartRound,
-  SubmitOrderedWords,
-}
-
-// A subject for each websocket connection.
-type ConnectionSubject =
-  Subject(WebsocketConnectionUpdate)
+import shared.{type PlayerId, type PlayerName, PlayerId, PlayerName}
 
 type WebsocketConnection {
   WebsocketConnection(id: shared.PlayerId)
-}
-
-// These messages are the ways to communicate with the game state actor.
-type Message {
-  NewConnection(
-    player_id: shared.PlayerId,
-    send_message: fn(shared.WebsocketResponse) -> Nil,
-    player_name: PlayerName,
-  )
-  DeleteConnection(shared.PlayerId)
-  ProcessWebsocketRequest(
-    from: shared.PlayerId,
-    message: shared.WebsocketRequest,
-  )
-
-  GetRoom(reply_with: Subject(Result(Room, Nil)), room_code: RoomCode)
-  CreateRoom(reply_with: Subject(Result(#(RoomCode, shared.PlayerId), Nil)))
-  AddPlayerToRoom(
-    reply_with: Subject(Result(shared.PlayerId, String)),
-    room_code: RoomCode,
-  )
 }
 
 // Handling new connections:
@@ -74,69 +39,6 @@ type WebsocketConnectionUpdate {
   Response(shared.WebsocketResponse)
   // Sent for the websocket connection to seppuku.
   Shutdown
-}
-
-type PlayerConnection {
-  // Before the websocket has been established
-  DisconnectedPlayer(id: shared.PlayerId, room_code: RoomCode)
-  ConnectedPlayer(id: shared.PlayerId, room_code: RoomCode, name: PlayerName)
-}
-
-type RoomCodeGenerator {
-  RoomCodeGenerator(generator: random.Generator(Int), seed: seed.Seed)
-}
-
-type StateWithSubject(connection_subject) {
-  State(
-    next_player_id: Int,
-    room_code_generator: RoomCodeGenerator,
-    players: Dict(shared.PlayerId, PlayerConnection),
-    rooms: Dict(RoomCode, RoomState),
-    connections: Dict(shared.PlayerId, fn(shared.WebsocketResponse) -> Nil),
-  )
-}
-
-pub type RoomState {
-  RoomState(room: shared.Room, round_state: Option(InProgressRound))
-}
-
-pub type InProgressRound {
-  InProgressRound(
-    words: List(String),
-    leading_player_id: shared.PlayerId,
-    submitted_word_lists: List(shared.PlayerWithOrderedPreferences),
-  )
-}
-
-type State =
-  StateWithSubject(ConnectionSubject)
-
-fn get_next_player_id(state: State) {
-  let id = state.next_player_id
-  let player_id = PlayerId(int.to_string(id))
-  #(State(..state, next_player_id: id + 1), player_id)
-}
-
-fn generate_room_code(state: State) {
-  let #(utf_points, new_seed) =
-    list.range(1, 4)
-    |> list.fold(#([], state.room_code_generator.seed), fn(rolls, _) {
-      let #(roll, new_seed) =
-        random.step(state.room_code_generator.generator, rolls.1)
-      let assert Ok(utf_point) = string.utf_codepoint(roll)
-      #([utf_point, ..rolls.0], new_seed)
-    })
-
-  #(
-    State(
-      ..state,
-      room_code_generator: RoomCodeGenerator(
-        ..state.room_code_generator,
-        seed: new_seed,
-      ),
-    ),
-    RoomCode(string.from_utf_codepoints(utf_points)),
-  )
 }
 
 fn not_found() {
@@ -166,21 +68,7 @@ fn internal_error(reason) {
 }
 
 pub fn main() {
-  // These values are for the Websocket process initialized below
-  let assert Ok(state_subject) =
-    actor.start(
-      State(
-        next_player_id: 0,
-        room_code_generator: RoomCodeGenerator(
-          generator: random.int(65, 90),
-          seed: seed.random(),
-        ),
-        players: dict.new(),
-        rooms: dict.new(),
-        connections: dict.new(),
-      ),
-      handle_message,
-    )
+  let assert Ok(game) = game.start()
 
   let assert Ok(priv) = erlang.priv_directory("server")
 
@@ -247,7 +135,7 @@ pub fn main() {
                 request: req,
                 on_init: on_init(
                   _,
-                  state_subject,
+                  game,
                   PlayerId(player_id),
                   uri.percent_decode(player_name)
                     |> result.unwrap(player_name)
@@ -257,10 +145,10 @@ pub fn main() {
                 handler: handle_ws_message,
               )
             ["createroom"] ->
-              handle_create_room_request(state_subject, req)
+              handle_create_room_request(game, req)
               |> result.unwrap_both
             ["joinroom"] -> {
-              handle_join_request(state_subject, req)
+              handle_join_request(game, req)
               |> result.unwrap_both
             }
 
@@ -316,10 +204,10 @@ pub fn main() {
 }
 
 fn handle_create_room_request(
-  state_subject,
+  game,
   _req: request.Request(Connection),
 ) -> Result(response.Response(ResponseData), response.Response(ResponseData)) {
-  process.try_call(state_subject, CreateRoom, 2)
+  process.try_call(game, game.CreateRoom, 2)
   |> result.map_error(fn(_call_result) {
     internal_error("failed to create room")
   })
@@ -336,7 +224,7 @@ fn handle_create_room_request(
 }
 
 fn handle_join_request(
-  state_subject,
+  game,
   req: request.Request(Connection),
 ) -> Result(response.Response(ResponseData), response.Response(ResponseData)) {
   use req <- result.try(
@@ -355,11 +243,11 @@ fn handle_join_request(
 
   case shared.decode_http_request(body) {
     Ok(shared.JoinRoomRequest(room_code)) -> {
-      process.try_call(state_subject, GetRoom(_, room_code), 5)
+      process.try_call(game, game.GetRoom(_, room_code), 5)
       |> result.map_error(fn(_) { not_found() })
       |> result.try(fn(_room) {
         use join_room <- result.try(
-          process.try_call(state_subject, AddPlayerToRoom(_, room_code), 2)
+          process.try_call(game, game.AddPlayerToRoom(_, room_code), 2)
           |> result.map_error(fn(_call_error) {
             internal_error("adding player to room")
           }),
@@ -388,7 +276,7 @@ fn handle_join_request(
 
 fn on_init(
   _conn: mist.WebsocketConnection,
-  game: Subject(Message),
+  game: Subject(game.Msg),
   player_id: PlayerId,
   player_name: PlayerName,
 ) -> #(
@@ -397,35 +285,37 @@ fn on_init(
 ) {
   let self = process.new_subject()
   let assert Ok(connection_subject) =
-    actor.start(
-      WebsocketConnection(player_id),
-      fn(update, connection_state) {
-        case update {
-          Request(req) -> {
-            let WebsocketConnection(id) = connection_state
-            process.send(game, ProcessWebsocketRequest(from: id, message: req))
-            actor.continue(connection_state)
-          }
-          Response(resp) -> {
-            process.send(self, resp)
-            actor.continue(connection_state)
-          }
-          Shutdown -> {
-            case connection_state {
-              WebsocketConnection(id) -> {
-                process.send(game, DeleteConnection(id))
-                io.println("Player " <> shared.player_id_to_string(id) <> " disconnected.")
-              }
-            }
-            actor.Stop(process.Normal)
-          }
+    actor.start(WebsocketConnection(player_id), fn(update, connection_state) {
+      case update {
+        Request(req) -> {
+          let WebsocketConnection(id) = connection_state
+          process.send(
+            game,
+            game.ProcessWebsocketRequest(from: id, message: req),
+          )
+          actor.continue(connection_state)
         }
-      },
-    )
+        Response(resp) -> {
+          process.send(self, resp)
+          actor.continue(connection_state)
+        }
+        Shutdown -> {
+          case connection_state {
+            WebsocketConnection(id) -> {
+              process.send(game, game.DeleteConnection(id))
+              io.println(
+                "Player " <> shared.player_id_to_string(id) <> " disconnected.",
+              )
+            }
+          }
+          actor.Stop(process.Normal)
+        }
+      }
+    })
 
   process.send(
     game,
-    NewConnection(player_id, process.send(self, _), player_name),
+    game.NewConnection(player_id, process.send(self, _), player_name),
   )
 
   #(
@@ -462,487 +352,4 @@ fn handle_ws_message(
     }
     mist.Closed | mist.Shutdown -> actor.Stop(process.Normal)
   }
-}
-
-fn handle_message(msg: Message, state: State) -> actor.Next(Message, State) {
-  case msg {
-    NewConnection(player_id, send_fn, player_name) -> {
-      case dict.get(state.players, player_id) {
-        Ok(DisconnectedPlayer(id, room_code)) -> {
-          io.println(
-            "player "
-            <> shared.player_id_to_string(id)
-            <> " set up websocket connection in room "
-            <> shared.room_code_to_string(room_code)
-            <> ".",
-          )
-          let connections = dict.insert(state.connections, id, send_fn)
-          let players =
-            dict.insert(
-              state.players,
-              id,
-              ConnectedPlayer(id, room_code, player_name),
-            )
-          let rooms = case dict.get(state.rooms, room_code) {
-            Ok(room_state) -> {
-              let room =
-                Room(
-                  ..room_state.room,
-                  players: [
-                    Player(id: id, name: player_name),
-                    ..room_state.room.players
-                  ],
-                )
-              broadcast_message(
-                state.connections,
-                to: room.players,
-                message: shared.PlayersInRoom(room.players),
-              )
-              send_fn(shared.InitialRoomState(room))
-              let room_state = RoomState(..room_state, room: room)
-              dict.insert(state.rooms, room_code, room_state)
-            }
-            Error(_) -> state.rooms
-          }
-          actor.continue(
-            State(
-              ..state,
-              players: players,
-              rooms: rooms,
-              connections: connections,
-            ),
-          )
-        }
-        Ok(ConnectedPlayer(id, room_code, player_name)) -> {
-          let connections = dict.insert(state.connections, id, send_fn)
-          let rooms = case dict.get(state.rooms, room_code) {
-            Ok(room_state) -> {
-              let room =
-                Room(
-                  ..room_state.room,
-                  players: [
-                    Player(id: id, name: player_name),
-                    ..room_state.room.players
-                  ],
-                )
-              broadcast_message(
-                state.connections,
-                to: room.players,
-                message: shared.PlayersInRoom(room.players),
-              )
-              send_fn(shared.InitialRoomState(room))
-              let room_state = RoomState(..room_state, room: room)
-              dict.insert(state.rooms, room_code, room_state)
-            }
-            Error(_) -> state.rooms
-          }
-          actor.continue(State(..state, rooms: rooms, connections: connections))
-        }
-        Error(Nil) -> {
-          io.println("found error when getting player for new connection")
-          actor.continue(state)
-        }
-      }
-    }
-    DeleteConnection(player_id) -> {
-      let rooms =
-        dict.get(state.players, player_id)
-        |> result.map(fn(player) { player.room_code })
-        |> result.try(fn(room_code) { dict.get(state.rooms, room_code) })
-        |> result.try(fn(room_state) {
-          let room =
-            Room(
-              ..room_state.room,
-              players: list.filter(room_state.room.players, fn(player) {
-                player.id != player_id
-              }),
-            )
-          broadcast_message(
-            state.connections,
-            room.players,
-            shared.PlayersInRoom(room.players),
-          )
-          let room_state = RoomState(..room_state, room: room)
-          Ok(dict.insert(state.rooms, room_state.room.room_code, room_state))
-        })
-        |> result.unwrap(state.rooms)
-      actor.continue(
-        State(
-          ..state,
-          rooms: rooms,
-          connections: dict.delete(state.connections, player_id),
-        ),
-      )
-    }
-    ProcessWebsocketRequest(from, request) -> {
-      actor.continue(
-        handle_websocket_request(state, from, request)
-        |> result.unwrap(state),
-      )
-    }
-    CreateRoom(subj) -> {
-      let #(state, player_id) = get_next_player_id(state)
-      let #(state, room_code) = generate_room_code(state)
-      let player = DisconnectedPlayer(id: player_id, room_code: room_code)
-      let room =
-        Room(
-          room_code: room_code,
-          players: [],
-          word_list: [],
-          round: None,
-          finished_rounds: [],
-          scoring_method: shared.EqualPositions,
-        )
-      actor.send(subj, Ok(#(room_code, player_id)))
-      let room_state = RoomState(room: room, round_state: None)
-      actor.continue(
-        State(
-          ..state,
-          players: dict.insert(state.players, player_id, player),
-          rooms: dict.insert(state.rooms, room_code, room_state),
-        ),
-      )
-    }
-    GetRoom(subj, room_code) -> {
-      case dict.get(state.rooms, room_code) {
-        Ok(room_state) -> actor.send(subj, Ok(room_state.room))
-        Error(_) -> Nil
-      }
-      actor.continue(state)
-    }
-    AddPlayerToRoom(subj, room_code) -> {
-      result.map(dict.get(state.rooms, room_code), fn(room) {
-        let #(state, player_id) = get_next_player_id(state)
-        let player_connection =
-          DisconnectedPlayer(id: player_id, room_code: room_code)
-        actor.send(subj, Ok(player_id))
-        actor.continue(
-          State(
-            ..state,
-            players: dict.insert(
-              state.players,
-              player_id,
-              player_connection,
-            ),
-            rooms: dict.insert(state.rooms, room_code, room),
-          ),
-        )
-      })
-      |> result.unwrap(actor.continue(state))
-    }
-  }
-}
-
-fn broadcast_message(
-  connections: Dict(shared.PlayerId, fn(shared.WebsocketResponse) -> Nil),
-  to players: List(Player),
-  message msg: shared.WebsocketResponse,
-) {
-  use player <- list.each(players)
-  use send_fn <- result.map(dict.get(connections, player.id))
-  send_fn(msg)
-}
-
-fn handle_websocket_request(
-  state: State,
-  from: shared.PlayerId,
-  request: shared.WebsocketRequest,
-) -> Result(State, Nil) {
-  use player <- result.map(dict.get(state.players, from))
-  let room_code = player.room_code
-  case request {
-    AddWord(word) -> {
-      let new_state = add_word_to_room(state, room_code, word)
-      let _ = result.try(new_state, list_words(_, room_code))
-      result.unwrap(new_state, state)
-    }
-    shared.AddRandomWord -> {
-      let new_state = add_word_to_room(state, room_code, random_word.new())
-      let _ = result.try(new_state, list_words(_, room_code))
-      result.unwrap(new_state, state)
-    }
-    shared.RemoveWord(word) -> {
-      let new_state = remove_word_from_room(state, room_code, word)
-      let _ = result.try(new_state, list_words(_, room_code))
-      result.unwrap(new_state, state)
-    }
-    ListWords -> {
-      let _ = list_words(state, room_code)
-      state
-    }
-    StartRound -> {
-      let new_state =
-        result.map(dict.get(state.rooms, room_code), fn(room_state) {
-          let room_state = start_new_round(state, room_state)
-          State(..state, rooms: dict.insert(state.rooms, room_code, room_state))
-        })
-      result.unwrap(new_state, state)
-    }
-    SubmitOrderedWords(ordered_words) -> {
-      submit_words(state, player, ordered_words)
-      |> result.unwrap(None)
-      |> option.unwrap(state)
-    }
-  }
-}
-
-fn get_next_leading_player(room_state: RoomState) -> shared.PlayerId {
-  let players_count = list.length(room_state.room.players)
-  // Reverse the list to start from the first player to join.
-  let index =
-    players_count - list.length(room_state.room.finished_rounds) % players_count
-
-  let assert Ok(player) =
-    room_state.room.players
-    |> list.take(index)
-    |> list.reverse
-    |> list.first
-
-  player.id
-}
-
-fn start_new_round(state: State, room_state: RoomState) -> RoomState {
-  // Starting a round means:
-  // - picking 5 words randomly
-  let words = room_state.room.word_list |> list.shuffle |> list.take(5)
-  // - picking a player to start
-  let leading_player_id = get_next_leading_player(room_state)
-
-  let in_progress_round = InProgressRound(words, leading_player_id, [])
-  let round =
-    shared.Round(
-      in_progress_round.words,
-      in_progress_round.leading_player_id,
-      [],
-    )
-
-  let room = Room(..room_state.room, round: Some(round))
-
-  // - sending round info to clients
-  broadcast_message(state.connections, room.players, shared.RoundInfo(round))
-
-  RoomState(round_state: Some(in_progress_round), room: room)
-}
-
-fn list_words(state: State, room_code: RoomCode) {
-  use room_state <- result.map(dict.get(state.rooms, room_code))
-  broadcast_message(
-    state.connections,
-    room_state.room.players,
-    shared.WordList(room_state.room.word_list),
-  )
-}
-
-fn add_word_to_room(state: State, room_code: RoomCode, word: String) {
-  use room_state <- result.map(dict.get(state.rooms, room_code))
-  // Remove duplicates
-  let word_list = room_state.room.word_list |> list.filter(fn(w) { w != word })
-  State(
-    ..state,
-    rooms: dict.insert(
-      state.rooms,
-      room_code,
-      RoomState(
-        ..room_state,
-        room: Room(..room_state.room, word_list: [word, ..word_list]),
-      ),
-    ),
-  )
-}
-
-fn remove_word_from_room(state: State, room_code: RoomCode, word: String) {
-  use room_state <- result.map(dict.get(state.rooms, room_code))
-  // Remove word from list
-  let word_list = room_state.room.word_list |> list.filter(fn(w) { w != word })
-  State(
-    ..state,
-    rooms: dict.insert(
-      state.rooms,
-      room_code,
-      RoomState(
-        ..room_state,
-        room: Room(..room_state.room, word_list: word_list),
-      ),
-    ),
-  )
-}
-
-fn submit_words(
-  state: State,
-  player: PlayerConnection,
-  ordered_words: List(String),
-) {
-  use room_state <- result.map(dict.get(state.rooms, player.room_code))
-  use round_state <- option.then(room_state.round_state)
-  use round <- option.map(room_state.room.round)
-
-  let lists_equal =
-    list.sort(ordered_words, string.compare)
-    == list.sort(round_state.words, string.compare)
-
-  let #(round_state, round) = case lists_equal {
-    False -> {
-      let _ =
-        dict.get(state.connections, player.id)
-        |> result.map(fn(send_fn) {
-          send_fn(shared.ServerError(
-            "submitted words don't match the word list",
-          ))
-        })
-      #(round_state, round)
-    }
-    True -> {
-      #(
-        InProgressRound(
-          ..round_state,
-          submitted_word_lists: [
-            #(player.id, ordered_words),
-            ..list.filter(round_state.submitted_word_lists, fn(words) {
-              words.0 != player.id
-            })
-          ],
-        ),
-        Round(..round, submitted: [player.id, ..round.submitted]),
-      )
-    }
-  }
-
-  // Score round and move to the next round if everyone has submitted.
-  let room_state = case
-    list.length(round_state.submitted_word_lists)
-    == list.length(room_state.room.players)
-  {
-    False ->
-      RoomState(
-        round_state: Some(round_state),
-        room: Room(..room_state.room, round: Some(round)),
-      )
-    True -> {
-      RoomState(
-        ..room_state,
-        room: Room(
-          ..room_state.room,
-          finished_rounds: [
-            finish_round(state, room_state, round_state),
-            ..room_state.room.finished_rounds
-          ],
-        ),
-      )
-      |> start_new_round(state, _)
-    }
-  }
-
-  State(..state, rooms: dict.insert(state.rooms, player.room_code, room_state))
-}
-
-fn finish_round(
-  state: State,
-  room_state: RoomState,
-  round: InProgressRound,
-) -> shared.FinishedRound {
-  let finished_round =
-    shared.FinishedRound(
-      words: round.words,
-      leading_player_id: round.leading_player_id,
-      player_scores: get_player_scores(
-        room_state.room.players,
-        round,
-        score_round(room_state.room.scoring_method, round),
-      ),
-    )
-
-  broadcast_message(
-    state.connections,
-    to: room_state.room.players,
-    message: shared.RoundResult(finished_round),
-  )
-
-  finished_round
-}
-
-fn score_round(
-  scoring_method: shared.ScoringMethod,
-  round: InProgressRound,
-) -> List(#(shared.PlayerId, Int)) {
-  let correct_word_list =
-    list.filter(round.submitted_word_lists, fn(word_list) {
-      word_list.0 == round.leading_player_id
-    })
-    |> list.map(fn(player_with_preferences) { player_with_preferences.1 })
-    |> list.first
-
-  case scoring_method, correct_word_list {
-    shared.ExactMatch, Ok(correct_word_list) ->
-      exact_match_scores(round, correct_word_list)
-    shared.EqualPositions, Ok(correct_word_list) ->
-      equal_position_scores(round, correct_word_list)
-    _, Error(_) -> no_score(round)
-  }
-}
-
-// This is used when the leading player has left before submitting a word list:
-// nobody can score.
-fn no_score(round: InProgressRound) -> List(#(shared.PlayerId, Int)) {
-  list.fold(round.submitted_word_lists, [], fn(scores, word_list) {
-    [#(word_list.0, 0), ..scores]
-  })
-}
-
-fn exact_match_scores(
-  round: InProgressRound,
-  correct_word_list: List(String),
-) -> List(#(shared.PlayerId, Int)) {
-  list.fold(round.submitted_word_lists, [], fn(scores, word_list) {
-    let score = case
-      round.leading_player_id != word_list.0
-      && word_list.1 == correct_word_list
-    {
-      True -> #(word_list.0, 1)
-      False -> #(word_list.0, 0)
-    }
-    [score, ..scores]
-  })
-}
-
-fn equal_position_scores(
-  round: InProgressRound,
-  correct_word_list: List(String),
-) -> List(#(shared.PlayerId, Int)) {
-  list.fold(round.submitted_word_lists, [], fn(scores, word_list) {
-    let score = case round.leading_player_id == word_list.0 {
-      True -> 0
-      False ->
-        list.zip(correct_word_list, word_list.1)
-        |> list.fold(0, fn(score, items) {
-          case items.0 == items.1 {
-            True -> score + 1
-            False -> score
-          }
-        })
-    }
-    [#(word_list.0, score), ..scores]
-  })
-}
-
-fn get_player_scores(
-  players: List(shared.Player),
-  round: InProgressRound,
-  scores: List(#(shared.PlayerId, Int)),
-) -> List(shared.PlayerScore) {
-  let scores =
-    list.fold(scores, dict.new(), fn(scores, score) {
-      dict.insert(scores, score.0, score.1)
-    })
-  let player_map =
-    list.fold(players, dict.new(), fn(player_names, player) {
-      dict.insert(player_names, player.id, player)
-    })
-
-  list.map(round.submitted_word_lists, fn(word_list) {
-    let player_name =
-      dict.get(player_map, word_list.0)
-      |> result.unwrap(shared.Player(PlayerId(""), PlayerName("Unknown")))
-    let score = dict.get(scores, word_list.0) |> result.unwrap(0)
-    shared.PlayerScore(player_name, word_list.1, score)
-  })
 }
