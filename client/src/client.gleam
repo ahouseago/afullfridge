@@ -132,10 +132,9 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
             local_storage,
             "room_code",
           ))
-          let uri.Uri(_, _, host, port, _, _, _) = uri
-          let host = option.unwrap(host, "localhost")
+          let host = option.unwrap(uri.host, "localhost")
           let port =
-            option.map(port, fn(port) { ":" <> int.to_string(port) })
+            option.map(uri.port, fn(port) { ":" <> int.to_string(port) })
             |> option.unwrap("")
           case room_code == stored_room_code {
             True ->
@@ -304,10 +303,9 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
             storage.set_item(local_storage, "room_code", room_code),
           ])
         })
-      let uri.Uri(_, _, host, port, _, _, _) = uri
-      let host = option.unwrap(host, "localhost")
+      let host = option.unwrap(uri.host, "localhost")
       let port =
-        option.map(port, fn(port) { ":" <> int.to_string(port) })
+        option.map(uri.port, fn(port) { ":" <> int.to_string(port) })
         |> option.unwrap("")
       #(
         model,
@@ -658,10 +656,9 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
 }
 
 fn start_game(uri: uri.Uri) {
-  let uri.Uri(_, _, host, port, _, _, _) = uri
-  let host = option.unwrap(host, "localhost")
+  let host = option.unwrap(uri.host, "localhost")
   let port =
-    option.map(port, fn(port) { ":" <> int.to_string(port) })
+    option.map(uri.port, fn(port) { ":" <> int.to_string(port) })
     |> option.unwrap("")
   lustre_http.get(
     "https://" <> host <> port <> "/createroom",
@@ -670,10 +667,9 @@ fn start_game(uri: uri.Uri) {
 }
 
 fn join_game(uri, room_code) {
-  let uri.Uri(_, _, host, port, _, _, _) = uri
-  let host = option.unwrap(host, "localhost")
+  let host = option.unwrap(uri.host, "localhost")
   let port =
-    option.map(port, fn(port) { ":" <> int.to_string(port) })
+    option.map(uri.port, fn(port) { ":" <> int.to_string(port) })
     |> option.unwrap("")
   lustre_http.post(
     "https://" <> host <> port <> "/joinroom",
