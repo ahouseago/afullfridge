@@ -84,6 +84,9 @@ pub type ScoringMethod {
   // Scores one point for every entry that is in the same position as the same
   // entry in the correct list.
   EqualPositions
+  // Smart scoring awards points from 0 to 8, with 5 points as the highest
+  // score with a single adjacent pair swapped.
+  Smart
 }
 
 pub type Room {
@@ -209,6 +212,7 @@ fn scoring_method_to_json(scoring_method: ScoringMethod) -> json.Json {
   case scoring_method {
     ExactMatch -> json.string("EXACT_MATCH")
     EqualPositions -> json.string("EQUAL_POSITIONS")
+    Smart -> json.string("SMART")
   }
 }
 
@@ -218,6 +222,7 @@ fn scoring_method_from_json(
   case dynamic.string(scoring_method) {
     Ok("EXACT_MATCH") -> Ok(ExactMatch)
     Ok("EQUAL_POSITIONS") -> Ok(EqualPositions)
+    Ok("SMART") -> Ok(Smart)
     Ok(method) ->
       Error([
         dynamic.DecodeError(expected: "scoring method", found: method, path: []),

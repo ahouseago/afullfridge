@@ -7,6 +7,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/result
 import gleam/string
+import internal/scoring
 import prng/random
 import prng/seed
 import random_word
@@ -34,9 +35,9 @@ type State {
   State(
     next_player_id: Int,
     room_code_generator: RoomCodeGenerator,
-    players: Dict(shared.PlayerId, PlayerConnection),
+    players: Dict(PlayerId, PlayerConnection),
     rooms: Dict(RoomCode, RoomState),
-    connections: Dict(shared.PlayerId, fn(shared.WebsocketResponse) -> Nil),
+    connections: Dict(PlayerId, fn(shared.WebsocketResponse) -> Nil),
   )
 }
 
@@ -55,8 +56,8 @@ fn initial_state() -> State {
 
 type PlayerConnection {
   // Before the websocket has been established
-  DisconnectedPlayer(id: shared.PlayerId, room_code: RoomCode)
-  ConnectedPlayer(id: shared.PlayerId, room_code: RoomCode, name: PlayerName)
+  DisconnectedPlayer(id: PlayerId, room_code: RoomCode)
+  ConnectedPlayer(id: PlayerId, room_code: RoomCode, name: PlayerName)
 }
 
 pub type RoomState {
@@ -66,7 +67,7 @@ pub type RoomState {
 pub type InProgressRound {
   InProgressRound(
     words: List(String),
-    leading_player_id: shared.PlayerId,
+    leading_player_id: PlayerId,
     submitted_word_lists: List(shared.PlayerWithOrderedPreferences),
   )
 }
@@ -82,20 +83,17 @@ type RoomCodeGenerator {
 // These messages are the ways to communicate with the game state actor.
 pub type Msg {
   NewConnection(
-    player_id: shared.PlayerId,
+    player_id: PlayerId,
     send_message: fn(shared.WebsocketResponse) -> Nil,
     player_name: PlayerName,
   )
-  DeleteConnection(shared.PlayerId)
-  ProcessWebsocketRequest(
-    from: shared.PlayerId,
-    message: shared.WebsocketRequest,
-  )
+  DeleteConnection(PlayerId)
+  ProcessWebsocketRequest(from: PlayerId, message: shared.WebsocketRequest)
 
   GetRoom(reply_with: Subject(Result(Room, Nil)), room_code: RoomCode)
-  CreateRoom(reply_with: Subject(Result(#(RoomCode, shared.PlayerId), Nil)))
+  CreateRoom(reply_with: Subject(Result(#(RoomCode, PlayerId), Nil)))
   AddPlayerToRoom(
-    reply_with: Subject(Result(shared.PlayerId, String)),
+    reply_with: Subject(Result(PlayerId, String)),
     room_code: RoomCode,
   )
 }
@@ -227,7 +225,7 @@ fn update(msg: Msg, state: State) -> actor.Next(Msg, State) {
           word_list: [],
           round: None,
           finished_rounds: [],
-          scoring_method: shared.EqualPositions,
+          scoring_method: shared.Smart,
         )
       actor.send(subj, Ok(#(room_code, player_id)))
       let room_state = RoomState(room: room, round_state: None)
@@ -294,7 +292,7 @@ fn generate_room_code(state: State) {
 }
 
 fn broadcast_message(
-  connections: Dict(shared.PlayerId, fn(shared.WebsocketResponse) -> Nil),
+  connections: Dict(PlayerId, fn(shared.WebsocketResponse) -> Nil),
   to players: List(Player),
   message msg: shared.WebsocketResponse,
 ) {
@@ -305,7 +303,7 @@ fn broadcast_message(
 
 fn handle_websocket_request(
   state: State,
-  from: shared.PlayerId,
+  from: PlayerId,
   request: shared.WebsocketRequest,
 ) -> Result(State, Nil) {
   use player <- result.map(dict.get(state.players, from))
@@ -346,7 +344,7 @@ fn handle_websocket_request(
   }
 }
 
-fn get_next_leading_player(room_state: RoomState) -> shared.PlayerId {
+fn get_next_leading_player(room_state: RoomState) -> PlayerId {
   let players_count = list.length(room_state.room.players)
   // Reverse the list to start from the first player to join.
   let index =
@@ -523,7 +521,7 @@ fn finish_round(
 fn score_round(
   scoring_method: shared.ScoringMethod,
   round: InProgressRound,
-) -> List(#(shared.PlayerId, Int)) {
+) -> List(#(PlayerId, Int)) {
   let correct_word_list =
     list.filter(round.submitted_word_lists, fn(word_list) {
       word_list.0 == round.leading_player_id
@@ -533,61 +531,54 @@ fn score_round(
 
   case scoring_method, correct_word_list {
     shared.ExactMatch, Ok(correct_word_list) ->
-      exact_match_scores(round, correct_word_list)
+      scoring.exact_match
+      |> score_players(round, correct_word_list)
     shared.EqualPositions, Ok(correct_word_list) ->
-      equal_position_scores(round, correct_word_list)
+      scoring.equal_position
+      |> score_players(round, correct_word_list)
+    shared.Smart, Ok(correct_word_list) ->
+      scoring.smart
+      |> score_players(round, correct_word_list)
     _, Error(_) -> no_score(round)
   }
 }
 
-// This is used when the leading player has left before submitting a word list:
-// nobody can score.
-fn no_score(round: InProgressRound) -> List(#(shared.PlayerId, Int)) {
+/// This is used when the leading player has left before submitting a word list:
+/// nobody can score.
+fn no_score(round: InProgressRound) -> List(#(PlayerId, Int)) {
   list.fold(round.submitted_word_lists, [], fn(scores, word_list) {
     [#(word_list.0, 0), ..scores]
   })
 }
 
-fn exact_match_scores(
-  round: InProgressRound,
-  correct_word_list: List(String),
-) -> List(#(shared.PlayerId, Int)) {
-  list.fold(round.submitted_word_lists, [], fn(scores, word_list) {
-    let score = case
-      round.leading_player_id != word_list.0
-      && word_list.1 == correct_word_list
-    {
-      True -> #(word_list.0, 1)
-      False -> #(word_list.0, 0)
-    }
-    [score, ..scores]
-  })
-}
+type CorrectWordList =
+  List(String)
 
-fn equal_position_scores(
-  round: InProgressRound,
-  correct_word_list: List(String),
-) -> List(#(shared.PlayerId, Int)) {
-  list.fold(round.submitted_word_lists, [], fn(scores, word_list) {
-    let score = case round.leading_player_id == word_list.0 {
-      True -> 0
-      False ->
-        list.zip(correct_word_list, word_list.1)
-        |> list.fold(0, fn(score, items) {
-          case items.0 == items.1 {
-            True -> score + 1
-            False -> score
-          }
-        })
-    }
-    [#(word_list.0, score), ..scores]
-  })
+type GuessedWordList =
+  List(String)
+
+/// This awards 0 points to the leading player and gives all other players the
+/// score determined by the scoring callback.
+fn score_players(round: InProgressRound, correct_word_list: List(String)) {
+  fn(score_fn: fn(CorrectWordList, GuessedWordList) -> Int) {
+    list.fold(
+      round.submitted_word_lists,
+      [],
+      fn(scores: List(#(PlayerId, Int)), word_list: #(PlayerId, List(String))) {
+        let score = case word_list.0 == round.leading_player_id {
+          True -> #(word_list.0, 0)
+          False -> #(word_list.0, score_fn(correct_word_list, word_list.1))
+        }
+        [score, ..scores]
+      },
+    )
+  }
 }
 
 fn get_player_scores(
   players: List(shared.Player),
   round: InProgressRound,
-  scores: List(#(shared.PlayerId, Int)),
+  scores: List(#(PlayerId, Int)),
 ) -> List(shared.PlayerScore) {
   let scores =
     list.fold(scores, dict.new(), fn(scores, score) {
