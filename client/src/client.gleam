@@ -952,7 +952,7 @@ fn content(model: Model) {
       ])
     InRoom(
       _uri,
-      _player_id,
+      player_id,
       _room_code,
       _player_name,
       Some(ActiveGame(_ws, Some(room), Some(round_state), _add_word_input)),
@@ -971,7 +971,7 @@ fn content(model: Model) {
             html.span([class("font-normal")], [element.text(" (latest first)")]),
           ]),
           ..list.reverse(room.finished_rounds)
-          |> list.index_map(display_finished_round)
+          |> list.index_map(display_finished_round(player_id))
           |> list.reverse
         ]),
       ])
@@ -1200,53 +1200,61 @@ fn display_players(
   )
 }
 
-fn display_finished_round(
-  finished_round: shared.FinishedRound,
-  round_index: Int,
-) {
-  let player_text = fn(player: shared.Player, score: Int) {
-    case player.id == finished_round.leading_player_id {
-      True -> shared.player_name_to_string(player.name) <> "'s ranking"
-      False ->
-        shared.player_name_to_string(player.name)
-        <> "'s guess - "
-        <> int.to_string(score)
-        <> " points"
+fn display_finished_round(player_id: PlayerId) {
+  fn(finished_round: shared.FinishedRound, round_index: Int) {
+    let player_text = fn(player: shared.Player, score: Int) {
+      case player.id == finished_round.leading_player_id {
+        True -> shared.player_name_to_string(player.name) <> "'s ranking"
+        False ->
+          shared.player_name_to_string(player.name)
+          <> "'s guess - "
+          <> int.to_string(score)
+          <> " points"
+      }
     }
-  }
 
-  html.div([class("my-3 py-1 border-solid border-l-2 p-2 border-gray-300")], [
-    html.h3([class("text-xl mb-2 font-bold")], [
-      element.text("Round " <> int.to_string(round_index + 1)),
-    ]),
-    html.div(
-      [],
-      list.sort(finished_round.player_scores, fn(a, b) {
-        case
-          a.player.id
-          == finished_round.leading_player_id,
-          b.player.id
-          == finished_round.leading_player_id
-        {
-          True, _ -> order.Lt
-          _, True -> order.Gt
-          False, False -> int.compare(a.score, b.score)
-        }
-      })
-        |> list.map(fn(player_score) {
-          html.div([], [
-            html.h4([class("text-lg")], [
-              element.text(player_text(player_score.player, player_score.score)),
-            ]),
-            html.ol(
-              [class("list-decimal list-inside p-2")],
-              list.reverse(player_score.words)
-                |> list.map(fn(word) { html.li([], [element.text(word)]) }),
-            ),
-          ])
-        }),
-    ),
-  ])
+    html.div([class("my-3 py-1 border-solid border-l-2 p-2 border-gray-300")], [
+      html.h3([class("text-xl mb-2 font-bold")], [
+        element.text("Round " <> int.to_string(round_index + 1)),
+      ]),
+      html.div(
+        [],
+        list.sort(finished_round.player_scores, fn(a, b) {
+          case
+            a.player.id
+            == finished_round.leading_player_id,
+            b.player.id
+            == finished_round.leading_player_id,
+            a.player.id
+            == player_id,
+            b.player.id
+            == player_id
+          {
+            True, _, _, _ -> order.Lt
+            _, True, _, _ -> order.Gt
+            _, _, True, _ -> order.Lt
+            _, _, _, True -> order.Gt
+            False, False, False, False -> int.compare(b.score, a.score)
+          }
+        })
+          |> list.map(fn(player_score) {
+            html.div([], [
+              html.h4([class("text-lg")], [
+                element.text(player_text(
+                  player_score.player,
+                  player_score.score,
+                )),
+              ]),
+              html.ol(
+                [class("list-decimal list-inside p-2")],
+                list.reverse(player_score.words)
+                  |> list.map(fn(word) { html.li([], [element.text(word)]) }),
+              ),
+            ])
+          }),
+      ),
+    ])
+  }
 }
 
 fn display_menu(current_view: InGameView, game_started: Bool) {
