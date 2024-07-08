@@ -5210,6 +5210,7 @@ function handle_ws_message(model, msg) {
           player_name,
           new Some(
             active_game.withFields({
+              round: new None(),
               room: (() => {
                 let _pipe = active_game.room;
                 return map(

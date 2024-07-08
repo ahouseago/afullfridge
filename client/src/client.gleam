@@ -655,6 +655,7 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
               Some(
                 ActiveGame(
                   ..active_game,
+                  round: None,
                   room: active_game.room
                     |> option.map(fn(room) {
                       shared.Room(
