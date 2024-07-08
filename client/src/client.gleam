@@ -636,7 +636,9 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
             active_game: Some(
               ActiveGame(
                 ..active_game,
-                round: Some(RoundState(round, [], False)),
+                round: option.then(active_game.round, fn(active_game_round) {
+                  Some(RoundState(..active_game_round, round: round))
+                }) |> option.or(Some(RoundState(round, [], False))),
               ),
             ),
             display_state: display_state,
@@ -945,7 +947,26 @@ fn content(model: Model) {
             ),
           ]),
           case round_state.submitted {
-            True -> html.p([], [element.text("Waiting for other players...")])
+            True ->
+              html.div([], [
+                html.h6([], [element.text("Waiting for other players:")]),
+                html.ul(
+                  [class("list-disc list-inside p-2")],
+                  list.filter_map(room.players, fn(player) {
+                    case list.contains(round_state.round.submitted, player.id) {
+                      False ->
+                        Ok(
+                          html.li([], [
+                            player.name
+                            |> shared.player_name_to_string
+                            |> element.text,
+                          ]),
+                        )
+                      True -> Error(Nil)
+                    }
+                  }),
+                ),
+              ])
             False -> element.none()
           },
         ]),

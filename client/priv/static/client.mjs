@@ -373,6 +373,22 @@ function do_reverse(loop$remaining, loop$accumulator) {
 function reverse(xs) {
   return do_reverse(xs, toList([]));
 }
+function contains(loop$list, loop$elem) {
+  while (true) {
+    let list2 = loop$list;
+    let elem = loop$elem;
+    if (list2.hasLength(0)) {
+      return false;
+    } else if (list2.atLeastLength(1) && isEqual(list2.head, elem)) {
+      let first$1 = list2.head;
+      return true;
+    } else {
+      let rest$1 = list2.tail;
+      loop$list = rest$1;
+      loop$elem = elem;
+    }
+  }
+}
 function first(list2) {
   if (list2.hasLength(0)) {
     return new Error(void 0);
@@ -407,6 +423,34 @@ function do_filter(loop$list, loop$fun, loop$acc) {
 }
 function filter(list2, predicate) {
   return do_filter(list2, predicate, toList([]));
+}
+function do_filter_map(loop$list, loop$fun, loop$acc) {
+  while (true) {
+    let list2 = loop$list;
+    let fun = loop$fun;
+    let acc = loop$acc;
+    if (list2.hasLength(0)) {
+      return reverse(acc);
+    } else {
+      let x = list2.head;
+      let xs = list2.tail;
+      let new_acc = (() => {
+        let $ = fun(x);
+        if ($.isOk()) {
+          let x$1 = $[0];
+          return prepend(x$1, acc);
+        } else {
+          return acc;
+        }
+      })();
+      loop$list = xs;
+      loop$fun = fun;
+      loop$acc = new_acc;
+    }
+  }
+}
+function filter_map(list2, fun) {
+  return do_filter_map(list2, fun, toList([]));
 }
 function do_map(loop$list, loop$fun, loop$acc) {
   while (true) {
@@ -3480,6 +3524,9 @@ function h3(attrs, children) {
 function h4(attrs, children) {
   return element("h4", attrs, children);
 }
+function h6(attrs, children) {
+  return element("h6", attrs, children);
+}
 function nav(attrs, children) {
   return element("nav", attrs, children);
 }
@@ -4545,6 +4592,8 @@ var ExactMatch = class extends CustomType {
 };
 var EqualPositions = class extends CustomType {
 };
+var Smart = class extends CustomType {
+};
 var Room = class extends CustomType {
   constructor(room_code, players, word_list, round3, finished_rounds, scoring_method) {
     super();
@@ -4654,6 +4703,8 @@ function scoring_method_from_json(scoring_method) {
     return new Ok(new ExactMatch());
   } else if ($.isOk() && $[0] === "EQUAL_POSITIONS") {
     return new Ok(new EqualPositions());
+  } else if ($.isOk() && $[0] === "SMART") {
+    return new Ok(new Smart());
   } else if ($.isOk()) {
     let method = $[0];
     return new Error(
@@ -5129,7 +5180,20 @@ function handle_ws_message(model, msg) {
           player_name,
           new Some(
             active_game.withFields({
-              round: new Some(new RoundState(round3, toList([]), false))
+              round: (() => {
+                let _pipe = then$(
+                  active_game.round,
+                  (active_game_round) => {
+                    return new Some(
+                      active_game_round.withFields({ round: round3 })
+                    );
+                  }
+                );
+                return or(
+                  _pipe,
+                  new Some(new RoundState(round3, toList([]), false))
+                );
+              })()
             })
           ),
           display_state
@@ -6054,78 +6118,86 @@ function display_players(players, leading_player_id, finished_rounds) {
     })()
   );
 }
-function display_finished_round(finished_round, round_index) {
-  let player_text = (player, score) => {
-    let $ = isEqual(player.id, finished_round.leading_player_id);
-    if ($) {
-      return player_name_to_string(player.name) + "'s ranking";
-    } else {
-      return player_name_to_string(player.name) + "'s guess - " + to_string2(
-        score
-      ) + " points";
-    }
-  };
-  return div(
-    toList([class$("my-3 py-1 border-solid border-l-2 p-2 border-gray-300")]),
-    toList([
-      h3(
-        toList([class$("text-xl mb-2 font-bold")]),
-        toList([text("Round " + to_string2(round_index + 1))])
-      ),
-      div(
-        toList([]),
-        (() => {
-          let _pipe = sort(
-            finished_round.player_scores,
-            (a2, b) => {
-              let $ = isEqual(a2.player.id, finished_round.leading_player_id);
-              let $1 = isEqual(b.player.id, finished_round.leading_player_id);
-              if ($) {
-                return new Lt();
-              } else if ($1) {
-                return new Gt();
-              } else {
-                return compare2(a2.score, b.score);
+function display_finished_round(player_id) {
+  return (finished_round, round_index) => {
+    let player_text = (player, score) => {
+      let $ = isEqual(player.id, finished_round.leading_player_id);
+      if ($) {
+        return player_name_to_string(player.name) + "'s ranking";
+      } else {
+        return player_name_to_string(player.name) + "'s guess - " + to_string2(
+          score
+        ) + " points";
+      }
+    };
+    return div(
+      toList([class$("my-3 py-1 border-solid border-l-2 p-2 border-gray-300")]),
+      toList([
+        h3(
+          toList([class$("text-xl mb-2 font-bold")]),
+          toList([text("Round " + to_string2(round_index + 1))])
+        ),
+        div(
+          toList([]),
+          (() => {
+            let _pipe = sort(
+              finished_round.player_scores,
+              (a2, b) => {
+                let $ = isEqual(a2.player.id, finished_round.leading_player_id);
+                let $1 = isEqual(b.player.id, finished_round.leading_player_id);
+                let $2 = isEqual(a2.player.id, player_id);
+                let $3 = isEqual(b.player.id, player_id);
+                if ($) {
+                  return new Lt();
+                } else if ($1) {
+                  return new Gt();
+                } else if ($2) {
+                  return new Lt();
+                } else if ($3) {
+                  return new Gt();
+                } else {
+                  return compare2(b.score, a2.score);
+                }
               }
-            }
-          );
-          return map2(
-            _pipe,
-            (player_score) => {
-              return div(
-                toList([]),
-                toList([
-                  h4(
-                    toList([class$("text-lg")]),
-                    toList([
-                      text(
-                        player_text(player_score.player, player_score.score)
-                      )
-                    ])
-                  ),
-                  ol(
-                    toList([class$("list-decimal list-inside p-2")]),
-                    (() => {
-                      let _pipe$1 = reverse(player_score.words);
-                      return map2(
-                        _pipe$1,
-                        (word) => {
-                          return li(
-                            toList([]),
-                            toList([text(word)])
-                          );
-                        }
-                      );
-                    })()
-                  )
-                ])
-              );
-            }
-          );
-        })()
-      )
-    ])
-  );
+            );
+            return map2(
+              _pipe,
+              (player_score) => {
+                return div(
+                  toList([]),
+                  toList([
+                    h4(
+                      toList([class$("text-lg")]),
+                      toList([
+                        text(
+                          player_text(player_score.player, player_score.score)
+                        )
+                      ])
+                    ),
+                    ol(
+                      toList([class$("list-decimal list-inside p-2")]),
+                      (() => {
+                        let _pipe$1 = reverse(player_score.words);
+                        return map2(
+                          _pipe$1,
+                          (word) => {
+                            return li(
+                              toList([]),
+                              toList([text(word)])
+                            );
+                          }
+                        );
+                      })()
+                    )
+                  ])
+                );
+              }
+            );
+          })()
+        )
+      ])
+    );
+  };
 }
 function display_menu(current_view, game_started) {
   return div(
@@ -6457,9 +6529,44 @@ function content(model) {
             (() => {
               let $ = round_state.submitted;
               if ($) {
-                return p(
+                return div(
                   toList([]),
-                  toList([text("Waiting for other players...")])
+                  toList([
+                    h6(
+                      toList([]),
+                      toList([text("Waiting for other players:")])
+                    ),
+                    ul(
+                      toList([class$("list-disc list-inside p-2")]),
+                      filter_map(
+                        room.players,
+                        (player) => {
+                          let $1 = contains(
+                            round_state.round.submitted,
+                            player.id
+                          );
+                          if (!$1) {
+                            return new Ok(
+                              li(
+                                toList([]),
+                                toList([
+                                  (() => {
+                                    let _pipe = player.name;
+                                    let _pipe$1 = player_name_to_string(
+                                      _pipe
+                                    );
+                                    return text(_pipe$1);
+                                  })()
+                                ])
+                              )
+                            );
+                          } else {
+                            return new Error(void 0);
+                          }
+                        }
+                      )
+                    )
+                  ])
                 );
               } else {
                 return none2();
@@ -6470,6 +6577,7 @@ function content(model) {
       ])
     );
   } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].room instanceof Some && model.active_game[0].round instanceof Some && model.display_state instanceof DisplayState && model.display_state.view instanceof Scores && !model.display_state.menu_open) {
+    let player_id = model.player_id;
     let room = model.active_game[0].room[0];
     let round_state = model.active_game[0].round[0];
     return div(
@@ -6498,7 +6606,10 @@ function content(model) {
                 ),
                 (() => {
                   let _pipe = reverse(room.finished_rounds);
-                  let _pipe$1 = index_map(_pipe, display_finished_round);
+                  let _pipe$1 = index_map(
+                    _pipe,
+                    display_finished_round(player_id)
+                  );
                   return reverse(_pipe$1);
                 })()
               )

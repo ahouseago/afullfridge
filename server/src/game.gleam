@@ -470,11 +470,18 @@ fn submit_words(
     list.length(round_state.submitted_word_lists)
     == list.length(room_state.room.players)
   {
-    False ->
+    False -> {
+      // Update round info so players know who they're waiting for
+      broadcast_message(
+        state.connections,
+        to: room_state.room.players,
+        message: shared.RoundInfo(round),
+      )
       RoomState(
         round_state: Some(round_state),
         room: Room(..room_state.room, round: Some(round)),
       )
+    }
     True -> {
       RoomState(
         ..room_state,
