@@ -126,12 +126,12 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
   case uri, uri |> result.map(get_route_from_uri) {
     Ok(uri), Ok(Play(Some(room_code))) -> {
       let rejoin =
-        storage.local()
-        |> result.try(fn(local_storage) {
-          use id <- result.try(storage.get_item(local_storage, "connection_id"))
-          use name <- result.try(storage.get_item(local_storage, "player_name"))
+        storage.session()
+        |> result.try(fn(session_storage) {
+          use id <- result.try(storage.get_item(session_storage, "connection_id"))
+          use name <- result.try(storage.get_item(session_storage, "player_name"))
           use stored_room_code <- result.try(storage.get_item(
-            local_storage,
+            session_storage,
             "room_code",
           ))
           let host = option.unwrap(uri.host, "localhost")
@@ -149,7 +149,7 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
                 ),
               ))
             False -> {
-              storage.clear(local_storage)
+              storage.clear(session_storage)
               Error(Nil)
             }
           }
@@ -318,12 +318,12 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       SetPlayerName
     -> {
       let _ =
-        storage.local()
-        |> result.try(fn(local_storage) {
+        storage.session()
+        |> result.try(fn(session_storage) {
           result.all([
-            storage.set_item(local_storage, "connection_id", player_id),
-            storage.set_item(local_storage, "player_name", player_name),
-            storage.set_item(local_storage, "room_code", room_code),
+            storage.set_item(session_storage, "connection_id", player_id),
+            storage.set_item(session_storage, "player_name", player_name),
+            storage.set_item(session_storage, "room_code", room_code),
           ])
         })
       let host = option.unwrap(uri.host, "localhost")
@@ -637,8 +637,9 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
               ActiveGame(
                 ..active_game,
                 round: option.then(active_game.round, fn(active_game_round) {
-                  Some(RoundState(..active_game_round, round: round))
-                }) |> option.or(Some(RoundState(round, [], False))),
+                    Some(RoundState(..active_game_round, round: round))
+                  })
+                  |> option.or(Some(RoundState(round, [], False))),
               ),
             ),
             display_state: display_state,
@@ -1243,14 +1244,10 @@ fn display_finished_round(player_id: PlayerId) {
         [],
         list.sort(finished_round.player_scores, fn(a, b) {
           case
-            a.player.id
-            == finished_round.leading_player_id,
-            b.player.id
-            == finished_round.leading_player_id,
-            a.player.id
-            == player_id,
-            b.player.id
-            == player_id
+            a.player.id == finished_round.leading_player_id,
+            b.player.id == finished_round.leading_player_id,
+            a.player.id == player_id,
+            b.player.id == player_id
           {
             True, _, _, _ -> order.Lt
             _, True, _, _ -> order.Gt

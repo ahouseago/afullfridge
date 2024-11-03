@@ -243,9 +243,7 @@ fn handle_join_request(
       |> result.try(fn(_room) {
         use player_id <- result.map(
           process.call(game, game.AddPlayerToRoom(_, room_code), 2)
-          |> result.map_error(fn(reason) {
-            internal_error(reason)
-          }),
+          |> result.map_error(fn(reason) { internal_error(reason) }),
         )
         response.new(200)
         |> response.set_body(
