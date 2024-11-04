@@ -87,7 +87,7 @@ pub type Msg {
     send_message: fn(shared.WebsocketResponse) -> Nil,
     player_name: PlayerName,
   )
-  DeleteConnection(PlayerId)
+  Disconnect(PlayerId)
   ProcessWebsocketRequest(from: PlayerId, message: shared.WebsocketRequest)
 
   GetRoom(reply_with: Subject(Result(Room, Nil)), room_code: RoomCode)
@@ -122,9 +122,12 @@ fn update(msg: Msg, state: State) -> actor.Next(Msg, State) {
               let room =
                 Room(
                   ..room_state.room,
+                  // TODO: fix this shuffling of players on connect/disconnect.
                   players: [
-                    Player(id: id, name: player_name),
-                    ..room_state.room.players
+                    Player(id, player_name, True),
+                    ..list.filter(room_state.room.players, fn(player) {
+                      player.id != id
+                    })
                   ],
                 )
               broadcast_message(
@@ -154,9 +157,12 @@ fn update(msg: Msg, state: State) -> actor.Next(Msg, State) {
               let room =
                 Room(
                   ..room_state.room,
+                  // TODO: fix this shuffling of players on connect/disconnect.
                   players: [
-                    Player(id: id, name: player_name),
-                    ..room_state.room.players
+                    Player(id, player_name, True),
+                    ..list.filter(room_state.room.players, fn(player) {
+                      player.id != id
+                    })
                   ],
                 )
               broadcast_message(
@@ -178,7 +184,7 @@ fn update(msg: Msg, state: State) -> actor.Next(Msg, State) {
         }
       }
     }
-    DeleteConnection(player_id) -> {
+    Disconnect(player_id) -> {
       let rooms =
         dict.get(state.players, player_id)
         |> result.map(fn(player) { player.room_code })
@@ -187,8 +193,11 @@ fn update(msg: Msg, state: State) -> actor.Next(Msg, State) {
           let room =
             Room(
               ..room_state.room,
-              players: list.filter(room_state.room.players, fn(player) {
-                player.id != player_id
+              players: list.map(room_state.room.players, fn(player) {
+                Player(
+                  ..player,
+                  connected: player.id != player_id && player.connected,
+                )
               }),
             )
           broadcast_message(
@@ -599,7 +608,7 @@ fn get_player_scores(
   list.map(round.submitted_word_lists, fn(word_list) {
     let player_name =
       dict.get(player_map, word_list.0)
-      |> result.unwrap(shared.Player(PlayerId(""), PlayerName("Unknown")))
+      |> result.unwrap(Player(PlayerId(""), PlayerName("Unknown"), False))
     let score = dict.get(scores, word_list.0) |> result.unwrap(0)
     shared.PlayerScore(player_name, word_list.1, score)
   })

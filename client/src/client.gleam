@@ -229,21 +229,20 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
           display_state: DisplayState(Round, False),
         ),
         modem.push(
-          uri.Uri(
-            ..relative("/play"),
-            query: Some(
-              uri.query_to_string([
-                #("game", shared.room_code_to_string(room_code)),
-              ]),
-            ),
+          "/play",
+          Some(
+            uri.query_to_string([
+              #("game", shared.room_code_to_string(room_code)),
+            ]),
           ),
+          None,
         ),
       )
     }
-    NotInRoom(uri, Play(Some(_room_code)), room_code_input, _err),
+    NotInRoom(uri, Play(Some(_room_code)), room_code_input, err),
       JoinedRoom(Error(lustre_http.NotFound))
     -> {
-      // io.debug(err)
+      io.debug(err)
       #(
         NotInRoom(
           uri,
@@ -251,7 +250,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
           room_code_input,
           Some("No game found with that room code."),
         ),
-        effect.none(),
+        modem.push("", None, None),
       )
     }
     NotInRoom(_, _route, room_code_input, _err),
@@ -851,8 +850,12 @@ fn header(model: Model) {
 
 fn content(model: Model) {
   case model {
-    NotInRoom(_, Home, _, _) ->
+    NotInRoom(_, Home, _, join_room_err) ->
       html.div([class("text-center")], [
+        case join_room_err {
+          Some(err) -> html.div([class("bg-red-50")], [element.text(err)])
+          None -> element.none()
+        },
         html.p([class("mx-4 text-lg mb-8")], [
           element.text("A game about preferences best played with friends."),
         ]),

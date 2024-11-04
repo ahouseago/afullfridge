@@ -47,7 +47,7 @@ pub type WebsocketResponse {
 }
 
 pub type Player {
-  Player(id: PlayerId, name: PlayerName)
+  Player(id: PlayerId, name: PlayerName, connected: Bool)
 }
 
 pub type PlayerWithOrderedPreferences =
@@ -128,6 +128,7 @@ fn player_to_json(player: Player) {
   json.object([
     #("id", player.id |> player_id_to_string |> json.string),
     #("name", player.name |> player_name_to_string |> json.string),
+    #("connected", player.connected |> json.bool),
   ])
 }
 
@@ -141,10 +142,11 @@ pub fn player_from_json(
   player: dynamic.Dynamic,
 ) -> Result(Player, List(dynamic.DecodeError)) {
   player
-  |> dynamic.decode2(
+  |> dynamic.decode3(
     Player,
     dynamic.field("id", from_dynamic_string(PlayerId)),
     dynamic.field("name", from_dynamic_string(PlayerName)),
+    dynamic.field("connected", dynamic.bool),
   )
 }
 
@@ -254,7 +256,7 @@ pub fn room_from_json(
     dynamic.field("roomCode", from_dynamic_string(RoomCode)),
     dynamic.field("players", dynamic.list(player_from_json)),
     dynamic.field("wordList", dynamic.list(dynamic.string)),
-    dynamic.optional_field("round", round_from_json),
+    dynamic.field("round", dynamic.optional(round_from_json)),
     dynamic.field("finishedRounds", dynamic.list(finished_round_from_json)),
     dynamic.field("scoringMethod", scoring_method_from_json),
   )
