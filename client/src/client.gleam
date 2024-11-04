@@ -23,6 +23,13 @@ import shared.{
   type PlayerId, type PlayerName, type RoomCode, PlayerId, PlayerName, RoomCode,
 }
 
+// Either "" or "s", to be added after the end of ws or http in URLs to denote
+// whether it's secure or insecure. It's a const to make it easier to change
+// when running the dev server.
+const scheme = ""
+
+const port_override = Some(8080)
+
 pub type Model {
   NotInRoom(
     uri: uri.Uri,
@@ -128,15 +135,22 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
       let rejoin =
         storage.session()
         |> result.try(fn(session_storage) {
-          use id <- result.try(storage.get_item(session_storage, "connection_id"))
-          use name <- result.try(storage.get_item(session_storage, "player_name"))
+          use id <- result.try(storage.get_item(
+            session_storage,
+            "connection_id",
+          ))
+          use name <- result.try(storage.get_item(
+            session_storage,
+            "player_name",
+          ))
           use stored_room_code <- result.try(storage.get_item(
             session_storage,
             "room_code",
           ))
           let host = option.unwrap(uri.host, "localhost")
           let port =
-            option.map(uri.port, fn(port) { ":" <> int.to_string(port) })
+            option.or(port_override, uri.port)
+            |> option.map(fn(port) { ":" <> int.to_string(port) })
             |> option.unwrap("")
           case room_code == stored_room_code {
             True ->
@@ -144,7 +158,15 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
                 id,
                 name,
                 ws.init(
-                  "wss://" <> host <> port <> "/ws/" <> id <> "/" <> name,
+                  "ws"
+                    <> scheme
+                    <> "://"
+                    <> host
+                    <> port
+                    <> "/ws/"
+                    <> id
+                    <> "/"
+                    <> name,
                   WebSocketEvent,
                 ),
               ))
@@ -328,12 +350,21 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         })
       let host = option.unwrap(uri.host, "localhost")
       let port =
-        option.map(uri.port, fn(port) { ":" <> int.to_string(port) })
+        option.or(port_override, uri.port)
+        |> option.map(fn(port) { ":" <> int.to_string(port) })
         |> option.unwrap("")
       #(
         model,
         ws.init(
-          "wss://" <> host <> port <> "/ws/" <> player_id <> "/" <> player_name,
+          "ws"
+            <> scheme
+            <> "://"
+            <> host
+            <> port
+            <> "/ws/"
+            <> player_id
+            <> "/"
+            <> player_name,
           WebSocketEvent,
         ),
       )
@@ -685,10 +716,11 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
 fn start_game(uri: uri.Uri) {
   let host = option.unwrap(uri.host, "localhost")
   let port =
-    option.map(uri.port, fn(port) { ":" <> int.to_string(port) })
+    option.or(port_override, uri.port)
+    |> option.map(fn(port) { ":" <> int.to_string(port) })
     |> option.unwrap("")
   lustre_http.get(
-    "https://" <> host <> port <> "/createroom",
+    "http" <> scheme <> "://" <> host <> port <> "/createroom",
     lustre_http.expect_json(shared.decode_http_response_json, JoinedRoom),
   )
 }
@@ -696,10 +728,11 @@ fn start_game(uri: uri.Uri) {
 fn join_game(uri: uri.Uri, room_code: RoomCode) {
   let host = option.unwrap(uri.host, "localhost")
   let port =
-    option.map(uri.port, fn(port) { ":" <> int.to_string(port) })
+    option.or(port_override, uri.port)
+    |> option.map(fn(port) { ":" <> int.to_string(port) })
     |> option.unwrap("")
   lustre_http.post(
-    "https://" <> host <> port <> "/joinroom",
+    "http" <> scheme <> "://" <> host <> port <> "/joinroom",
     shared.encode_http_request(shared.JoinRoomRequest(room_code)),
     lustre_http.expect_json(shared.decode_http_response_json, JoinedRoom),
   )
