@@ -98,6 +98,22 @@ pub type Msg {
   SubmitOrderedWords
 }
 
+const dev_mode = True
+
+fn server(protocol: String, uri: uri.Uri, path) -> String {
+  let host = option.unwrap(uri.host, "localhost")
+  case dev_mode {
+    True -> protocol <> "://localhost:8080" <> path
+    False ->
+      protocol
+      <> "s://"
+      <> host
+      <> option.map(uri.port, fn(port) { ":" <> int.to_string(port) })
+      |> option.unwrap("")
+      <> path
+  }
+}
+
 pub fn main() {
   let app = lustre.application(init, update, view)
   let assert Ok(_) = lustre.start(app, "#app", Nil)
@@ -134,17 +150,13 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
             local_storage,
             "room_code",
           ))
-          let host = option.unwrap(uri.host, "localhost")
-          let port =
-            option.map(uri.port, fn(port) { ":" <> int.to_string(port) })
-            |> option.unwrap("")
           case room_code == stored_room_code {
             True ->
               Ok(#(
                 id,
                 name,
                 ws.init(
-                  "wss://" <> host <> port <> "/ws/" <> id <> "/" <> name,
+                  server("ws", uri, "/ws/" <> id <> "/" <> name),
                   WebSocketEvent,
                 ),
               ))
@@ -326,14 +338,10 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
             storage.set_item(local_storage, "room_code", room_code),
           ])
         })
-      let host = option.unwrap(uri.host, "localhost")
-      let port =
-        option.map(uri.port, fn(port) { ":" <> int.to_string(port) })
-        |> option.unwrap("")
       #(
         model,
         ws.init(
-          "wss://" <> host <> port <> "/ws/" <> player_id <> "/" <> player_name,
+          server("ws", uri, "/ws/" <> player_id <> "/" <> player_name),
           WebSocketEvent,
         ),
       )
@@ -464,14 +472,11 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
             room,
             add_word_input,
             round: Some(
-              RoundState(
-                ..round_state,
-                ordered_words: [
-                  word,
-                  ..round_state.ordered_words
-                  |> list.filter(fn(existing_word) { existing_word != word })
-                ],
-              ),
+              RoundState(..round_state, ordered_words: [
+                word,
+                ..round_state.ordered_words
+                |> list.filter(fn(existing_word) { existing_word != word })
+              ]),
             ),
           )),
           display_state,
@@ -637,8 +642,9 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
               ActiveGame(
                 ..active_game,
                 round: option.then(active_game.round, fn(active_game_round) {
-                  Some(RoundState(..active_game_round, round: round))
-                }) |> option.or(Some(RoundState(round, [], False))),
+                    Some(RoundState(..active_game_round, round: round))
+                  })
+                  |> option.or(Some(RoundState(round, [], False))),
               ),
             ),
             display_state: display_state,
@@ -658,13 +664,10 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
                   round: None,
                   room: active_game.room
                     |> option.map(fn(room) {
-                      shared.Room(
-                        ..room,
-                        finished_rounds: [
-                          finished_round,
-                          ..room.finished_rounds
-                        ],
-                      )
+                      shared.Room(..room, finished_rounds: [
+                        finished_round,
+                        ..room.finished_rounds
+                      ])
                     }),
                 ),
               ),
@@ -682,23 +685,15 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
 }
 
 fn start_game(uri: uri.Uri) {
-  let host = option.unwrap(uri.host, "localhost")
-  let port =
-    option.map(uri.port, fn(port) { ":" <> int.to_string(port) })
-    |> option.unwrap("")
   lustre_http.get(
-    "https://" <> host <> port <> "/createroom",
+    server("http", uri, "/createroom"),
     lustre_http.expect_json(shared.decode_http_response_json, JoinedRoom),
   )
 }
 
 fn join_game(uri: uri.Uri, room_code: RoomCode) {
-  let host = option.unwrap(uri.host, "localhost")
-  let port =
-    option.map(uri.port, fn(port) { ":" <> int.to_string(port) })
-    |> option.unwrap("")
   lustre_http.post(
-    "https://" <> host <> port <> "/joinroom",
+    server("http", uri, "/joinroom"),
     shared.encode_http_request(shared.JoinRoomRequest(room_code)),
     lustre_http.expect_json(shared.decode_http_response_json, JoinedRoom),
   )
@@ -1032,6 +1027,10 @@ fn content(model: Model) {
             [class("ml-3")],
             list.reverse(room.players)
               |> list.map(fn(player) {
+                let connected = case player.connected {
+                  True -> ""
+                  False -> " - (disconnected)"
+                }
                 let display =
                   case player.name, player.id {
                     PlayerName(""), id if id == player_id ->
@@ -1040,6 +1039,7 @@ fn content(model: Model) {
                     PlayerName(""), id -> shared.player_id_to_string(id)
                     PlayerName(name), _ -> name
                   }
+                  |> fn(name) { name <> connected }
                   |> element.text
                 html.li([], [display])
               }),
@@ -1243,14 +1243,10 @@ fn display_finished_round(player_id: PlayerId) {
         [],
         list.sort(finished_round.player_scores, fn(a, b) {
           case
-            a.player.id
-            == finished_round.leading_player_id,
-            b.player.id
-            == finished_round.leading_player_id,
-            a.player.id
-            == player_id,
-            b.player.id
-            == player_id
+            a.player.id == finished_round.leading_player_id,
+            b.player.id == finished_round.leading_player_id,
+            a.player.id == player_id,
+            b.player.id == player_id
           {
             True, _, _, _ -> order.Lt
             _, True, _, _ -> order.Gt

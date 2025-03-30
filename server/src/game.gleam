@@ -55,9 +55,7 @@ fn initial_state() -> State {
 }
 
 type PlayerConnection {
-  // Before the websocket has been established
-  DisconnectedPlayer(id: PlayerId, room_code: RoomCode)
-  ConnectedPlayer(id: PlayerId, room_code: RoomCode, name: PlayerName)
+  PlayerConnection(id: PlayerId, room_code: RoomCode, name: PlayerName)
 }
 
 pub type RoomState {
@@ -102,7 +100,7 @@ fn update(msg: Msg, state: State) -> actor.Next(Msg, State) {
   case msg {
     NewConnection(player_id, send_fn, player_name) -> {
       case dict.get(state.players, player_id) {
-        Ok(DisconnectedPlayer(id, room_code)) -> {
+        Ok(PlayerConnection(id, room_code, PlayerName(""))) -> {
           io.println(
             "player "
             <> shared.player_id_to_string(id)
@@ -115,18 +113,15 @@ fn update(msg: Msg, state: State) -> actor.Next(Msg, State) {
             dict.insert(
               state.players,
               id,
-              ConnectedPlayer(id, room_code, player_name),
+              PlayerConnection(id, room_code, player_name),
             )
           let rooms = case dict.get(state.rooms, room_code) {
             Ok(room_state) -> {
               let room =
-                Room(
-                  ..room_state.room,
-                  players: [
-                    Player(id: id, name: player_name),
-                    ..room_state.room.players
-                  ],
-                )
+                Room(..room_state.room, players: [
+                  Player(id: id, name: player_name, connected: True),
+                  ..room_state.room.players
+                ])
               broadcast_message(
                 state.connections,
                 to: room.players,
@@ -147,18 +142,15 @@ fn update(msg: Msg, state: State) -> actor.Next(Msg, State) {
             ),
           )
         }
-        Ok(ConnectedPlayer(id, room_code, player_name)) -> {
+        Ok(PlayerConnection(id, room_code, player_name)) -> {
           let connections = dict.insert(state.connections, id, send_fn)
           let rooms = case dict.get(state.rooms, room_code) {
             Ok(room_state) -> {
               let room =
-                Room(
-                  ..room_state.room,
-                  players: [
-                    Player(id: id, name: player_name),
-                    ..room_state.room.players
-                  ],
-                )
+                Room(..room_state.room, players: [
+                  Player(id: id, name: player_name, connected: True),
+                  ..list.filter(room_state.room.players, fn(p) { p.id != id })
+                ])
               broadcast_message(
                 state.connections,
                 to: room.players,
@@ -187,8 +179,11 @@ fn update(msg: Msg, state: State) -> actor.Next(Msg, State) {
           let room =
             Room(
               ..room_state.room,
-              players: list.filter(room_state.room.players, fn(player) {
-                player.id != player_id
+              players: list.map(room_state.room.players, fn(player) {
+                case player.id == player_id {
+                  True -> Player(..player, connected: False)
+                  False -> player
+                }
               }),
             )
           broadcast_message(
@@ -217,7 +212,12 @@ fn update(msg: Msg, state: State) -> actor.Next(Msg, State) {
     CreateRoom(subj) -> {
       let #(state, player_id) = get_next_player_id(state)
       let #(state, room_code) = generate_room_code(state)
-      let player = DisconnectedPlayer(id: player_id, room_code: room_code)
+      let player =
+        PlayerConnection(
+          id: player_id,
+          room_code: room_code,
+          name: PlayerName(""),
+        )
       let room =
         Room(
           room_code: room_code,
@@ -248,7 +248,11 @@ fn update(msg: Msg, state: State) -> actor.Next(Msg, State) {
       result.map(dict.get(state.rooms, room_code), fn(room) {
         let #(state, player_id) = get_next_player_id(state)
         let player_connection =
-          DisconnectedPlayer(id: player_id, room_code: room_code)
+          PlayerConnection(
+            id: player_id,
+            room_code: room_code,
+            name: PlayerName(""),
+          )
         actor.send(subj, Ok(player_id))
         actor.continue(
           State(
@@ -451,15 +455,12 @@ fn submit_words(
     }
     True -> {
       #(
-        InProgressRound(
-          ..round_state,
-          submitted_word_lists: [
-            #(player.id, ordered_words),
-            ..list.filter(round_state.submitted_word_lists, fn(words) {
-              words.0 != player.id
-            })
-          ],
-        ),
+        InProgressRound(..round_state, submitted_word_lists: [
+          #(player.id, ordered_words),
+          ..list.filter(round_state.submitted_word_lists, fn(words) {
+            words.0 != player.id
+          })
+        ]),
         Round(..round, submitted: [player.id, ..round.submitted]),
       )
     }
@@ -485,13 +486,10 @@ fn submit_words(
     True -> {
       RoomState(
         ..room_state,
-        room: Room(
-          ..room_state.room,
-          finished_rounds: [
-            finish_round(state, room_state, round_state),
-            ..room_state.room.finished_rounds
-          ],
-        ),
+        room: Room(..room_state.room, finished_rounds: [
+          finish_round(state, room_state, round_state),
+          ..room_state.room.finished_rounds
+        ]),
       )
       |> start_new_round(state, _)
     }
@@ -599,7 +597,7 @@ fn get_player_scores(
   list.map(round.submitted_word_lists, fn(word_list) {
     let player_name =
       dict.get(player_map, word_list.0)
-      |> result.unwrap(shared.Player(PlayerId(""), PlayerName("Unknown")))
+      |> result.unwrap(Player(PlayerId(""), PlayerName("Unknown"), False))
     let score = dict.get(scores, word_list.0) |> result.unwrap(0)
     shared.PlayerScore(player_name, word_list.1, score)
   })

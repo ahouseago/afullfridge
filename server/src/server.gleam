@@ -78,6 +78,7 @@ pub fn main() {
         http.Options ->
           response.new(200)
           |> response.set_body(mist.Bytes(bytes_builder.new()))
+          |> response.set_header("Access-Control-Allow-Origin", "http://localhost:1234")
           |> response.set_header("Access-Control-Allow-Methods", "GET, POST")
           |> response.set_header("Access-Control-Allow-Headers", "content-type")
         http.Get | http.Post ->
