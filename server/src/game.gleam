@@ -85,7 +85,7 @@ pub type Msg {
     send_message: fn(shared.WebsocketResponse) -> Nil,
     player_name: PlayerName,
   )
-  DeleteConnection(PlayerId)
+  Disconnect(PlayerId)
   ProcessWebsocketRequest(from: PlayerId, message: shared.WebsocketRequest)
 
   GetRoom(reply_with: Subject(Result(Room, Nil)), room_code: RoomCode)
@@ -170,7 +170,7 @@ fn update(msg: Msg, state: State) -> actor.Next(Msg, State) {
         }
       }
     }
-    DeleteConnection(player_id) -> {
+    Disconnect(player_id) -> {
       let rooms =
         dict.get(state.players, player_id)
         |> result.map(fn(player) { player.room_code })
@@ -180,10 +180,10 @@ fn update(msg: Msg, state: State) -> actor.Next(Msg, State) {
             Room(
               ..room_state.room,
               players: list.map(room_state.room.players, fn(player) {
-                case player.id == player_id {
-                  True -> Player(..player, connected: False)
-                  False -> player
-                }
+                Player(
+                  ..player,
+                  connected: player.id != player_id && player.connected,
+                )
               }),
             )
           broadcast_message(

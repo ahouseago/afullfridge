@@ -256,7 +256,7 @@ pub fn room_from_json(
     dynamic.field("roomCode", from_dynamic_string(RoomCode)),
     dynamic.field("players", dynamic.list(player_from_json)),
     dynamic.field("wordList", dynamic.list(dynamic.string)),
-    dynamic.optional_field("round", round_from_json),
+    dynamic.field("round", dynamic.optional(round_from_json)),
     dynamic.field("finishedRounds", dynamic.list(finished_round_from_json)),
     dynamic.field("scoringMethod", scoring_method_from_json),
   )

@@ -4,6 +4,7 @@ import gleam/bytes_builder
 import gleam/erlang
 import gleam/erlang/process.{type Subject}
 import gleam/http
+import gleam/http/cookie
 import gleam/http/request
 import gleam/http/response
 import gleam/io
@@ -38,7 +39,7 @@ type WebsocketConnectionUpdate {
   // Sent to the actor to pass on to the state manager.
   Response(shared.WebsocketResponse)
   // Sent for the websocket connection to seppuku.
-  Shutdown
+  Disconnect
 }
 
 fn not_found() {
@@ -81,6 +82,10 @@ pub fn main() {
           |> response.set_header("Access-Control-Allow-Origin", "http://localhost:1234")
           |> response.set_header("Access-Control-Allow-Methods", "GET, POST")
           |> response.set_header("Access-Control-Allow-Headers", "content-type")
+          |> response.set_header(
+            "Access-Control-Allow-Origin",
+            "http://localhost:1234",
+          )
         http.Get | http.Post ->
           case request.path_segments(req) {
             ["client.mjs"] ->
@@ -142,7 +147,7 @@ pub fn main() {
                     |> result.unwrap(player_name)
                     |> PlayerName,
                 ),
-                on_close: fn(websocket) { process.send(websocket, Shutdown) },
+                on_close: fn(websocket) { process.send(websocket, Disconnect) },
                 handler: handle_ws_message,
               )
             ["createroom"] ->
@@ -211,6 +216,24 @@ fn handle_create_room_request(
   process.call(game, game.CreateRoom, 2)
   |> result.map(fn(room) {
     response.new(200)
+    |> response.set_cookie(
+      "room_code",
+      shared.room_code_to_string(room.0),
+      cookie.Attributes(
+        ..cookie.defaults(http.Https),
+        max_age: Some(7200),
+        path: None,
+      ),
+    )
+    |> response.set_cookie(
+      "player_id",
+      shared.player_id_to_string(room.1),
+      cookie.Attributes(
+        ..cookie.defaults(http.Https),
+        max_age: Some(7200),
+        path: None,
+      ),
+    )
     |> response.set_body(mist.Bytes(
       shared.encode_http_response(shared.RoomResponse(room.0, room.1))
       |> bytes_builder.from_string,
@@ -244,11 +267,27 @@ fn handle_join_request(
       |> result.try(fn(_room) {
         use player_id <- result.map(
           process.call(game, game.AddPlayerToRoom(_, room_code), 2)
-          |> result.map_error(fn(reason) {
-            internal_error(reason)
-          }),
+          |> result.map_error(fn(reason) { internal_error(reason) }),
         )
         response.new(200)
+        |> response.set_cookie(
+          "room_code",
+          shared.room_code_to_string(room_code),
+          cookie.Attributes(
+            ..cookie.defaults(http.Https),
+            max_age: Some(7200),
+            path: None,
+          ),
+        )
+        |> response.set_cookie(
+          "player_id",
+          shared.player_id_to_string(player_id),
+          cookie.Attributes(
+            ..cookie.defaults(http.Https),
+            max_age: Some(7200),
+            path: None,
+          ),
+        )
         |> response.set_body(
           mist.Bytes(
             bytes_builder.from_string(
@@ -291,10 +330,10 @@ fn on_init(
           process.send(self, resp)
           actor.continue(connection_state)
         }
-        Shutdown -> {
+        Disconnect -> {
           case connection_state {
             WebsocketConnection(id) -> {
-              process.send(game, game.DeleteConnection(id))
+              process.send(game, game.Disconnect(id))
               io.println(
                 "Player " <> shared.player_id_to_string(id) <> " disconnected.",
               )

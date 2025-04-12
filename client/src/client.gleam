@@ -23,6 +23,13 @@ import shared.{
   type PlayerId, type PlayerName, type RoomCode, PlayerId, PlayerName, RoomCode,
 }
 
+// Either "" or "s", to be added after the end of ws or http in URLs to denote
+// whether it's secure or insecure. It's a const to make it easier to change
+// when running the dev server.
+const scheme = ""
+
+const port_override = Some(8080)
+
 pub type Model {
   NotInRoom(
     uri: uri.Uri,
@@ -142,12 +149,18 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
   case uri, uri |> result.map(get_route_from_uri) {
     Ok(uri), Ok(Play(Some(room_code))) -> {
       let rejoin =
-        storage.local()
-        |> result.try(fn(local_storage) {
-          use id <- result.try(storage.get_item(local_storage, "connection_id"))
-          use name <- result.try(storage.get_item(local_storage, "player_name"))
+        storage.session()
+        |> result.try(fn(session_storage) {
+          use id <- result.try(storage.get_item(
+            session_storage,
+            "connection_id",
+          ))
+          use name <- result.try(storage.get_item(
+            session_storage,
+            "player_name",
+          ))
           use stored_room_code <- result.try(storage.get_item(
-            local_storage,
+            session_storage,
             "room_code",
           ))
           case room_code == stored_room_code {
@@ -161,7 +174,7 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
                 ),
               ))
             False -> {
-              storage.clear(local_storage)
+              storage.clear(session_storage)
               Error(Nil)
             }
           }
@@ -219,21 +232,20 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
           display_state: DisplayState(Round, False),
         ),
         modem.push(
-          uri.Uri(
-            ..relative("/play"),
-            query: Some(
-              uri.query_to_string([
-                #("game", shared.room_code_to_string(room_code)),
-              ]),
-            ),
+          "/play",
+          Some(
+            uri.query_to_string([
+              #("game", shared.room_code_to_string(room_code)),
+            ]),
           ),
+          None,
         ),
       )
     }
-    NotInRoom(uri, Play(Some(_room_code)), room_code_input, _err),
+    NotInRoom(uri, Play(Some(_room_code)), room_code_input, err),
       JoinedRoom(Error(lustre_http.NotFound))
     -> {
-      // io.debug(err)
+      io.debug(err)
       #(
         NotInRoom(
           uri,
@@ -241,7 +253,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
           room_code_input,
           Some("No game found with that room code."),
         ),
-        effect.none(),
+        modem.push("", None, None),
       )
     }
     NotInRoom(_, _route, room_code_input, _err),
@@ -330,12 +342,12 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       SetPlayerName
     -> {
       let _ =
-        storage.local()
-        |> result.try(fn(local_storage) {
+        storage.session()
+        |> result.try(fn(session_storage) {
           result.all([
-            storage.set_item(local_storage, "connection_id", player_id),
-            storage.set_item(local_storage, "player_name", player_name),
-            storage.set_item(local_storage, "room_code", room_code),
+            storage.set_item(session_storage, "connection_id", player_id),
+            storage.set_item(session_storage, "player_name", player_name),
+            storage.set_item(session_storage, "room_code", room_code),
           ])
         })
       #(
@@ -812,8 +824,12 @@ fn header(model: Model) {
 
 fn content(model: Model) {
   case model {
-    NotInRoom(_, Home, _, _) ->
+    NotInRoom(_, Home, _, join_room_err) ->
       html.div([class("text-center")], [
+        case join_room_err {
+          Some(err) -> html.div([class("bg-red-50")], [element.text(err)])
+          None -> element.none()
+        },
         html.p([class("mx-4 text-lg mb-8")], [
           element.text("A game about preferences best played with friends."),
         ]),
