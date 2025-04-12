@@ -78,7 +78,10 @@ pub fn main() {
         http.Options ->
           response.new(200)
           |> response.set_body(mist.Bytes(bytes_builder.new()))
-          |> response.set_header("Access-Control-Allow-Origin", "http://localhost:1234")
+          |> response.set_header(
+            "Access-Control-Allow-Origin",
+            "http://localhost:1234",
+          )
           |> response.set_header("Access-Control-Allow-Methods", "GET, POST")
           |> response.set_header("Access-Control-Allow-Headers", "content-type")
         http.Get | http.Post ->
@@ -131,20 +134,47 @@ pub fn main() {
                 |> response.set_body(mist.Bytes(bytes_builder.new()))
               })
 
-            ["ws", player_id, player_name] ->
-              mist.websocket(
-                request: req,
-                on_init: on_init(
-                  _,
+            ["ws", player_id, player_name] -> {
+              case
+                process.try_call(
                   game,
-                  PlayerId(player_id),
-                  uri.percent_decode(player_name)
-                    |> result.unwrap(player_name)
-                    |> PlayerName,
-                ),
-                on_close: fn(websocket) { process.send(websocket, Shutdown) },
-                handler: handle_ws_message,
-              )
+                  game.CheckNameIsOk(
+                    _,
+                    PlayerId(player_id),
+                    PlayerName(player_name),
+                  ),
+                  5,
+                )
+              {
+                Ok(False) -> {
+                  response.new(412)
+                  |> response.set_body(
+                    mist.Bytes(bytes_builder.from_string("Name is taken")),
+                  )
+                }
+                Ok(True) ->
+                  mist.websocket(
+                    request: req,
+                    on_init: on_init(
+                      _,
+                      game,
+                      PlayerId(player_id),
+                      uri.percent_decode(player_name)
+                        |> result.unwrap(player_name)
+                        |> PlayerName,
+                    ),
+                    on_close: fn(websocket) {
+                      process.send(websocket, Shutdown)
+                    },
+                    handler: handle_ws_message,
+                  )
+                Error(err) -> {
+                  io.debug(err)
+                  response.new(500)
+                  |> response.set_body(mist.Bytes(bytes_builder.new()))
+                }
+              }
+            }
             ["createroom"] ->
               handle_create_room_request(game, req)
               |> result.unwrap_both
@@ -244,9 +274,7 @@ fn handle_join_request(
       |> result.try(fn(_room) {
         use player_id <- result.map(
           process.call(game, game.AddPlayerToRoom(_, room_code), 2)
-          |> result.map_error(fn(reason) {
-            internal_error(reason)
-          }),
+          |> result.map_error(fn(reason) { internal_error(reason) }),
         )
         response.new(200)
         |> response.set_body(

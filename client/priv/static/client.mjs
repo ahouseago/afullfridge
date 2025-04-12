@@ -378,14 +378,6 @@ function makeError(variant, module, line, fn, message, extra) {
   return error;
 }
 
-// build/dev/javascript/gleam_stdlib/gleam/order.mjs
-var Lt = class extends CustomType {
-};
-var Eq = class extends CustomType {
-};
-var Gt = class extends CustomType {
-};
-
 // build/dev/javascript/gleam_stdlib/gleam/option.mjs
 var Some = class extends CustomType {
   constructor(x0) {
@@ -473,6 +465,35 @@ function compile(pattern, options) {
 }
 function scan(regex, string3) {
   return regex_scan(regex, string3);
+}
+
+// build/dev/javascript/gleam_stdlib/gleam/order.mjs
+var Lt = class extends CustomType {
+};
+var Eq = class extends CustomType {
+};
+var Gt = class extends CustomType {
+};
+
+// build/dev/javascript/gleam_stdlib/gleam/int.mjs
+function parse(string3) {
+  return parse_int(string3);
+}
+function to_string2(x) {
+  return to_string(x);
+}
+function compare(a2, b) {
+  let $ = a2 === b;
+  if ($) {
+    return new Eq();
+  } else {
+    let $1 = a2 < b;
+    if ($1) {
+      return new Lt();
+    } else {
+      return new Gt();
+    }
+  }
 }
 
 // build/dev/javascript/gleam_stdlib/gleam/pair.mjs
@@ -1219,7 +1240,7 @@ function concat3(builders) {
 function from_string(string3) {
   return identity(string3);
 }
-function to_string(builder) {
+function to_string3(builder) {
   return identity(builder);
 }
 function split2(iodata, pattern) {
@@ -1310,7 +1331,7 @@ function push_path(error, name) {
     } else {
       let _pipe = toList(["<", classify(name$1), ">"]);
       let _pipe$1 = from_strings(_pipe);
-      return to_string(_pipe$1);
+      return to_string3(_pipe$1);
     }
   })();
   let _record = error;
@@ -2170,7 +2191,7 @@ function parse_int(value3) {
     return new Error(Nil);
   }
 }
-function to_string3(term) {
+function to_string(term) {
   return term.toString();
 }
 function string_length(string3) {
@@ -2246,6 +2267,14 @@ function starts_with(haystack, needle) {
 }
 function trim(string3) {
   return string3.trim();
+}
+function bit_array_to_string(bit_array) {
+  try {
+    const decoder = new TextDecoder("utf-8", { fatal: true });
+    return new Ok(decoder.decode(bit_array.buffer));
+  } catch {
+    return new Error(Nil);
+  }
 }
 function print_debug(string3) {
   if (typeof process === "object" && process.stderr?.write) {
@@ -2474,27 +2503,6 @@ function inspectUtfCodepoint(codepoint2) {
   return `//utfcodepoint(${String.fromCodePoint(codepoint2.value)})`;
 }
 
-// build/dev/javascript/gleam_stdlib/gleam/int.mjs
-function parse(string3) {
-  return parse_int(string3);
-}
-function to_string2(x) {
-  return to_string3(x);
-}
-function compare2(a2, b) {
-  let $ = a2 === b;
-  if ($) {
-    return new Eq();
-  } else {
-    let $1 = a2 < b;
-    if ($1) {
-      return new Lt();
-    } else {
-      return new Gt();
-    }
-  }
-}
-
 // build/dev/javascript/gleam_stdlib/gleam/string.mjs
 function length3(string3) {
   return string_length(string3);
@@ -2511,7 +2519,7 @@ function starts_with2(string3, prefix) {
 function concat4(strings) {
   let _pipe = strings;
   let _pipe$1 = from_strings(_pipe);
-  return to_string(_pipe$1);
+  return to_string3(_pipe$1);
 }
 function join2(strings, separator) {
   return join(strings, separator);
@@ -2529,12 +2537,17 @@ function split3(x, substring) {
     let _pipe = x;
     let _pipe$1 = from_string(_pipe);
     let _pipe$2 = split2(_pipe$1, substring);
-    return map2(_pipe$2, to_string);
+    return map2(_pipe$2, to_string3);
   }
 }
 function inspect2(term) {
   let _pipe = inspect(term);
-  return to_string(_pipe);
+  return to_string3(_pipe);
+}
+
+// build/dev/javascript/gleam_stdlib/gleam/bit_array.mjs
+function to_string4(bits) {
+  return bit_array_to_string(bits);
 }
 
 // build/dev/javascript/gleam_stdlib/gleam/io.mjs
@@ -2722,7 +2735,7 @@ function query_to_string(query) {
   let _pipe$1 = map2(_pipe, query_pair);
   let _pipe$2 = intersperse(_pipe$1, from_string("&"));
   let _pipe$3 = concat3(_pipe$2);
-  return to_string(_pipe$3);
+  return to_string3(_pipe$3);
 }
 function do_remove_dot_segments(loop$input, loop$accumulator) {
   while (true) {
@@ -2762,7 +2775,7 @@ function remove_dot_segments(input3) {
 function path_segments(path2) {
   return remove_dot_segments(split3(path2, "/"));
 }
-function to_string4(uri) {
+function to_string5(uri) {
   let parts = (() => {
     let $ = uri.fragment;
     if ($ instanceof Some) {
@@ -4015,7 +4028,7 @@ function from_fetch_response(response) {
   );
 }
 function to_fetch_request(request) {
-  let url = to_string4(to_uri(request));
+  let url = to_string5(to_uri(request));
   let method = method_to_string(request.method).toUpperCase();
   let options = {
     headers: make_headers(request.headers),
@@ -4429,7 +4442,7 @@ function do_get_websocket_path(path2, page_uri2) {
                   _record.fragment
                 );
               })();
-              let _pipe$1 = to_string4(_pipe);
+              let _pipe$1 = to_string5(_pipe);
               return new Ok(_pipe$1);
             }
           );
@@ -4542,7 +4555,7 @@ var do_init = (dispatch, options = defaults) => {
   });
 };
 var do_push = (uri) => {
-  window.history.pushState({}, "", to_string4(uri));
+  window.history.pushState({}, "", to_string5(uri));
   window.requestAnimationFrame(() => {
     if (uri.fragment[0]) {
       document.getElementById(uri.fragment[0])?.scrollIntoView();
@@ -5197,11 +5210,25 @@ var OnRouteChange = class extends CustomType {
     this[1] = x1;
   }
 };
-var WebSocketEvent = class extends CustomType {
+var Receive = class extends CustomType {
   constructor(x0) {
     super();
     this[0] = x0;
   }
+};
+var OpenConnection = class extends CustomType {
+  constructor(x0) {
+    super();
+    this[0] = x0;
+  }
+};
+var CloseConnection = class extends CustomType {
+  constructor(x0) {
+    super();
+    this[0] = x0;
+  }
+};
+var Connect2 = class extends CustomType {
 };
 var StartGame = class extends CustomType {
 };
@@ -5291,6 +5318,35 @@ function relative(path2) {
     _record.query,
     _record.fragment
   );
+}
+function websocket_wrapper(evt) {
+  if (evt instanceof InvalidUrl) {
+    throw makeError(
+      "panic",
+      "client",
+      212,
+      "websocket_wrapper",
+      "`panic` expression evaluated.",
+      {}
+    );
+  } else if (evt instanceof OnBinaryMessage) {
+    let bin = evt[0];
+    return new Receive(
+      (() => {
+        let _pipe = to_string4(bin);
+        return unwrap2(_pipe, "unknown binary payload");
+      })()
+    );
+  } else if (evt instanceof OnClose) {
+    let reason = evt[0];
+    return new CloseConnection(reason);
+  } else if (evt instanceof OnOpen) {
+    let socket = evt[0];
+    return new OpenConnection(socket);
+  } else {
+    let msg = evt[0];
+    return new Receive(msg);
+  }
 }
 function handle_ws_message(model, msg) {
   if (model instanceof NotInRoom) {
@@ -5855,7 +5911,7 @@ function display_finished_round(player_id) {
                 } else if ($3) {
                   return new Gt();
                 } else {
-                  return compare2(b.score, a2.score);
+                  return compare(b.score, a2.score);
                 }
               }
             );
@@ -6040,6 +6096,7 @@ function display_full_word_list(room, add_word_input) {
 }
 function content(model) {
   if (model instanceof NotInRoom && model.route instanceof Home) {
+    let error = model.join_room_err;
     return div(
       toList([class$("text-center")]),
       toList([
@@ -6067,7 +6124,18 @@ function content(model) {
               "w-36 text-white bg-sky-600 rounded hover:bg-sky-500 no-underline"
             )
           ])
-        )
+        ),
+        (() => {
+          if (error instanceof Some) {
+            let error$1 = error[0];
+            return h3(
+              toList([class$("text-xl my-2 text-red-800")]),
+              toList([text(error$1)])
+            );
+          } else {
+            return none2();
+          }
+        })()
       ])
     );
   } else if (model instanceof NotInRoom && model.join_room_err instanceof Some) {
@@ -6570,9 +6638,7 @@ function init4(_) {
                             name,
                             init2(
                               server("ws", uri$1, "/ws/" + id2 + "/" + name),
-                              (var0) => {
-                                return new WebSocketEvent(var0);
-                              }
+                              websocket_wrapper
                             )
                           ]
                         );
@@ -6804,7 +6870,7 @@ function update2(model, msg) {
       ),
       none()
     ];
-  } else if (model instanceof InRoom && model.player_id instanceof PlayerId && model.room_code instanceof RoomCode && model.player_name instanceof PlayerName && model.active_game instanceof None && msg instanceof SetPlayerName) {
+  } else if (model instanceof InRoom && model.player_id instanceof PlayerId && model.room_code instanceof RoomCode && model.player_name instanceof PlayerName && msg instanceof Connect2) {
     let uri = model.uri;
     let player_id = model.player_id[0];
     let room_code = model.room_code[0];
@@ -6828,57 +6894,176 @@ function update2(model, msg) {
       model,
       init2(
         server("ws", uri, "/ws/" + player_id + "/" + player_name),
-        (var0) => {
-          return new WebSocketEvent(var0);
-        }
+        websocket_wrapper
       )
     ];
-  } else if (model instanceof InRoom && msg instanceof WebSocketEvent) {
+  } else if (model instanceof InRoom && msg instanceof Receive) {
+    let message = msg[0];
+    return handle_ws_message(model, message);
+  } else if (model instanceof InRoom && msg instanceof OpenConnection) {
     let uri = model.uri;
     let player_id = model.player_id;
     let room_code = model.room_code;
     let player_name = model.player_name;
     let display = model.display_state;
-    let ws_event = msg[0];
-    if (ws_event instanceof InvalidUrl) {
-      throw makeError(
-        "panic",
-        "client",
-        353,
-        "update",
-        "`panic` expression evaluated.",
-        {}
-      );
-    } else if (ws_event instanceof OnOpen) {
-      let socket = ws_event[0];
+    let socket = msg[0];
+    return [
+      new InRoom(
+        uri,
+        player_id,
+        room_code,
+        player_name,
+        new Some(new ActiveGame(socket, new None(), new None(), "")),
+        display
+      ),
+      none()
+    ];
+  } else if (model instanceof InRoom && model.player_id instanceof PlayerId && model.room_code instanceof RoomCode && model.player_name instanceof PlayerName && msg instanceof CloseConnection) {
+    let uri = model.uri;
+    let player_id = model.player_id[0];
+    let room_code = model.room_code[0];
+    let player_name = model.player_name[0];
+    let reason = msg[0];
+    if (reason instanceof Normal) {
       return [
         new InRoom(
           uri,
-          player_id,
-          room_code,
-          player_name,
-          new Some(new ActiveGame(socket, new None(), new None(), "")),
-          display
-        ),
-        none()
-      ];
-    } else if (ws_event instanceof OnTextMessage) {
-      let msg$1 = ws_event[0];
-      return handle_ws_message(model, msg$1);
-    } else if (ws_event instanceof OnBinaryMessage) {
-      return [model, none()];
-    } else {
-      return [
-        new InRoom(
-          uri,
-          player_id,
-          room_code,
-          player_name,
+          new PlayerId(player_id),
+          new RoomCode(room_code),
+          new PlayerName(player_name),
           new None(),
           new DisplayState(new Round2(), false)
         ),
+        init2(
+          server("ws", uri, "/ws/" + player_id + "/" + player_name),
+          websocket_wrapper
+        )
+      ];
+    } else if (reason instanceof GoingAway) {
+      return [
+        new InRoom(
+          uri,
+          new PlayerId(player_id),
+          new RoomCode(room_code),
+          new PlayerName(player_name),
+          new None(),
+          new DisplayState(new Round2(), false)
+        ),
+        init2(
+          server("ws", uri, "/ws/" + player_id + "/" + player_name),
+          websocket_wrapper
+        )
+      ];
+    } else if (reason instanceof AbnormalClose) {
+      return [
+        new NotInRoom(
+          uri,
+          new Play(new Some(room_code)),
+          "",
+          new Some("Failed to connect")
+        ),
         none()
       ];
+    } else if (reason instanceof FailedExtensionNegotation) {
+      debug("FailedExtensionNegotation");
+      throw makeError(
+        "todo",
+        "client",
+        423,
+        "update",
+        "`todo` expression evaluated. This code has not yet been implemented.",
+        {}
+      );
+    } else if (reason instanceof FailedTLSHandshake) {
+      debug("ws.FailedTLSHandshake");
+      throw makeError(
+        "todo",
+        "client",
+        424,
+        "update",
+        "`todo` expression evaluated. This code has not yet been implemented.",
+        {}
+      );
+    } else if (reason instanceof IncomprehensibleFrame) {
+      debug("IncomprehensibleFrame");
+      throw makeError(
+        "todo",
+        "client",
+        425,
+        "update",
+        "`todo` expression evaluated. This code has not yet been implemented.",
+        {}
+      );
+    } else if (reason instanceof MessageTooBig) {
+      debug("MessageTooBig");
+      throw makeError(
+        "todo",
+        "client",
+        426,
+        "update",
+        "`todo` expression evaluated. This code has not yet been implemented.",
+        {}
+      );
+    } else if (reason instanceof NoCodeFromServer) {
+      debug("NoCodeFromServer");
+      throw makeError(
+        "todo",
+        "client",
+        427,
+        "update",
+        "`todo` expression evaluated. This code has not yet been implemented.",
+        {}
+      );
+    } else if (reason instanceof OtherCloseReason) {
+      debug("OtherCloseReason");
+      throw makeError(
+        "todo",
+        "client",
+        428,
+        "update",
+        "`todo` expression evaluated. This code has not yet been implemented.",
+        {}
+      );
+    } else if (reason instanceof PolicyViolated) {
+      debug("PolicyViolated");
+      throw makeError(
+        "todo",
+        "client",
+        429,
+        "update",
+        "`todo` expression evaluated. This code has not yet been implemented.",
+        {}
+      );
+    } else if (reason instanceof ProtocolError) {
+      debug("ProtocolError");
+      throw makeError(
+        "todo",
+        "client",
+        430,
+        "update",
+        "`todo` expression evaluated. This code has not yet been implemented.",
+        {}
+      );
+    } else if (reason instanceof UnexpectedFailure) {
+      debug("UnexpectedFailure");
+      throw makeError(
+        "todo",
+        "client",
+        431,
+        "update",
+        "`todo` expression evaluated. This code has not yet been implemented.",
+        {}
+      );
+    } else {
+      debug("UnexpectedTypeOfData");
+      throw makeError(
+        "todo",
+        "client",
+        432,
+        "update",
+        "`todo` expression evaluated. This code has not yet been implemented.",
+        {}
+      );
     }
   } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && msg instanceof AddWord2 && model.active_game[0].add_word_input !== "") {
     let uri = model.uri;
@@ -7094,7 +7279,7 @@ function main() {
     throw makeError(
       "let_assert",
       "client",
-      119,
+      123,
       "main",
       "Pattern match failed, no pattern matched the value.",
       { value: $ }

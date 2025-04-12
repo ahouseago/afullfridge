@@ -1,3 +1,4 @@
+import gleam/bit_array
 import gleam/int
 import gleam/io
 import gleam/list
@@ -72,8 +73,11 @@ pub type Route {
 pub type Msg {
   OnRouteChange(uri.Uri, Route)
 
-  WebSocketEvent(ws.WebSocketEvent)
+  Receive(String)
+  OpenConnection(ws.WebSocket)
+  CloseConnection(ws.WebSocketCloseReason)
   OnWebsocketMessage(shared.WebsocketResponse)
+  Connect
 
   StartGame
   JoinGame
@@ -100,13 +104,12 @@ pub type Msg {
 
 const dev_mode = True
 
-fn server(protocol: String, uri: uri.Uri, path) -> String {
+fn server(uri: uri.Uri, path) -> String {
   let host = option.unwrap(uri.host, "localhost")
   case dev_mode {
-    True -> protocol <> "://localhost:8080" <> path
+    True -> "http://localhost:8080" <> path
     False ->
-      protocol
-      <> "s://"
+      "https://"
       <> host
       <> option.map(uri.port, fn(port) { ":" <> int.to_string(port) })
       |> option.unwrap("")
@@ -156,8 +159,8 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
                 id,
                 name,
                 ws.init(
-                  server("ws", uri, "/ws/" <> id <> "/" <> name),
-                  WebSocketEvent,
+                  server(uri, "/ws/" <> id <> "/" <> name),
+                  websocket_wrapper,
                 ),
               ))
             False -> {
@@ -178,7 +181,7 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
           ),
           msg,
         )
-        Error(_) -> #(
+        Error(Nil) -> #(
           NotInRoom(
             uri,
             Play(Some(room_code)),
@@ -200,6 +203,19 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
       NotInRoom(relative(""), Home, "", None),
       modem.init(on_url_change),
     )
+  }
+}
+
+fn websocket_wrapper(evt: ws.WebSocketEvent) -> Msg {
+  case evt {
+    ws.InvalidUrl -> panic
+    ws.OnBinaryMessage(bin) ->
+      Receive(
+        bit_array.to_string(bin) |> result.unwrap("unknown binary payload"),
+      )
+    ws.OnClose(reason) -> CloseConnection(reason)
+    ws.OnOpen(socket) -> OpenConnection(socket)
+    ws.OnTextMessage(msg) -> Receive(msg)
   }
 }
 
@@ -322,12 +338,30 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
     InRoom(
       uri,
       PlayerId(player_id),
-      RoomCode(room_code),
+      _room_code,
       PlayerName(player_name),
       None,
       _display,
     ),
       SetPlayerName
+    -> {
+      #(
+        model,
+        lustre_http.get(
+          server(uri, "/checkname/" <> player_id <> "/" <> player_name),
+          lustre_http.expect_json(shared.decode_http_response_json, Connect),
+        ),
+      )
+    }
+    InRoom(
+      uri,
+      PlayerId(player_id),
+      RoomCode(room_code),
+      PlayerName(player_name),
+      _active_game,
+      _display,
+    ),
+      Connect
     -> {
       let _ =
         storage.local()
@@ -341,45 +375,108 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       #(
         model,
         ws.init(
-          server("ws", uri, "/ws/" <> player_id <> "/" <> player_name),
-          WebSocketEvent,
+          server(uri, "/ws/" <> player_id <> "/" <> player_name),
+          websocket_wrapper,
         ),
       )
     }
+    InRoom(_uri, _player_id, _room_code, _player_name, _, _display),
+      Receive(message)
+    -> handle_ws_message(model, message)
     InRoom(uri, player_id, room_code, player_name, _, display),
-      WebSocketEvent(ws_event)
+      OpenConnection(socket)
     -> {
-      case ws_event {
-        ws.InvalidUrl -> panic
-        ws.OnOpen(socket) -> #(
+      #(
+        InRoom(
+          uri,
+          player_id: player_id,
+          room_code: room_code,
+          player_name: player_name,
+          active_game: Some(ActiveGame(
+            ws: socket,
+            room: None,
+            round: None,
+            add_word_input: "",
+          )),
+          display_state: display,
+        ),
+        effect.none(),
+      )
+    }
+    InRoom(
+      uri,
+      PlayerId(player_id),
+      RoomCode(room_code),
+      PlayerName(player_name),
+      _active_game,
+      _display,
+    ),
+      CloseConnection(reason)
+    -> {
+      case reason {
+        ws.Normal | ws.GoingAway -> #(
           InRoom(
             uri,
-            player_id: player_id,
-            room_code: room_code,
-            player_name: player_name,
-            active_game: Some(ActiveGame(
-              ws: socket,
-              room: None,
-              round: None,
-              add_word_input: "",
-            )),
-            display_state: display,
-          ),
-          effect.none(),
-        )
-        ws.OnTextMessage(msg) -> handle_ws_message(model, msg)
-        ws.OnBinaryMessage(_msg) -> #(model, effect.none())
-        ws.OnClose(_reason) -> #(
-          InRoom(
-            uri,
-            player_id,
-            room_code,
-            player_name,
+            PlayerId(player_id),
+            RoomCode(room_code),
+            PlayerName(player_name),
             None,
             DisplayState(Round, False),
           ),
+          ws.init(
+            server(uri, "/ws/" <> player_id <> "/" <> player_name),
+            websocket_wrapper,
+          ),
+        )
+        ws.AbnormalClose -> #(
+          NotInRoom(
+            uri,
+            Play(Some(room_code)),
+            "",
+            join_room_err: Some("Failed to connect"),
+          ),
           effect.none(),
         )
+        ws.FailedExtensionNegotation -> {
+          io.debug("FailedExtensionNegotation")
+          todo
+        }
+        ws.FailedTLSHandshake -> {
+          io.debug("ws.FailedTLSHandshake")
+          todo
+        }
+        ws.IncomprehensibleFrame -> {
+          io.debug("IncomprehensibleFrame")
+          todo
+        }
+        ws.MessageTooBig -> {
+          io.debug("MessageTooBig")
+          todo
+        }
+        ws.NoCodeFromServer -> {
+          io.debug("NoCodeFromServer")
+          todo
+        }
+        ws.OtherCloseReason -> {
+          io.debug("OtherCloseReason")
+          todo
+        }
+        ws.PolicyViolated -> {
+          io.debug("PolicyViolated")
+          todo
+        }
+        ws.ProtocolError -> {
+          io.debug("ProtocolError")
+          todo
+        }
+        ws.UnexpectedFailure -> {
+          io.debug("UnexpectedFailure")
+          todo
+        }
+        ws.UnexpectedTypeOfData -> {
+          io.debug("UnexpectedTypeOfData")
+          todo
+        }
       }
     }
     InRoom(
@@ -686,14 +783,14 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
 
 fn start_game(uri: uri.Uri) {
   lustre_http.get(
-    server("http", uri, "/createroom"),
+    server(uri, "/createroom"),
     lustre_http.expect_json(shared.decode_http_response_json, JoinedRoom),
   )
 }
 
 fn join_game(uri: uri.Uri, room_code: RoomCode) {
   lustre_http.post(
-    server("http", uri, "/joinroom"),
+    server(uri, "/joinroom"),
     shared.encode_http_request(shared.JoinRoomRequest(room_code)),
     lustre_http.expect_json(shared.decode_http_response_json, JoinedRoom),
   )
@@ -812,7 +909,7 @@ fn header(model: Model) {
 
 fn content(model: Model) {
   case model {
-    NotInRoom(_, Home, _, _) ->
+    NotInRoom(_, Home, _, error) ->
       html.div([class("text-center")], [
         html.p([class("mx-4 text-lg mb-8")], [
           element.text("A game about preferences best played with friends."),
@@ -833,6 +930,11 @@ fn content(model: Model) {
             "w-36 text-white bg-sky-600 rounded hover:bg-sky-500 no-underline",
           ),
         ]),
+        case error {
+          Some(error) ->
+            html.h3([class("text-xl my-2 text-red-800")], [element.text(error)])
+          None -> element.none()
+        },
       ])
     NotInRoom(_, _, _, Some(err)) -> element.text(err)
     NotInRoom(_, Play(Some(room_code)), _, None) ->

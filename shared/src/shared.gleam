@@ -25,6 +25,7 @@ pub type HttpRequest {
 pub type HttpResponse {
   // Returned from successfully creating/joining a room.
   RoomResponse(room_code: RoomCode, player_id: PlayerId)
+  CheckNameResponse(name_taken: Bool)
 }
 
 pub type WebsocketRequest {
@@ -365,6 +366,7 @@ pub fn encode_http_response(response: HttpResponse) {
           #("playerId", player_id_to_json(player_id)),
         ]),
       )
+      CheckNameResponse(name_taken) -> #("checkName", json.bool(name_taken))
     }
     |> pair.map_first(json.string)
   json.object([#("type", t), #("message", message)])
@@ -412,6 +414,8 @@ pub fn decode_http_response_json(
         dynamic.field("roomCode", from_dynamic_string(RoomCode)),
         dynamic.field("playerId", from_dynamic_string(PlayerId)),
       )
+    Ok(#("checkName", msg)) ->
+      msg |> dynamic.decode1(CheckNameResponse, dynamic.bool)
     Ok(#(request_type, _)) ->
       Error([dynamic.DecodeError("unknown request type", request_type, [])])
     Error(e) -> Error(e)

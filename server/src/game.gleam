@@ -88,6 +88,7 @@ pub type Msg {
   DeleteConnection(PlayerId)
   ProcessWebsocketRequest(from: PlayerId, message: shared.WebsocketRequest)
 
+  CheckNameIsOk(reply_with: Subject(Bool), PlayerId, PlayerName)
   GetRoom(reply_with: Subject(Result(Room, Nil)), room_code: RoomCode)
   CreateRoom(reply_with: Subject(Result(#(RoomCode, PlayerId), Nil)))
   AddPlayerToRoom(
@@ -236,6 +237,17 @@ fn update(msg: Msg, state: State) -> actor.Next(Msg, State) {
           rooms: dict.insert(state.rooms, room_code, room_state),
         ),
       )
+    }
+    CheckNameIsOk(subj, player_id, player_name) -> {
+      let name_ok = {
+        use player <- result.try(dict.get(state.players, player_id))
+        use room_state <- result.try(dict.get(state.rooms, player.room_code))
+        list.find(room_state.room.players, fn(player) {
+          player.name == player_name && player.id != player_id
+        })
+      }
+      actor.send(subj, result.is_error(name_ok))
+      actor.continue(state)
     }
     GetRoom(subj, room_code) -> {
       case dict.get(state.rooms, room_code) {
