@@ -123,35 +123,26 @@ pub fn main() {
                 |> response.set_body(mist.Bytes(bytes_tree.new()))
               })
 
-            ["lustre-ui.css"] ->
-              mist.send_file(
-                priv <> "/static/lustre-ui.css",
-                offset: 0,
-                limit: None,
-              )
-              |> result.map(fn(file) {
-                response.new(200)
-                |> response.prepend_header("content-type", "text/css")
-                |> response.set_body(file)
-              })
-              |> result.lazy_unwrap(fn() {
-                response.new(404)
-                |> response.set_body(mist.Bytes(bytes_tree.new()))
-              })
-
             ["ws", player_id, player_name] ->
-              mist.websocket(
-                request: req,
-                on_init: on_init(
-                  _,
-                  game,
-                  PlayerId(player_id),
-                  uri.percent_decode(player_name)
-                    |> result.unwrap(player_name)
-                    |> PlayerName,
-                ),
-                on_close: fn(websocket) { process.send(websocket, Disconnect) },
-                handler: handle_ws_message,
+              validate_player_name(
+                game,
+                player_id,
+                player_name,
+                fn () {mist.websocket(
+                  request: req,
+                  on_init: on_init(
+                    _,
+                    game,
+                    PlayerId(player_id),
+                    uri.percent_decode(player_name)
+                      |> result.unwrap(player_name)
+                      |> PlayerName,
+                  ),
+                  on_close: fn(websocket) {
+                    process.send(websocket, Disconnect)
+                  },
+                  handler: handle_ws_message,
+                )},
               )
             ["createroom"] ->
               handle_create_room_request(game, req)
@@ -176,10 +167,6 @@ pub fn main() {
                       ),
                     ]),
                     html.title([], "A Full Fridge"),
-                    html.link([
-                      attribute.rel("stylesheet"),
-                      attribute.href("/lustre-ui.css"),
-                    ]),
                     html.link([
                       attribute.rel("stylesheet"),
                       attribute.href("/client.css"),
@@ -310,6 +297,32 @@ fn handle_join_request(
     }
     _ -> Error(bad_request("invalid request"))
   }
+}
+
+/// validate_player_name wraps a response in a check that the player name is
+/// valid. If it is not valid, it replaces the wrapped response with an error
+/// response.
+fn validate_player_name(
+  game: Subject(game.Msg),
+  player_id: String,
+  player_name: String,
+  next: fn() -> response.Response(ResponseData),
+) -> response.Response(ResponseData) {
+  process.try_call(
+    game,
+    game.ValidateName(_, PlayerId(player_id), PlayerName(player_name)),
+    5,
+  )
+  |> result.map(fn(valid) {
+    case valid {
+      Ok(_) -> next()
+      Error(err) -> response.new(412) |> response.set_body(mist.Bytes(bytes_tree.from_string(err)))
+    }
+  })
+  |> result.unwrap(
+    response.new(500)
+    |> response.set_body(mist.Bytes(bytes_tree.from_string("Internal error"))),
+  )
 }
 
 fn on_init(

@@ -17,19 +17,9 @@ import shared.{
   SubmitOrderedWords,
 }
 
-// -- Main
-// pub fn start(...) -> Result(Subject(Msg), actor.StartError) {
-//   actor.start_spec(...)
-//   ...
-// }
-
 pub fn start() -> Result(Subject(Msg), actor.StartError) {
   actor.start(initial_state(), update)
 }
-
-// -- State
-// type State { ... }
-// init()
 
 type State {
   State(
@@ -74,10 +64,6 @@ type RoomCodeGenerator {
   RoomCodeGenerator(generator: random.Generator(Int), seed: seed.Seed)
 }
 
-// -- Update
-// pub type Msg { ... }
-// fn update(msg: Msg, state: State) -> actor.Next(state) { ... }
-
 // These messages are the ways to communicate with the game state actor.
 pub type Msg {
   NewConnection(
@@ -88,6 +74,7 @@ pub type Msg {
   Disconnect(PlayerId)
   ProcessWebsocketRequest(from: PlayerId, message: shared.WebsocketRequest)
 
+  ValidateName(reply_with: Subject(Result(Nil, String)), PlayerId, PlayerName)
   GetRoom(reply_with: Subject(Result(Room, Nil)), room_code: RoomCode)
   CreateRoom(reply_with: Subject(Result(#(RoomCode, PlayerId), Nil)))
   AddPlayerToRoom(
@@ -236,6 +223,28 @@ fn update(msg: Msg, state: State) -> actor.Next(Msg, State) {
           rooms: dict.insert(state.rooms, room_code, room_state),
         ),
       )
+    }
+    ValidateName(subj, player_id, player_name) -> {
+      let valid = {
+        use player <- result.then(
+          dict.get(state.players, player_id)
+          |> result.replace_error("Player not found"),
+        )
+        use room_state <- result.then(
+          dict.get(state.rooms, player.room_code)
+          |> result.replace_error("Player not in room"),
+        )
+        case
+          list.any(room_state.room.players, fn(player) {
+            names_match(player.name, player_name) && player.id != player_id
+          })
+        {
+          True -> Error("Name already taken")
+          False -> Ok(Nil)
+        }
+      }
+      actor.send(subj, valid)
+      actor.continue(state)
     }
     GetRoom(subj, room_code) -> {
       case dict.get(state.rooms, room_code) {
@@ -601,4 +610,10 @@ fn get_player_scores(
     let score = dict.get(scores, word_list.0) |> result.unwrap(0)
     shared.PlayerScore(player_name, word_list.1, score)
   })
+}
+
+/// Checks whether player names match, ignoring case differences.
+fn names_match(name_a: PlayerName, name_b: PlayerName) -> Bool {
+  shared.player_name_to_string(name_a) |> string.lowercase
+  == shared.player_name_to_string(name_b) |> string.lowercase
 }

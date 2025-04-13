@@ -51,25 +51,49 @@ pub fn encode_http_request(http_request: HttpRequest) -> json.Json {
 pub type HttpResponse {
   // Returned from successfully creating/joining a room.
   RoomResponse(room_code: RoomCode, player_id: PlayerId)
+  CheckNameResponse(name_taken: Bool)
 }
 
 pub fn http_response_decoder() -> decode.Decoder(HttpResponse) {
-  use room_code <- decode.field("room_code", string_decoder(RoomCode))
-  use player_id <- decode.field("player_id", string_decoder(PlayerId))
-  decode.success(RoomResponse(room_code:, player_id:))
+  use variant <- decode.field("type", decode.string)
+  case variant {
+    "room_response" -> {
+      use room_code <- decode.field("room_code", string_decoder(RoomCode))
+      use player_id <- decode.field("player_id", string_decoder(PlayerId))
+      decode.success(RoomResponse(room_code:, player_id:))
+    }
+    "check_name_response" -> {
+      use name_taken <- decode.field("name_taken", decode.bool)
+      decode.success(CheckNameResponse(name_taken:))
+    }
+    str ->
+      decode.failure(
+        CheckNameResponse(True),
+        "HttpResponse: unknown response: " <> str,
+      )
+  }
 }
 
 pub fn encode_http_response(http_response: HttpResponse) -> json.Json {
-  json.object([
-    #(
-      "room_code",
-      http_response.room_code |> string_encoder(room_code_to_string),
-    ),
-    #(
-      "player_id",
-      http_response.player_id |> string_encoder(player_id_to_string),
-    ),
-  ])
+  case http_response {
+    RoomResponse(..) ->
+      json.object([
+        #("type", json.string("room_response")),
+        #(
+          "room_code",
+          http_response.room_code |> string_encoder(room_code_to_string),
+        ),
+        #(
+          "player_id",
+          http_response.player_id |> string_encoder(player_id_to_string),
+        ),
+      ])
+    CheckNameResponse(..) ->
+      json.object([
+        #("type", json.string("check_name_response")),
+        #("name_taken", json.bool(http_response.name_taken)),
+      ])
+  }
 }
 
 pub type WebsocketRequest {
@@ -107,7 +131,9 @@ pub fn websocket_request_decoder() -> decode.Decoder(WebsocketRequest) {
   }
 }
 
-pub fn encode_websocket_request(websocket_request: WebsocketRequest) -> json.Json {
+pub fn encode_websocket_request(
+  websocket_request: WebsocketRequest,
+) -> json.Json {
   case websocket_request {
     AddWord(..) ->
       json.object([
@@ -176,7 +202,9 @@ pub fn websocket_response_decoder() -> decode.Decoder(WebsocketResponse) {
   }
 }
 
-pub fn encode_websocket_response(websocket_response: WebsocketResponse) -> json.Json {
+pub fn encode_websocket_response(
+  websocket_response: WebsocketResponse,
+) -> json.Json {
   case websocket_response {
     UnknownResponse(..) ->
       json.object([

@@ -5809,6 +5809,12 @@ var RoomResponse = class extends CustomType {
     this.player_id = player_id;
   }
 };
+var CheckNameResponse = class extends CustomType {
+  constructor(name_taken) {
+    super();
+    this.name_taken = name_taken;
+  }
+};
 var AddWord = class extends CustomType {
   constructor(word) {
     super();
@@ -6088,20 +6094,42 @@ function string_decoder(constructor) {
 }
 function http_response_decoder() {
   return field2(
-    "room_code",
-    string_decoder((var0) => {
-      return new RoomCode(var0);
-    }),
-    (room_code) => {
-      return field2(
-        "player_id",
-        string_decoder((var0) => {
-          return new PlayerId(var0);
-        }),
-        (player_id) => {
-          return success(new RoomResponse(room_code, player_id));
-        }
-      );
+    "type",
+    string3,
+    (variant) => {
+      if (variant === "room_response") {
+        return field2(
+          "room_code",
+          string_decoder((var0) => {
+            return new RoomCode(var0);
+          }),
+          (room_code) => {
+            return field2(
+              "player_id",
+              string_decoder((var0) => {
+                return new PlayerId(var0);
+              }),
+              (player_id) => {
+                return success(new RoomResponse(room_code, player_id));
+              }
+            );
+          }
+        );
+      } else if (variant === "check_name_response") {
+        return field2(
+          "name_taken",
+          bool,
+          (name_taken) => {
+            return success(new CheckNameResponse(name_taken));
+          }
+        );
+      } else {
+        let str = variant;
+        return failure(
+          new CheckNameResponse(true),
+          "HttpResponse: unknown response: " + str
+        );
+      }
     }
   );
 }
