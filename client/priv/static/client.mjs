@@ -6904,15 +6904,15 @@ function handle_ws_message(model, msg) {
       ];
     } else if ($.isOk() && $[0] instanceof ServerError) {
       let reason = $[0].reason;
-      echo(reason, "src/client.gleam", 706);
+      echo(reason, "src/client.gleam", 705);
       return [model, none()];
     } else if ($.isOk() && $[0] instanceof UnknownResponse) {
       let reason = $[0].response_type;
-      echo(reason, "src/client.gleam", 706);
+      echo(reason, "src/client.gleam", 705);
       return [model, none()];
     } else {
       let err = $[0];
-      echo(err, "src/client.gleam", 710);
+      echo(err, "src/client.gleam", 709);
       return [model, none()];
     }
   }
@@ -7496,14 +7496,12 @@ function content(model) {
         )
       ])
     );
-  } else if (model instanceof NotInRoom && model.join_room_err instanceof Some) {
-    let err = model.join_room_err[0];
-    return text(err);
   } else if (model instanceof NotInRoom && model.route instanceof Play && model.route.room_code instanceof Some && model.join_room_err instanceof None) {
     let room_code = model.route.room_code[0];
     return text("Joining room " + room_code + "...");
-  } else if (model instanceof NotInRoom && model.route instanceof Play && model.route.room_code instanceof None && model.join_room_err instanceof None) {
+  } else if (model instanceof NotInRoom && model.route instanceof Play && model.route.room_code instanceof None) {
     let room_code_input = model.room_code_input;
+    let err = model.join_room_err;
     return form(
       toList([
         on_submit(new JoinGame()),
@@ -7547,7 +7545,18 @@ function content(model) {
               toList([text("Join")])
             )
           ])
-        )
+        ),
+        (() => {
+          if (err instanceof Some) {
+            let err$1 = err[0];
+            return div(
+              toList([class$("ml-2 text-red-800")]),
+              toList([text(err$1)])
+            );
+          } else {
+            return none2();
+          }
+        })()
       ])
     );
   } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].room instanceof Some && model.active_game[0].round instanceof Some && model.display_state instanceof DisplayState && model.display_state.view instanceof Round2 && !model.display_state.menu_open) {
@@ -7954,7 +7963,7 @@ function start_game(uri) {
   );
 }
 function join_game(uri, room_code) {
-  echo("joining room", "src/client.gleam", 725);
+  echo("joining room", "src/client.gleam", 724);
   return post(
     server(uri, "/joinroom"),
     encode_http_request(new JoinRoomRequest(room_code)),
@@ -8093,11 +8102,9 @@ function update(model, msg) {
         new None()
       )
     ];
-  } else if (model instanceof NotInRoom && model.route instanceof Play && model.route.room_code instanceof Some && msg instanceof JoinedRoom && !msg[0].isOk() && msg[0][0] instanceof NotFound) {
+  } else if (model instanceof NotInRoom && msg instanceof JoinedRoom && !msg[0].isOk() && msg[0][0] instanceof NotFound) {
     let uri = model.uri;
     let room_code_input = model.room_code_input;
-    let err = model.join_room_err;
-    echo(err, "src/client.gleam", 239);
     return [
       new NotInRoom(
         uri,
@@ -8105,7 +8112,7 @@ function update(model, msg) {
         room_code_input,
         new Some("No game found with that room code.")
       ),
-      push("", new None(), new None())
+      none()
     ];
   } else if (model instanceof NotInRoom && msg instanceof OnRouteChange && msg[1] instanceof Play && msg[1].room_code instanceof Some) {
     let room_code_input = model.room_code_input;
@@ -8264,7 +8271,7 @@ function update(model, msg) {
       throw makeError(
         "panic",
         "client",
-        356,
+        355,
         "update",
         "`panic` expression evaluated.",
         {}

@@ -233,10 +233,9 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         ),
       )
     }
-    NotInRoom(uri, Play(Some(_room_code)), room_code_input, err),
+    NotInRoom(uri, _, room_code_input, _err),
       JoinedRoom(Error(lustre_http.NotFound))
     -> {
-      echo err
       #(
         NotInRoom(
           uri,
@@ -244,7 +243,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
           room_code_input,
           Some("No game found with that room code."),
         ),
-        modem.push("", None, None),
+        effect.none(),
       )
     }
     NotInRoom(_, _route, room_code_input, _err),
@@ -877,10 +876,9 @@ fn content(model: Model) {
           ),
         ]),
       ])
-    NotInRoom(_, _, _, Some(err)) -> element.text(err)
     NotInRoom(_, Play(Some(room_code)), _, None) ->
       element.text("Joining room " <> room_code <> "...")
-    NotInRoom(_, Play(None), room_code_input, None) ->
+    NotInRoom(_, Play(None), room_code_input, err) ->
       html.form(
         [event.on_submit(JoinGame), class("flex flex-wrap items-center mx-4")],
         [
@@ -912,6 +910,11 @@ fn content(model: Model) {
               [element.text("Join")],
             ),
           ]),
+          case err {
+            Some(err) ->
+              html.div([class("ml-2 text-red-800")], [element.text(err)])
+            None -> element.none()
+          },
         ],
       )
     InRoom(
