@@ -5802,6 +5802,13 @@ var JoinRoomRequest = class extends CustomType {
     this.room_code = room_code;
   }
 };
+var ValidateNameRequest = class extends CustomType {
+  constructor(player_id, name) {
+    super();
+    this.player_id = player_id;
+    this.name = name;
+  }
+};
 var RoomResponse = class extends CustomType {
   constructor(room_code, player_id) {
     super();
@@ -5809,10 +5816,10 @@ var RoomResponse = class extends CustomType {
     this.player_id = player_id;
   }
 };
-var CheckNameResponse = class extends CustomType {
-  constructor(name_taken) {
+var ValidateNameResponse = class extends CustomType {
+  constructor(valid) {
     super();
-    this.name_taken = name_taken;
+    this.valid = valid;
   }
 };
 var AddWord = class extends CustomType {
@@ -5981,7 +5988,7 @@ function room_code_to_string(room_code) {
 function encode_http_request(http_request) {
   if (http_request instanceof CreateRoomRequest) {
     return object2(toList([["type", string4("create_room_request")]]));
-  } else {
+  } else if (http_request instanceof JoinRoomRequest) {
     let room_code = http_request.room_code;
     return object2(
       toList([
@@ -5991,6 +5998,28 @@ function encode_http_request(http_request) {
           (() => {
             let _pipe = room_code;
             return string_encoder(room_code_to_string)(_pipe);
+          })()
+        ]
+      ])
+    );
+  } else {
+    let player_id = http_request.player_id;
+    let name = http_request.name;
+    return object2(
+      toList([
+        ["type", string4("validate_name_request")],
+        [
+          "player_id",
+          (() => {
+            let _pipe = player_id;
+            return string_encoder(player_id_to_string)(_pipe);
+          })()
+        ],
+        [
+          "name",
+          (() => {
+            let _pipe = name;
+            return string_encoder(player_name_to_string)(_pipe);
           })()
         ]
       ])
@@ -6115,18 +6144,18 @@ function http_response_decoder() {
             );
           }
         );
-      } else if (variant === "check_name_response") {
+      } else if (variant === "validate_name_response") {
         return field2(
-          "name_taken",
+          "valid",
           bool,
-          (name_taken) => {
-            return success(new CheckNameResponse(name_taken));
+          (valid) => {
+            return success(new ValidateNameResponse(valid));
           }
         );
       } else {
         let str = variant;
         return failure(
-          new CheckNameResponse(true),
+          new ValidateNameResponse(false),
           "HttpResponse: unknown response: " + str
         );
       }
@@ -6547,7 +6576,7 @@ var NotInRoom = class extends CustomType {
   }
 };
 var InRoom = class extends CustomType {
-  constructor(uri, player_id, room_code, player_name, active_game, display_state) {
+  constructor(uri, player_id, room_code, player_name, active_game, display_state, error) {
     super();
     this.uri = uri;
     this.player_id = player_id;
@@ -6555,6 +6584,7 @@ var InRoom = class extends CustomType {
     this.player_name = player_name;
     this.active_game = active_game;
     this.display_state = display_state;
+    this.error = error;
   }
 };
 var ActiveGame = class extends CustomType {
@@ -6615,6 +6645,12 @@ var StartGame = class extends CustomType {
 var JoinGame = class extends CustomType {
 };
 var JoinedRoom = class extends CustomType {
+  constructor(x0) {
+    super();
+    this[0] = x0;
+  }
+};
+var NameIsValid = class extends CustomType {
   constructor(x0) {
     super();
     this[0] = x0;
@@ -6705,45 +6741,44 @@ function handle_ws_message(model, msg) {
   } else if (model instanceof InRoom && model.active_game instanceof None) {
     return [model, none()];
   } else {
-    let uri = model.uri;
-    let player_id = model.player_id;
-    let room_code = model.room_code;
-    let player_name = model.player_name;
     let active_game = model.active_game[0];
-    let display_state = model.display_state;
     let $ = decode2(msg, websocket_response_decoder());
     if ($.isOk() && $[0] instanceof InitialRoomState) {
       let room = $[0].room;
       return [
-        new InRoom(
-          uri,
-          player_id,
-          room_code,
-          player_name,
-          new Some(
-            (() => {
-              let _record = active_game;
-              return new ActiveGame(
-                _record.ws,
-                new Some(room),
-                or(
-                  (() => {
-                    let _pipe = room.round;
-                    return map(
-                      _pipe,
-                      (round3) => {
-                        return new RoundState(round3, toList([]), false);
-                      }
-                    );
-                  })(),
-                  active_game.round
-                ),
-                _record.add_word_input
-              );
-            })()
-          ),
-          display_state
-        ),
+        (() => {
+          let _record = model;
+          return new InRoom(
+            _record.uri,
+            _record.player_id,
+            _record.room_code,
+            _record.player_name,
+            new Some(
+              (() => {
+                let _record$1 = active_game;
+                return new ActiveGame(
+                  _record$1.ws,
+                  new Some(room),
+                  or(
+                    (() => {
+                      let _pipe = room.round;
+                      return map(
+                        _pipe,
+                        (round3) => {
+                          return new RoundState(round3, toList([]), false);
+                        }
+                      );
+                    })(),
+                    active_game.round
+                  ),
+                  _record$1.add_word_input
+                );
+              })()
+            ),
+            _record.display_state,
+            _record.error
+          );
+        })(),
         none()
       ];
     } else if ($.isOk() && $[0] instanceof PlayersInRoom) {
@@ -6763,24 +6798,28 @@ function handle_ws_message(model, msg) {
         }
       );
       return [
-        new InRoom(
-          uri,
-          player_id,
-          room_code,
-          player_name,
-          new Some(
-            (() => {
-              let _record = active_game;
-              return new ActiveGame(
-                _record.ws,
-                room,
-                _record.round,
-                _record.add_word_input
-              );
-            })()
-          ),
-          display_state
-        ),
+        (() => {
+          let _record = model;
+          return new InRoom(
+            _record.uri,
+            _record.player_id,
+            _record.room_code,
+            _record.player_name,
+            new Some(
+              (() => {
+                let _record$1 = active_game;
+                return new ActiveGame(
+                  _record$1.ws,
+                  room,
+                  _record$1.round,
+                  _record$1.add_word_input
+                );
+              })()
+            ),
+            _record.display_state,
+            _record.error
+          );
+        })(),
         none()
       ];
     } else if ($.isOk() && $[0] instanceof WordList) {
@@ -6800,119 +6839,131 @@ function handle_ws_message(model, msg) {
         }
       );
       return [
-        new InRoom(
-          uri,
-          player_id,
-          room_code,
-          player_name,
-          new Some(
-            (() => {
-              let _record = active_game;
-              return new ActiveGame(
-                _record.ws,
-                room,
-                _record.round,
-                _record.add_word_input
-              );
-            })()
-          ),
-          display_state
-        ),
+        (() => {
+          let _record = model;
+          return new InRoom(
+            _record.uri,
+            _record.player_id,
+            _record.room_code,
+            _record.player_name,
+            new Some(
+              (() => {
+                let _record$1 = active_game;
+                return new ActiveGame(
+                  _record$1.ws,
+                  room,
+                  _record$1.round,
+                  _record$1.add_word_input
+                );
+              })()
+            ),
+            _record.display_state,
+            _record.error
+          );
+        })(),
         none()
       ];
     } else if ($.isOk() && $[0] instanceof RoundInfo) {
       let round3 = $[0].round;
       return [
-        new InRoom(
-          uri,
-          player_id,
-          room_code,
-          player_name,
-          new Some(
-            (() => {
-              let _record = active_game;
-              return new ActiveGame(
-                _record.ws,
-                _record.room,
-                (() => {
-                  let _pipe = then$(
-                    active_game.round,
-                    (active_game_round) => {
-                      return new Some(
-                        (() => {
-                          let _record$1 = active_game_round;
-                          return new RoundState(
-                            round3,
-                            _record$1.ordered_words,
-                            _record$1.submitted
-                          );
-                        })()
-                      );
-                    }
-                  );
-                  return or(
-                    _pipe,
-                    new Some(new RoundState(round3, toList([]), false))
-                  );
-                })(),
-                _record.add_word_input
-              );
-            })()
-          ),
-          display_state
-        ),
+        (() => {
+          let _record = model;
+          return new InRoom(
+            _record.uri,
+            _record.player_id,
+            _record.room_code,
+            _record.player_name,
+            new Some(
+              (() => {
+                let _record$1 = active_game;
+                return new ActiveGame(
+                  _record$1.ws,
+                  _record$1.room,
+                  (() => {
+                    let _pipe = then$(
+                      active_game.round,
+                      (active_game_round) => {
+                        return new Some(
+                          (() => {
+                            let _record$2 = active_game_round;
+                            return new RoundState(
+                              round3,
+                              _record$2.ordered_words,
+                              _record$2.submitted
+                            );
+                          })()
+                        );
+                      }
+                    );
+                    return or(
+                      _pipe,
+                      new Some(new RoundState(round3, toList([]), false))
+                    );
+                  })(),
+                  _record$1.add_word_input
+                );
+              })()
+            ),
+            _record.display_state,
+            _record.error
+          );
+        })(),
         none()
       ];
     } else if ($.isOk() && $[0] instanceof RoundResult) {
       let finished_round = $[0].finished_round;
       return [
-        new InRoom(
-          uri,
-          player_id,
-          room_code,
-          player_name,
-          new Some(
-            (() => {
-              let _record = active_game;
-              return new ActiveGame(
-                _record.ws,
-                (() => {
-                  let _pipe = active_game.room;
-                  return map(
-                    _pipe,
-                    (room) => {
-                      let _record$1 = room;
-                      return new Room(
-                        _record$1.room_code,
-                        _record$1.players,
-                        _record$1.word_list,
-                        _record$1.round,
-                        prepend(finished_round, room.finished_rounds),
-                        _record$1.scoring_method
-                      );
-                    }
-                  );
-                })(),
-                new None(),
-                _record.add_word_input
-              );
-            })()
-          ),
-          new DisplayState(new Scores(), false)
-        ),
+        (() => {
+          let _record = model;
+          return new InRoom(
+            _record.uri,
+            _record.player_id,
+            _record.room_code,
+            _record.player_name,
+            new Some(
+              (() => {
+                let _record$1 = active_game;
+                return new ActiveGame(
+                  _record$1.ws,
+                  (() => {
+                    let _pipe = active_game.room;
+                    return map(
+                      _pipe,
+                      (room) => {
+                        let _record$2 = room;
+                        return new Room(
+                          _record$2.room_code,
+                          _record$2.players,
+                          _record$2.word_list,
+                          _record$2.round,
+                          prepend(finished_round, room.finished_rounds),
+                          _record$2.scoring_method
+                        );
+                      }
+                    );
+                  })(),
+                  new None(),
+                  _record$1.add_word_input
+                );
+              })()
+            ),
+            new DisplayState(new Scores(), false),
+            _record.error
+          );
+        })(),
         none()
       ];
     } else if ($.isOk() && $[0] instanceof ServerError) {
       let reason = $[0].reason;
-      echo(reason, "src/client.gleam", 705);
+      echo(reason, "src/client.gleam", 695);
       return [model, none()];
     } else if ($.isOk() && $[0] instanceof UnknownResponse) {
       let reason = $[0].response_type;
-      echo(reason, "src/client.gleam", 705);
+      echo(reason, "src/client.gleam", 695);
       return [model, none()];
     } else {
       let err = $[0];
-      echo(err, "src/client.gleam", 709);
+      echo(err, "src/client.gleam", 699);
       return [model, none()];
     }
   }
@@ -7844,6 +7895,7 @@ function content(model) {
     );
   } else if (model instanceof InRoom && model.active_game instanceof None) {
     let player_name = model.player_name;
+    let error = model.error;
     return div(
       toList([class$("flex flex-col m-4 max-w-2xl mx-auto")]),
       toList([
@@ -7884,7 +7936,18 @@ function content(model) {
                 )
               ]),
               toList([text("Join room")])
-            )
+            ),
+            (() => {
+              if (error instanceof Some) {
+                let error$1 = error[0];
+                return div(
+                  toList([class$("ml-2 text-red-800")]),
+                  toList([text(error$1)])
+                );
+              } else {
+                return none2();
+              }
+            })()
           ])
         )
       ])
@@ -7892,6 +7955,7 @@ function content(model) {
   } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].room instanceof None) {
     let room_code = model.room_code;
     let player_name = model.player_name;
+    let error = model.error;
     return div(
       toList([class$("flex flex-col m-4")]),
       toList([
@@ -7902,9 +7966,18 @@ function content(model) {
               toList([]),
               toList([text(player_name_to_string(player_name))])
             ),
-            text(
-              "Connecting to room " + room_code_to_string(room_code) + "..."
-            )
+            (() => {
+              if (error instanceof Some) {
+                let error$1 = error[0];
+                return text(error$1);
+              } else {
+                return text(
+                  "Connecting to room " + room_code_to_string(
+                    room_code
+                  ) + "..."
+                );
+              }
+            })()
           ])
         )
       ])
@@ -7963,7 +8036,7 @@ function start_game(uri) {
   );
 }
 function join_game(uri, room_code) {
-  echo("joining room", "src/client.gleam", 724);
+  echo("joining room", "src/client.gleam", 714);
   return post(
     server(uri, "/joinroom"),
     encode_http_request(new JoinRoomRequest(room_code)),
@@ -8036,7 +8109,8 @@ function init4(_) {
           new RoomCode(room_code),
           new PlayerName(name),
           new None(),
-          new DisplayState(new Round2(), false)
+          new DisplayState(new Round2(), false),
+          new None()
         ),
         msg
       ];
@@ -8090,7 +8164,8 @@ function update(model, msg) {
         room_code,
         new PlayerName(""),
         new None(),
-        new DisplayState(new Round2(), false)
+        new DisplayState(new Round2(), false),
+        new None()
       ),
       push(
         "/play",
@@ -8156,43 +8231,40 @@ function update(model, msg) {
     let $ = writeText(room_code_to_string(room_code));
     return [model, none()];
   } else if (model instanceof InRoom && msg instanceof ShowMenu) {
-    let uri = model.uri;
-    let player_id = model.player_id;
-    let room_code = model.room_code;
-    let player_name = model.player_name;
-    let active_game = model.active_game;
-    let display_state = model.display_state;
     let val = msg[0];
     return [
-      new InRoom(
-        uri,
-        player_id,
-        room_code,
-        player_name,
-        active_game,
-        (() => {
-          let _record = display_state;
-          return new DisplayState(_record.view, val);
-        })()
-      ),
+      (() => {
+        let _record = model;
+        return new InRoom(
+          _record.uri,
+          _record.player_id,
+          _record.room_code,
+          _record.player_name,
+          _record.active_game,
+          (() => {
+            let _record$1 = model.display_state;
+            return new DisplayState(_record$1.view, val);
+          })(),
+          _record.error
+        );
+      })(),
       none()
     ];
   } else if (model instanceof InRoom && msg instanceof SetView) {
-    let uri = model.uri;
-    let player_id = model.player_id;
-    let room_code = model.room_code;
-    let player_name = model.player_name;
-    let active_game = model.active_game;
     let view$1 = msg[0];
     return [
-      new InRoom(
-        uri,
-        player_id,
-        room_code,
-        player_name,
-        active_game,
-        new DisplayState(view$1, false)
-      ),
+      (() => {
+        let _record = model;
+        return new InRoom(
+          _record.uri,
+          _record.player_id,
+          _record.room_code,
+          _record.player_name,
+          _record.active_game,
+          new DisplayState(view$1, false),
+          _record.error
+        );
+      })(),
       none()
     ];
   } else if (model instanceof InRoom && model.room_code instanceof RoomCode && msg instanceof OnRouteChange && msg[1] instanceof Play && msg[1].room_code instanceof Some && model.room_code[0] !== msg[1].room_code[0]) {
@@ -8214,64 +8286,124 @@ function update(model, msg) {
     let uri = msg[0];
     let route = msg[1];
     return [new NotInRoom(uri, route, "", new None()), none()];
-  } else if (model instanceof InRoom && model.active_game instanceof None && msg instanceof UpdatePlayerName) {
-    let uri = model.uri;
-    let player_id = model.player_id;
-    let room_code = model.room_code;
-    let display = model.display_state;
+  } else if (model instanceof InRoom && msg instanceof UpdatePlayerName) {
     let player_name = msg[0];
     return [
-      new InRoom(
-        uri,
-        player_id,
-        room_code,
-        new PlayerName(player_name),
-        new None(),
-        display
-      ),
+      (() => {
+        let _record = model;
+        return new InRoom(
+          _record.uri,
+          _record.player_id,
+          _record.room_code,
+          new PlayerName(player_name),
+          _record.active_game,
+          _record.display_state,
+          _record.error
+        );
+      })(),
       none()
     ];
-  } else if (model instanceof InRoom && model.player_id instanceof PlayerId && model.room_code instanceof RoomCode && model.player_name instanceof PlayerName && model.active_game instanceof None && msg instanceof SetPlayerName) {
+  } else if (model instanceof InRoom && model.active_game instanceof None && msg instanceof SetPlayerName) {
+    let uri = model.uri;
+    let player_id = model.player_id;
+    let player_name = model.player_name;
+    return [
+      model,
+      post(
+        server(uri, "/validatename"),
+        encode_http_request(
+          new ValidateNameRequest(player_id, player_name)
+        ),
+        expect_json(
+          http_response_decoder(),
+          (var0) => {
+            return new NameIsValid(var0);
+          }
+        )
+      )
+    ];
+  } else if (model instanceof InRoom && model.player_id instanceof PlayerId && model.room_code instanceof RoomCode && model.player_name instanceof PlayerName && model.active_game instanceof None && msg instanceof NameIsValid) {
     let uri = model.uri;
     let player_id = model.player_id[0];
     let room_code = model.room_code[0];
     let player_name = model.player_name[0];
-    let $ = (() => {
-      let _pipe = sessionStorage();
-      return try$(
-        _pipe,
-        (session_storage) => {
-          return all(
-            toList([
-              setItem(session_storage, "connection_id", player_id),
-              setItem(session_storage, "player_name", player_name),
-              setItem(session_storage, "room_code", room_code)
-            ])
-          );
-        }
+    let response = msg[0];
+    if (response.isOk() && response[0] instanceof ValidateNameResponse && response[0].valid) {
+      let $ = (() => {
+        let _pipe = sessionStorage();
+        return try$(
+          _pipe,
+          (session_storage) => {
+            return all(
+              toList([
+                setItem(session_storage, "connection_id", player_id),
+                setItem(session_storage, "player_name", player_name),
+                setItem(session_storage, "room_code", room_code)
+              ])
+            );
+          }
+        );
+      })();
+      return [
+        model,
+        init2(
+          server(uri, "/ws/" + player_id + "/" + player_name),
+          (var0) => {
+            return new WebSocketEvent(var0);
+          }
+        )
+      ];
+    } else if (response.isOk()) {
+      echo(
+        "received incorrect response from validate name",
+        "src/client.gleam",
+        357
       );
-    })();
-    return [
-      model,
-      init2(
-        server(uri, "/ws/" + player_id + "/" + player_name),
-        (var0) => {
-          return new WebSocketEvent(var0);
-        }
-      )
-    ];
+      return [
+        (() => {
+          let _record = model;
+          return new InRoom(
+            _record.uri,
+            _record.player_id,
+            _record.room_code,
+            _record.player_name,
+            _record.active_game,
+            _record.display_state,
+            new Some("An error occurred, please try again")
+          );
+        })(),
+        none()
+      ];
+    } else if (!response.isOk() && response[0] instanceof OtherError && response[0][0] === 412) {
+      let reason = response[0][1];
+      return [
+        (() => {
+          let _record = model;
+          return new InRoom(
+            _record.uri,
+            _record.player_id,
+            _record.room_code,
+            _record.player_name,
+            _record.active_game,
+            _record.display_state,
+            new Some(reason)
+          );
+        })(),
+        none()
+      ];
+    } else {
+      let error = response[0];
+      echo("failed to validate name", "src/client.gleam", 367);
+      echo(error, "src/client.gleam", 368);
+      return [model, none()];
+    }
   } else if (model instanceof InRoom && msg instanceof WebSocketEvent) {
-    let uri = model.uri;
-    let player_id = model.player_id;
-    let room_code = model.room_code;
-    let player_name = model.player_name;
-    let display = model.display_state;
     let ws_event = msg[0];
     if (ws_event instanceof InvalidUrl) {
       throw makeError(
         "panic",
         "client",
-        355,
+        375,
         "update",
         "`panic` expression evaluated.",
         {}
@@ -8279,14 +8411,18 @@ function update(model, msg) {
     } else if (ws_event instanceof OnOpen) {
       let socket = ws_event[0];
       return [
-        new InRoom(
-          uri,
-          player_id,
-          room_code,
-          player_name,
-          new Some(new ActiveGame(socket, new None(), new None(), "")),
-          display
-        ),
+        (() => {
+          let _record = model;
+          return new InRoom(
+            _record.uri,
+            _record.player_id,
+            _record.room_code,
+            _record.player_name,
+            new Some(new ActiveGame(socket, new None(), new None(), "")),
+            _record.display_state,
+            _record.error
+          );
+        })(),
         none()
       ];
     } else if (ws_event instanceof OnTextMessage) {
@@ -8303,36 +8439,39 @@ function update(model, msg) {
       }
     } else {
       return [
-        new InRoom(
-          uri,
-          player_id,
-          room_code,
-          player_name,
-          new None(),
-          new DisplayState(new Round2(), false)
-        ),
+        (() => {
+          let _record = model;
+          return new InRoom(
+            _record.uri,
+            _record.player_id,
+            _record.room_code,
+            _record.player_name,
+            new None(),
+            new DisplayState(new Round2(), false),
+            new Some("Lost connection")
+          );
+        })(),
         none()
       ];
     }
   } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && msg instanceof AddWord2 && model.active_game[0].add_word_input !== "") {
-    let uri = model.uri;
-    let player_id = model.player_id;
-    let room_code = model.room_code;
-    let player_name = model.player_name;
     let ws = model.active_game[0].ws;
     let room = model.active_game[0].room;
     let round3 = model.active_game[0].round;
     let add_word_input = model.active_game[0].add_word_input;
-    let display_state = model.display_state;
     return [
-      new InRoom(
-        uri,
-        player_id,
-        room_code,
-        player_name,
-        new Some(new ActiveGame(ws, room, round3, "")),
-        display_state
-      ),
+      (() => {
+        let _record = model;
+        return new InRoom(
+          _record.uri,
+          _record.player_id,
+          _record.room_code,
+          _record.player_name,
+          new Some(new ActiveGame(ws, room, round3, "")),
+          _record.display_state,
+          _record.error
+        );
+      })(),
       send2(
         ws,
         encode(
@@ -8367,32 +8506,31 @@ function update(model, msg) {
       )
     ];
   } else if (model instanceof InRoom && model.active_game instanceof Some && msg instanceof UpdateAddWordInput) {
-    let uri = model.uri;
-    let player_id = model.player_id;
-    let room_code = model.room_code;
-    let player_name = model.player_name;
     let active_game = model.active_game[0];
-    let display_state = model.display_state;
     let value3 = msg[0];
     return [
-      new InRoom(
-        uri,
-        player_id,
-        room_code,
-        player_name,
-        new Some(
-          (() => {
-            let _record = active_game;
-            return new ActiveGame(
-              _record.ws,
-              _record.room,
-              _record.round,
-              value3
-            );
-          })()
-        ),
-        display_state
-      ),
+      (() => {
+        let _record = model;
+        return new InRoom(
+          _record.uri,
+          _record.player_id,
+          _record.room_code,
+          _record.player_name,
+          new Some(
+            (() => {
+              let _record$1 = active_game;
+              return new ActiveGame(
+                _record$1.ws,
+                _record$1.room,
+                _record$1.round,
+                value3
+              );
+            })()
+          ),
+          _record.display_state,
+          _record.error
+        );
+      })(),
       none()
     ];
   } else if (model instanceof InRoom && model.active_game instanceof Some && msg instanceof StartRound2) {
@@ -8408,126 +8546,123 @@ function update(model, msg) {
       )
     ];
   } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].round instanceof Some && msg instanceof AddNextPreferedWord) {
-    let uri = model.uri;
-    let player_id = model.player_id;
-    let room_code = model.room_code;
-    let player_name = model.player_name;
     let ws = model.active_game[0].ws;
     let room = model.active_game[0].room;
     let round_state = model.active_game[0].round[0];
     let add_word_input = model.active_game[0].add_word_input;
-    let display_state = model.display_state;
     let word = msg[0];
     return [
-      new InRoom(
-        uri,
-        player_id,
-        room_code,
-        player_name,
-        new Some(
-          new ActiveGame(
-            ws,
-            room,
-            new Some(
-              (() => {
-                let _record = round_state;
-                return new RoundState(
-                  _record.round,
-                  prepend(
-                    word,
-                    (() => {
-                      let _pipe = round_state.ordered_words;
-                      return filter(
-                        _pipe,
-                        (existing_word) => {
-                          return existing_word !== word;
-                        }
-                      );
-                    })()
-                  ),
-                  _record.submitted
-                );
-              })()
-            ),
-            add_word_input
-          )
-        ),
-        display_state
-      ),
+      (() => {
+        let _record = model;
+        return new InRoom(
+          _record.uri,
+          _record.player_id,
+          _record.room_code,
+          _record.player_name,
+          new Some(
+            new ActiveGame(
+              ws,
+              room,
+              new Some(
+                (() => {
+                  let _record$1 = round_state;
+                  return new RoundState(
+                    _record$1.round,
+                    prepend(
+                      word,
+                      (() => {
+                        let _pipe = round_state.ordered_words;
+                        return filter(
+                          _pipe,
+                          (existing_word) => {
+                            return existing_word !== word;
+                          }
+                        );
+                      })()
+                    ),
+                    _record$1.submitted
+                  );
+                })()
+              ),
+              add_word_input
+            )
+          ),
+          _record.display_state,
+          _record.error
+        );
+      })(),
       none()
     ];
   } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].round instanceof Some && msg instanceof ClearOrderedWords) {
-    let uri = model.uri;
-    let player_id = model.player_id;
-    let room_code = model.room_code;
-    let player_name = model.player_name;
     let ws = model.active_game[0].ws;
     let room = model.active_game[0].room;
     let round_state = model.active_game[0].round[0];
     let add_word_input = model.active_game[0].add_word_input;
-    let display_state = model.display_state;
     return [
-      new InRoom(
-        uri,
-        player_id,
-        room_code,
-        player_name,
-        new Some(
-          new ActiveGame(
-            ws,
-            room,
-            new Some(
-              (() => {
-                let _record = round_state;
-                return new RoundState(
-                  _record.round,
-                  toList([]),
-                  _record.submitted
-                );
-              })()
-            ),
-            add_word_input
-          )
-        ),
-        display_state
-      ),
+      (() => {
+        let _record = model;
+        return new InRoom(
+          _record.uri,
+          _record.player_id,
+          _record.room_code,
+          _record.player_name,
+          new Some(
+            new ActiveGame(
+              ws,
+              room,
+              new Some(
+                (() => {
+                  let _record$1 = round_state;
+                  return new RoundState(
+                    _record$1.round,
+                    toList([]),
+                    _record$1.submitted
+                  );
+                })()
+              ),
+              add_word_input
+            )
+          ),
+          _record.display_state,
+          _record.error
+        );
+      })(),
       none()
     ];
   } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].round instanceof Some && msg instanceof SubmitOrderedWords2) {
-    let uri = model.uri;
-    let player_id = model.player_id;
-    let room_code = model.room_code;
-    let player_name = model.player_name;
     let ws = model.active_game[0].ws;
     let room = model.active_game[0].room;
     let round_state = model.active_game[0].round[0];
     let add_word_input = model.active_game[0].add_word_input;
-    let display_state = model.display_state;
     return [
-      new InRoom(
-        uri,
-        player_id,
-        room_code,
-        player_name,
-        new Some(
-          new ActiveGame(
-            ws,
-            room,
-            new Some(
-              (() => {
-                let _record = round_state;
-                return new RoundState(
-                  _record.round,
-                  _record.ordered_words,
-                  true
-                );
-              })()
-            ),
-            add_word_input
-          )
-        ),
-        display_state
-      ),
+      (() => {
+        let _record = model;
+        return new InRoom(
+          _record.uri,
+          _record.player_id,
+          _record.room_code,
+          _record.player_name,
+          new Some(
+            new ActiveGame(
+              ws,
+              room,
+              new Some(
+                (() => {
+                  let _record$1 = round_state;
+                  return new RoundState(
+                    _record$1.round,
+                    _record$1.ordered_words,
+                    true
+                  );
+                })()
+              ),
+              add_word_input
+            )
+          ),
+          _record.display_state,
+          _record.error
+        );
+      })(),
       send2(
         ws,
         encode(
@@ -8547,7 +8682,7 @@ function main() {
     throw makeError(
       "let_assert",
       "client",
-      117,
+      119,
       "main",
       "Pattern match failed, no pattern matched the value.",
       { value: $ }
