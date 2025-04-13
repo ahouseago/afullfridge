@@ -13,8 +13,8 @@ import prng/seed
 import random_word
 import shared.{
   type Player, type PlayerId, type PlayerName, type Room, type RoomCode, AddWord,
-  ListWords, Player, PlayerId, PlayerName, Room, RoomCode, Round, StartRound,
-  SubmitOrderedWords,
+  ListWords, Player, PlayerId, PlayerName, RemovePlayer, Room, RoomCode, Round,
+  StartRound, SubmitOrderedWords,
 }
 
 pub fn start() -> Result(Subject(Msg), actor.StartError) {
@@ -358,6 +358,9 @@ fn handle_websocket_request(
       |> result.unwrap(None)
       |> option.unwrap(state)
     }
+    RemovePlayer(player_id) -> {
+      result.unwrap(remove_player_from_room(state, player_id), state)
+    }
   }
 }
 
@@ -620,4 +623,30 @@ fn get_player_scores(
 fn names_match(name_a: PlayerName, name_b: PlayerName) -> Bool {
   shared.player_name_to_string(name_a) |> string.lowercase
   == shared.player_name_to_string(name_b) |> string.lowercase
+}
+
+fn remove_player_from_room(state: State, player_id) {
+  result.try(dict.get(state.players, player_id), fn(player) {
+    use room_state <- result.map(dict.get(state.rooms, player.room_code))
+    let room =
+      Room(
+        ..room_state.room,
+        players: list.filter(room_state.room.players, fn(p) {
+          p.id == player_id
+        }),
+      )
+    broadcast_message(
+      state.connections,
+      to: room.players,
+      message: shared.PlayersInRoom(room.players),
+    )
+    State(
+      ..state,
+      rooms: dict.insert(
+        state.rooms,
+        room.room_code,
+        RoomState(..room_state, room:),
+      ),
+    )
+  })
 }

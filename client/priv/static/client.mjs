@@ -5846,6 +5846,12 @@ var SubmitOrderedWords = class extends CustomType {
     this.words = words;
   }
 };
+var RemovePlayer = class extends CustomType {
+  constructor(player_id) {
+    super();
+    this.player_id = player_id;
+  }
+};
 var UnknownResponse = class extends CustomType {
   constructor(response_type) {
     super();
@@ -5937,6 +5943,20 @@ var Room = class extends CustomType {
     this.scoring_method = scoring_method;
   }
 };
+function player_name_to_string(player_name) {
+  let name = player_name[0];
+  return name;
+}
+function player_id_to_string(player_id) {
+  let id2 = player_id[0];
+  return id2;
+}
+function string_encoder(to_string4) {
+  return (str) => {
+    let _pipe = to_string4(str);
+    return string4(_pipe);
+  };
+}
 function encode_websocket_request(websocket_request) {
   if (websocket_request instanceof AddWord) {
     return object2(
@@ -5958,28 +5978,28 @@ function encode_websocket_request(websocket_request) {
     return object2(toList([["type", string4("list_words")]]));
   } else if (websocket_request instanceof StartRound) {
     return object2(toList([["type", string4("start_round")]]));
-  } else {
+  } else if (websocket_request instanceof SubmitOrderedWords) {
     return object2(
       toList([
         ["type", string4("submit_ordered_words")],
         ["words", array2(websocket_request.words, string4)]
       ])
     );
+  } else {
+    let player_id = websocket_request.player_id;
+    return object2(
+      toList([
+        ["type", string4("remove_player")],
+        [
+          "player_id",
+          (() => {
+            let _pipe = player_id;
+            return string_encoder(player_id_to_string)(_pipe);
+          })()
+        ]
+      ])
+    );
   }
-}
-function player_name_to_string(player_name) {
-  let name = player_name[0];
-  return name;
-}
-function player_id_to_string(player_id) {
-  let id2 = player_id[0];
-  return id2;
-}
-function string_encoder(to_string4) {
-  return (str) => {
-    let _pipe = to_string4(str);
-    return string4(_pipe);
-  };
 }
 function room_code_to_string(room_code) {
   let code2 = room_code[0];
@@ -6656,6 +6676,8 @@ var NameIsValid = class extends CustomType {
     this[0] = x0;
   }
 };
+var LeaveGame = class extends CustomType {
+};
 var ShowMenu = class extends CustomType {
   constructor(x0) {
     super();
@@ -6955,15 +6977,15 @@ function handle_ws_message(model, msg) {
       ];
     } else if ($.isOk() && $[0] instanceof ServerError) {
       let reason = $[0].reason;
-      echo(reason, "src/client.gleam", 695);
+      echo(reason, "src/client.gleam", 718);
       return [model, none()];
     } else if ($.isOk() && $[0] instanceof UnknownResponse) {
       let reason = $[0].response_type;
-      echo(reason, "src/client.gleam", 695);
+      echo(reason, "src/client.gleam", 718);
       return [model, none()];
     } else {
       let err = $[0];
-      echo(err, "src/client.gleam", 699);
+      echo(err, "src/client.gleam", 722);
       return [model, none()];
     }
   }
@@ -7398,13 +7420,17 @@ function display_menu(current_view, game_started) {
         toList([text("Update list")])
       ),
       hr(toList([class$("mt-4 mb-2 mx-2 w-4/5")])),
-      link(
-        "/",
+      button(
+        toList([
+          on_click(new LeaveGame()),
+          class$(
+            "underline p-2 disabled:no-underline disabled:text-slate-600 flex items-center p-2"
+          )
+        ]),
         toList([
           log_out(toList([class$("mr-2 inline")])),
           text("Leave game")
-        ]),
-        "flex items-center p-2"
+        ])
       )
     ])
   );
@@ -8036,7 +8062,7 @@ function start_game(uri) {
   );
 }
 function join_game(uri, room_code) {
-  echo("joining room", "src/client.gleam", 714);
+  echo("joining room", "src/client.gleam", 737);
   return post(
     server(uri, "/joinroom"),
     encode_http_request(new JoinRoomRequest(room_code)),
@@ -8357,7 +8383,7 @@ function update(model, msg) {
       echo(
         "received incorrect response from validate name",
         "src/client.gleam",
-        357
+        358
       );
       return [
         (() => {
@@ -8393,8 +8419,8 @@ function update(model, msg) {
       ];
     } else {
       let error = response[0];
-      echo("failed to validate name", "src/client.gleam", 367);
-      echo(error, "src/client.gleam", 368);
+      echo("failed to validate name", "src/client.gleam", 368);
+      echo(error, "src/client.gleam", 369);
       return [model, none()];
     }
   } else if (model instanceof InRoom && msg instanceof WebSocketEvent) {
@@ -8403,7 +8429,7 @@ function update(model, msg) {
       throw makeError(
         "panic",
         "client",
-        375,
+        376,
         "update",
         "`panic` expression evaluated.",
         {}
@@ -8671,6 +8697,19 @@ function update(model, msg) {
         )
       )
     ];
+  } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && msg instanceof LeaveGame) {
+    let player_id = model.player_id;
+    let ws = model.active_game[0].ws;
+    return [
+      model,
+      send2(
+        ws,
+        encode(
+          new RemovePlayer(player_id),
+          encode_websocket_request
+        )
+      )
+    ];
   } else {
     return [model, none()];
   }
@@ -8682,7 +8721,7 @@ function main() {
     throw makeError(
       "let_assert",
       "client",
-      119,
+      120,
       "main",
       "Pattern match failed, no pattern matched the value.",
       { value: $ }

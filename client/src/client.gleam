@@ -79,6 +79,7 @@ pub type Msg {
   JoinGame
   JoinedRoom(Result(shared.HttpResponse, lustre_http.HttpError))
   NameIsValid(Result(shared.HttpResponse, lustre_http.HttpError))
+  LeaveGame
 
   // Display actions
   ShowMenu(Bool)
@@ -583,6 +584,28 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
           ws,
           shared.encode(
             shared.SubmitOrderedWords(round_state.ordered_words),
+            shared.encode_websocket_request,
+          ),
+        ),
+      )
+    }
+    InRoom(
+      _uri,
+      player_id,
+      _room_code,
+      _player_name,
+      Some(ActiveGame(ws, _room, _round_state, _add_word_input)),
+      _display_state,
+      _error,
+    ),
+      LeaveGame
+    -> {
+      #(
+        model,
+        ws.send(
+          ws,
+          shared.encode(
+            shared.RemovePlayer(player_id),
             shared.encode_websocket_request,
           ),
         ),
@@ -1355,10 +1378,14 @@ fn display_menu(current_view: InGameView, game_started: Bool) {
       [element.text("Update list")],
     ),
     html.hr([class("mt-4 mb-2 mx-2 w-4/5")]),
-    link(
-      "/",
+    html.button(
+      [
+        event.on_click(LeaveGame),
+        class(
+          "underline p-2 disabled:no-underline disabled:text-slate-600 flex items-center p-2",
+        ),
+      ],
       [icon.log_out([class("mr-2 inline")]), element.text("Leave game")],
-      "flex items-center p-2",
     ),
   ])
 }

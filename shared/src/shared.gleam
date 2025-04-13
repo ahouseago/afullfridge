@@ -115,6 +115,7 @@ pub type WebsocketRequest {
   ListWords
   StartRound
   SubmitOrderedWords(words: List(String))
+  RemovePlayer(player_id: PlayerId)
 }
 
 pub fn websocket_request_decoder() -> decode.Decoder(WebsocketRequest) {
@@ -134,6 +135,10 @@ pub fn websocket_request_decoder() -> decode.Decoder(WebsocketRequest) {
     "submit_ordered_words" -> {
       use words <- decode.field("words", decode.list(decode.string))
       decode.success(SubmitOrderedWords(words:))
+    }
+    "remove_player" -> {
+      use player_id <- decode.field("player_id", string_decoder(PlayerId))
+      decode.success(RemovePlayer(player_id:))
     }
     request_type ->
       decode.failure(
@@ -164,6 +169,11 @@ pub fn encode_websocket_request(
       json.object([
         #("type", json.string("submit_ordered_words")),
         #("words", json.array(websocket_request.words, json.string)),
+      ])
+    RemovePlayer(player_id) ->
+      json.object([
+        #("type", json.string("remove_player")),
+        #("player_id", player_id |> string_encoder(player_id_to_string)),
       ])
   }
 }
