@@ -18,6 +18,7 @@ pub type RoomCode {
 pub type HttpRequest {
   CreateRoomRequest
   JoinRoomRequest(room_code: RoomCode)
+  ValidateNameRequest(player_id: PlayerId, name: PlayerName)
 }
 
 pub fn http_request_decoder() -> decode.Decoder(HttpRequest) {
@@ -27,6 +28,11 @@ pub fn http_request_decoder() -> decode.Decoder(HttpRequest) {
     "join_room_request" -> {
       use room_code <- decode.field("room_code", string_decoder(RoomCode))
       decode.success(JoinRoomRequest(room_code:))
+    }
+    "validate_name_request" -> {
+      use player_id <- decode.field("player_id", string_decoder(PlayerId))
+      use name <- decode.field("name", string_decoder(PlayerName))
+      decode.success(ValidateNameRequest(player_id:, name:))
     }
     request_type ->
       decode.failure(
@@ -45,13 +51,19 @@ pub fn encode_http_request(http_request: HttpRequest) -> json.Json {
         #("type", json.string("join_room_request")),
         #("room_code", room_code |> string_encoder(room_code_to_string)),
       ])
+    ValidateNameRequest(player_id, name) ->
+      json.object([
+        #("type", json.string("validate_name_request")),
+        #("player_id", player_id |> string_encoder(player_id_to_string)),
+        #("name", name |> string_encoder(player_name_to_string)),
+      ])
   }
 }
 
 pub type HttpResponse {
   // Returned from successfully creating/joining a room.
   RoomResponse(room_code: RoomCode, player_id: PlayerId)
-  CheckNameResponse(name_taken: Bool)
+  ValidateNameResponse(valid: Bool)
 }
 
 pub fn http_response_decoder() -> decode.Decoder(HttpResponse) {
@@ -62,13 +74,13 @@ pub fn http_response_decoder() -> decode.Decoder(HttpResponse) {
       use player_id <- decode.field("player_id", string_decoder(PlayerId))
       decode.success(RoomResponse(room_code:, player_id:))
     }
-    "check_name_response" -> {
-      use name_taken <- decode.field("name_taken", decode.bool)
-      decode.success(CheckNameResponse(name_taken:))
+    "validate_name_response" -> {
+      use valid <- decode.field("valid", decode.bool)
+      decode.success(ValidateNameResponse(valid:))
     }
     str ->
       decode.failure(
-        CheckNameResponse(True),
+        ValidateNameResponse(False),
         "HttpResponse: unknown response: " <> str,
       )
   }
@@ -88,10 +100,10 @@ pub fn encode_http_response(http_response: HttpResponse) -> json.Json {
           http_response.player_id |> string_encoder(player_id_to_string),
         ),
       ])
-    CheckNameResponse(..) ->
+    ValidateNameResponse(..) ->
       json.object([
-        #("type", json.string("check_name_response")),
-        #("name_taken", json.bool(http_response.name_taken)),
+        #("type", json.string("validate_name_response")),
+        #("valid", json.bool(http_response.valid)),
       ])
   }
 }

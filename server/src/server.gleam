@@ -137,12 +137,9 @@ pub fn main() {
                   handler: handle_ws_message,
                 )
               })
-            ["createroom"] ->
-              handle_create_room_request(game, req)
-              |> result.unwrap_both
-            ["joinroom"] -> {
-              handle_join_request(game, req)
-            }
+            ["createroom"] -> handle_create_room_request(game, req)
+            ["joinroom"] -> handle_join_request(game, req)
+            ["validatename"] -> handle_validate_name_request(game, req)
 
             _ ->
               response.new(200)
@@ -191,10 +188,35 @@ pub fn main() {
   process.sleep_forever()
 }
 
+fn http_request_handler(
+  req: request.Request(Connection),
+  handle: fn(shared.HttpRequest) -> response.Response(ResponseData),
+) {
+  result.unwrap_both({
+    use req <- result.try(
+      mist.read_body(req, 1024 * 1024 * 10)
+      |> result.map_error(fn(read_error) {
+        case read_error {
+          mist.ExcessBody -> bad_request("body too large")
+          mist.MalformedBody -> bad_request("malformed request body")
+        }
+      }),
+    )
+    use body <- result.map(
+      bit_array.to_string(req.body)
+      |> result.replace_error(bad_request("invalid body")),
+    )
+    case shared.decode(body, shared.http_request_decoder()) {
+      Ok(req) -> handle(req)
+      Error(err) -> bad_request(err)
+    }
+  })
+}
+
 fn handle_create_room_request(
   game,
   _req: request.Request(Connection),
-) -> Result(response.Response(ResponseData), response.Response(ResponseData)) {
+) -> response.Response(ResponseData) {
   process.call(game, game.CreateRoom, 2)
   |> result.map(fn(room) {
     response.new(200)
@@ -225,78 +247,80 @@ fn handle_create_room_request(
     ))
   })
   |> result.map_error(fn(_) { internal_error("creating room") })
+  |> result.unwrap_both
 }
 
 fn handle_join_request(
   game,
   req: request.Request(Connection),
 ) -> response.Response(ResponseData) {
-  result.unwrap_both({
-    use req <- result.try(
-      mist.read_body(req, 1024 * 1024 * 10)
-      |> result.map_error(fn(read_error) {
-        case read_error {
-          mist.ExcessBody -> bad_request("body too large")
-          mist.MalformedBody -> bad_request("malformed request body")
-        }
-      }),
-    )
-    use body <- result.map(
-      bit_array.to_string(req.body)
-      |> result.replace_error(bad_request("invalid body")),
-    )
-    case shared.decode(body, shared.http_request_decoder()) {
-      Ok(shared.JoinRoomRequest(room_code)) -> {
-        process.try_call(game, game.GetRoom(_, room_code), 5)
-        |> result.replace_error(internal_error("getting room"))
-        |> result.try(fn(res) { result.replace_error(res, not_found()) })
-        |> result.map(fn(_room) {
-          case
-            process.try_call(game, game.AddPlayerToRoom(_, room_code), 2)
-            |> result.replace_error(internal_error("calling AddPlayerToRoom"))
-          {
-            Error(err) -> err
-            Ok(Error(Nil)) -> internal_error("adding player to room")
-            Ok(Ok(player_id)) -> {
-              response.new(200)
-              |> response.set_cookie(
-                "room_code",
-                shared.room_code_to_string(room_code),
-                cookie.Attributes(
-                  ..cookie.defaults(http.Https),
-                  max_age: Some(7200),
-                  path: None,
-                ),
-              )
-              |> response.set_cookie(
-                "player_id",
-                shared.player_id_to_string(player_id),
-                cookie.Attributes(
-                  ..cookie.defaults(http.Https),
-                  max_age: Some(7200),
-                  path: None,
-                ),
-              )
-              |> response.set_body(
-                mist.Bytes(
-                  bytes_tree.from_string(shared.encode(
-                    shared.RoomResponse(room_code, player_id),
-                    shared.encode_http_response,
-                  )),
-                ),
-              )
-            }
+  use req <- http_request_handler(req)
+  case req {
+    shared.JoinRoomRequest(room_code) -> {
+      process.try_call(game, game.GetRoom(_, room_code), 5)
+      |> result.replace_error(internal_error("getting room"))
+      |> result.try(fn(res) { result.replace_error(res, not_found()) })
+      |> result.map(fn(_room) {
+        case
+          process.try_call(game, game.AddPlayerToRoom(_, room_code), 2)
+          |> result.replace_error(internal_error("calling AddPlayerToRoom"))
+        {
+          Error(err) -> err
+          Ok(Error(Nil)) -> internal_error("adding player to room")
+          Ok(Ok(player_id)) -> {
+            response.new(200)
+            |> response.set_cookie(
+              "room_code",
+              shared.room_code_to_string(room_code),
+              cookie.Attributes(
+                ..cookie.defaults(http.Https),
+                max_age: Some(7200),
+                path: None,
+              ),
+            )
+            |> response.set_cookie(
+              "player_id",
+              shared.player_id_to_string(player_id),
+              cookie.Attributes(
+                ..cookie.defaults(http.Https),
+                max_age: Some(7200),
+                path: None,
+              ),
+            )
+            |> response.set_body(
+              mist.Bytes(
+                bytes_tree.from_string(shared.encode(
+                  shared.RoomResponse(room_code, player_id),
+                  shared.encode_http_response,
+                )),
+              ),
+            )
           }
-        })
-        |> result.unwrap_both
-      }
-      Error(err) -> {
-        echo err
-        bad_request(err)
-      }
-      Ok(shared.CreateRoomRequest) -> bad_request("invalid request")
+        }
+      })
+      |> result.unwrap_both
     }
-  })
+    _ -> bad_request("invalid request")
+  }
+}
+
+fn handle_validate_name_request(game, req) {
+  use req <- http_request_handler(req)
+  case req {
+    shared.ValidateNameRequest(PlayerId(player_id), PlayerName(player_name)) ->
+      validate_player_name(game, player_id, player_name, fn() {
+        response.new(200)
+        |> response.set_body(
+          mist.Bytes(
+            bytes_tree.from_string(shared.encode(
+              shared.ValidateNameResponse(valid: True),
+              shared.encode_http_response,
+            )),
+          ),
+        )
+      })
+    _ -> bad_request("invalid request body")
+  }
 }
 
 /// validate_player_name wraps a response in a check that the player name is
