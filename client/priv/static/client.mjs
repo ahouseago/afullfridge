@@ -6876,15 +6876,15 @@ function handle_ws_message(model, msg) {
       ];
     } else if ($.isOk() && $[0] instanceof ServerError) {
       let reason = $[0].reason;
-      echo(reason, "src/client.gleam", 707);
+      echo(reason, "src/client.gleam", 706);
       return [model, none()];
     } else if ($.isOk() && $[0] instanceof UnknownResponse) {
       let reason = $[0].response_type;
-      echo(reason, "src/client.gleam", 707);
+      echo(reason, "src/client.gleam", 706);
       return [model, none()];
     } else {
       let err = $[0];
-      echo(err, "src/client.gleam", 711);
+      echo(err, "src/client.gleam", 710);
       return [model, none()];
     }
   }
@@ -7897,13 +7897,13 @@ function view(model) {
   );
 }
 var dev_mode = true;
-function server(protocol, uri, path2) {
+function server(uri, path2) {
   let host = unwrap(uri.host, "localhost");
   let $ = dev_mode;
   if ($) {
-    return protocol + "://localhost:8080" + path2;
+    return "http://localhost:8080" + path2;
   } else {
-    return protocol + "s://" + host + (() => {
+    return "https://" + host + (() => {
       let _pipe = map(
         uri.port,
         (port) => {
@@ -7916,7 +7916,7 @@ function server(protocol, uri, path2) {
 }
 function start_game(uri) {
   return get(
-    server("http", uri, "/createroom"),
+    server(uri, "/createroom"),
     expect_json(
       http_response_decoder(),
       (var0) => {
@@ -7926,9 +7926,9 @@ function start_game(uri) {
   );
 }
 function join_game(uri, room_code) {
-  echo("joining room", "src/client.gleam", 726);
+  echo("joining room", "src/client.gleam", 725);
   return post(
-    server("http", uri, "/joinroom"),
+    server(uri, "/joinroom"),
     encode_http_request(new JoinRoomRequest(room_code)),
     expect_json(
       http_response_decoder(),
@@ -7968,7 +7968,7 @@ function init4(_) {
                             id2,
                             name,
                             init2(
-                              server("ws", uri$1, "/ws/" + id2 + "/" + name),
+                              server(uri$1, "/ws/" + id2 + "/" + name),
                               (var0) => {
                                 return new WebSocketEvent(var0);
                               }
@@ -8069,7 +8069,7 @@ function update(model, msg) {
     let uri = model.uri;
     let room_code_input = model.room_code_input;
     let err = model.join_room_err;
-    echo(err, "src/client.gleam", 240);
+    echo(err, "src/client.gleam", 239);
     return [
       new NotInRoom(
         uri,
@@ -8219,7 +8219,7 @@ function update(model, msg) {
     return [
       model,
       init2(
-        server("ws", uri, "/ws/" + player_id + "/" + player_name),
+        server(uri, "/ws/" + player_id + "/" + player_name),
         (var0) => {
           return new WebSocketEvent(var0);
         }
@@ -8236,7 +8236,7 @@ function update(model, msg) {
       throw makeError(
         "panic",
         "client",
-        357,
+        356,
         "update",
         "`panic` expression evaluated.",
         {}
@@ -8512,7 +8512,7 @@ function main() {
     throw makeError(
       "let_assert",
       "client",
-      118,
+      117,
       "main",
       "Pattern match failed, no pattern matched the value.",
       { value: $ }

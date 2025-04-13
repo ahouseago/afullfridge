@@ -99,13 +99,12 @@ pub type Msg {
 
 const dev_mode = True
 
-fn server(protocol: String, uri: uri.Uri, path) -> String {
+fn server(uri: uri.Uri, path) -> String {
   let host = option.unwrap(uri.host, "localhost")
   case dev_mode {
-    True -> protocol <> "://localhost:8080" <> path
+    True -> "http://localhost:8080" <> path
     False ->
-      protocol
-      <> "s://"
+      "https://"
       <> host
       <> option.map(uri.port, fn(port) { ":" <> int.to_string(port) })
       |> option.unwrap("")
@@ -161,7 +160,7 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
                 id,
                 name,
                 ws.init(
-                  server("ws", uri, "/ws/" <> id <> "/" <> name),
+                  server(uri, "/ws/" <> id <> "/" <> name),
                   WebSocketEvent,
                 ),
               ))
@@ -345,7 +344,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       #(
         model,
         ws.init(
-          server("ws", uri, "/ws/" <> player_id <> "/" <> player_name),
+          server(uri, "/ws/" <> player_id <> "/" <> player_name),
           WebSocketEvent,
         ),
       )
@@ -717,7 +716,7 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
 
 fn start_game(uri: uri.Uri) {
   lustre_http.get(
-    server("http", uri, "/createroom"),
+    server(uri, "/createroom"),
     lustre_http.expect_json(shared.http_response_decoder(), JoinedRoom),
   )
 }
@@ -725,7 +724,7 @@ fn start_game(uri: uri.Uri) {
 fn join_game(uri: uri.Uri, room_code: RoomCode) {
   echo "joining room"
   lustre_http.post(
-    server("http", uri, "/joinroom"),
+    server(uri, "/joinroom"),
     shared.encode_http_request(shared.JoinRoomRequest(room_code)),
     lustre_http.expect_json(shared.http_response_decoder(), JoinedRoom),
   )
@@ -781,14 +780,22 @@ fn header(model: Model) {
     NotInRoom(_, Play(Some(_)), _, _) ->
       html.div([], [
         html.nav([class("flex items-center bg-sky-100 text-blue-900")], [
-          link("/", [icon.house([class("mr-2 inline")]), element.text("Home")], ""),
+          link(
+            "/",
+            [icon.house([class("mr-2 inline")]), element.text("Home")],
+            "",
+          ),
         ]),
         html.h1([class("text-2xl my-5")], [element.text("Joining game...")]),
       ])
     NotInRoom(_, Play(None), _, _) ->
       html.div([], [
         html.nav([class("flex items-center bg-sky-100 text-blue-900")], [
-          link("/", [icon.house([class("mr-2 inline")]), element.text("Home")], ""),
+          link(
+            "/",
+            [icon.house([class("mr-2 inline")]), element.text("Home")],
+            "",
+          ),
         ]),
         html.h1([class("text-2xl my-5 mx-4")], [element.text("Join game")]),
       ])
