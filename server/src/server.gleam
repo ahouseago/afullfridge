@@ -1,6 +1,6 @@
 import game
 import gleam/bit_array
-import gleam/bytes_builder
+import gleam/bytes_tree
 import gleam/erlang
 import gleam/erlang/process.{type Subject}
 import gleam/http
@@ -44,27 +44,27 @@ type WebsocketConnectionUpdate {
 
 fn not_found() {
   response.new(404)
-  |> response.set_body(mist.Bytes(bytes_builder.new()))
+  |> response.set_body(mist.Bytes(bytes_tree.new()))
 }
 
 fn bad_request(reason) {
   response.new(403)
   |> response.set_body(mist.Bytes(
-    bytes_builder.from_string("Invalid request: ")
-    |> bytes_builder.append(bit_array.from_string(reason)),
+    bytes_tree.from_string("Invalid request: ")
+    |> bytes_tree.append(bit_array.from_string(reason)),
   ))
 }
 
 fn method_not_allowed() {
   response.new(405)
-  |> response.set_body(mist.Bytes(bytes_builder.new()))
+  |> response.set_body(mist.Bytes(bytes_tree.new()))
 }
 
 fn internal_error(reason) {
   response.new(500)
   |> response.set_body(mist.Bytes(
-    bytes_builder.from_string("Internal error: ")
-    |> bytes_builder.append(bit_array.from_string(reason)),
+    bytes_tree.from_string("Internal error: ")
+    |> bytes_tree.append(bit_array.from_string(reason)),
   ))
 }
 
@@ -78,8 +78,11 @@ pub fn main() {
       case req.method {
         http.Options ->
           response.new(200)
-          |> response.set_body(mist.Bytes(bytes_builder.new()))
-          |> response.set_header("Access-Control-Allow-Origin", "http://localhost:1234")
+          |> response.set_body(mist.Bytes(bytes_tree.new()))
+          |> response.set_header(
+            "Access-Control-Allow-Origin",
+            "http://localhost:1234",
+          )
           |> response.set_header("Access-Control-Allow-Methods", "GET, POST")
           |> response.set_header("Access-Control-Allow-Headers", "content-type")
           |> response.set_header(
@@ -101,7 +104,7 @@ pub fn main() {
               })
               |> result.lazy_unwrap(fn() {
                 response.new(404)
-                |> response.set_body(mist.Bytes(bytes_builder.new()))
+                |> response.set_body(mist.Bytes(bytes_tree.new()))
               })
 
             ["client.css"] ->
@@ -117,7 +120,7 @@ pub fn main() {
               })
               |> result.lazy_unwrap(fn() {
                 response.new(404)
-                |> response.set_body(mist.Bytes(bytes_builder.new()))
+                |> response.set_body(mist.Bytes(bytes_tree.new()))
               })
 
             ["lustre-ui.css"] ->
@@ -133,7 +136,7 @@ pub fn main() {
               })
               |> result.lazy_unwrap(fn() {
                 response.new(404)
-                |> response.set_body(mist.Bytes(bytes_builder.new()))
+                |> response.set_body(mist.Bytes(bytes_tree.new()))
               })
 
             ["ws", player_id, player_name] ->
@@ -189,7 +192,7 @@ pub fn main() {
                   html.body([], [html.div([attribute.id("app")], [])]),
                 ])
                 |> element.to_document_string_builder
-                |> bytes_builder.from_string_builder
+                |> bytes_tree.from_string_tree
                 |> mist.Bytes,
               )
           }
@@ -235,8 +238,11 @@ fn handle_create_room_request(
       ),
     )
     |> response.set_body(mist.Bytes(
-      shared.encode_http_response(shared.RoomResponse(room.0, room.1))
-      |> bytes_builder.from_string,
+      shared.encode(
+        shared.RoomResponse(room.0, room.1),
+        shared.encode_http_response,
+      )
+      |> bytes_tree.from_string,
     ))
   })
   |> result.map_error(fn(_) { internal_error("creating room") })
@@ -260,7 +266,7 @@ fn handle_join_request(
     |> result.map_error(fn(_) { bad_request("invalid body") }),
   )
 
-  case shared.decode_http_request(body) {
+  case shared.decode(body, shared.http_request_decoder()) {
     Ok(shared.JoinRoomRequest(room_code)) -> {
       process.call(game, game.GetRoom(_, room_code), 5)
       |> result.map_error(fn(_) { not_found() })
@@ -290,17 +296,18 @@ fn handle_join_request(
         )
         |> response.set_body(
           mist.Bytes(
-            bytes_builder.from_string(
-              shared.encode_http_response(shared.RoomResponse(
-                room_code,
-                player_id,
-              )),
-            ),
+            bytes_tree.from_string(shared.encode(
+              shared.RoomResponse(room_code, player_id),
+              shared.encode_http_response,
+            )),
           ),
         )
       })
     }
-    Error(reason) -> Error(bad_request(reason))
+    Error(err) -> {
+      echo err
+      Error(bad_request(err))
+    }
     _ -> Error(bad_request("invalid request"))
   }
 }
@@ -363,8 +370,7 @@ fn handle_ws_message(
   case message {
     mist.Text(text) -> {
       io.println("Received request: " <> text)
-      let req = shared.decode_websocket_request(text)
-      case req {
+      case shared.decode(text, shared.websocket_request_decoder()) {
         Ok(req) -> process.send(websocket, Request(req))
         Error(err) -> {
           let _ = mist.send_text_frame(conn, "invalid request: " <> err)
@@ -375,7 +381,10 @@ fn handle_ws_message(
     }
     mist.Custom(response) -> {
       let assert Ok(_) =
-        mist.send_text_frame(conn, shared.encode_websocket_response(response))
+        mist.send_text_frame(
+          conn,
+          shared.encode(response, shared.encode_websocket_response),
+        )
       actor.continue(websocket)
     }
     mist.Binary(_) -> {

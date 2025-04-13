@@ -21,8 +21,11 @@ lustre_http = ">= 0.5.2 and < 1.0.0"
 lustre_websocket = ">= 0.7.6 and < 1.0.0"
 modem = ">= 1.1.0 and < 3.0.0"
 plinth = ">= 0.4.1 and < 1.0.0"
-lustre_ui = ">= 0.6.0 and < 1.0.0"
 
 [dev-dependencies]
 gleeunit = ">= 1.0.0 and < 2.0.0"
-lustre_dev_tools = ">= 1.3.2 and < 2.0.0"
+lustre_dev_tools = ">= 1.7.0 and < 2.0.0"
+lucide_lustre = ">= 2.0.0 and < 3.0.0"
+
+[lucide_lustre]
+output_module = "icon"

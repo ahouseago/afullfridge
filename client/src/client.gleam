@@ -1,19 +1,18 @@
+import gleam/bit_array
 import gleam/int
-import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/result
 import gleam/string
 import gleam/uri
+import icon
 import lustre
 import lustre/attribute.{class}
 import lustre/effect
 import lustre/element
 import lustre/element/html
 import lustre/event
-import lustre/ui/icon
-import lustre/ui/input
 import lustre_http
 import lustre_websocket as ws
 import modem
@@ -22,13 +21,6 @@ import plinth/javascript/storage
 import shared.{
   type PlayerId, type PlayerName, type RoomCode, PlayerId, PlayerName, RoomCode,
 }
-
-// Either "" or "s", to be added after the end of ws or http in URLs to denote
-// whether it's secure or insecure. It's a const to make it easier to change
-// when running the dev server.
-const scheme = ""
-
-const port_override = Some(8080)
 
 pub type Model {
   NotInRoom(
@@ -245,7 +237,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
     NotInRoom(uri, Play(Some(_room_code)), room_code_input, err),
       JoinedRoom(Error(lustre_http.NotFound))
     -> {
-      io.debug(err)
+      echo err
       #(
         NotInRoom(
           uri,
@@ -380,7 +372,11 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
           effect.none(),
         )
         ws.OnTextMessage(msg) -> handle_ws_message(model, msg)
-        ws.OnBinaryMessage(_msg) -> #(model, effect.none())
+        ws.OnBinaryMessage(msg) ->
+          case bit_array.to_string(msg) {
+            Ok(msg) -> handle_ws_message(model, msg)
+            Error(_) -> #(model, effect.none())
+          }
         ws.OnClose(_reason) -> #(
           InRoom(
             uri,
@@ -414,7 +410,13 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
           Some(ActiveGame(ws, room, round, "")),
           display_state,
         ),
-        ws.send(ws, shared.encode_request(shared.AddWord(add_word_input))),
+        ws.send(
+          ws,
+          shared.encode(
+            shared.AddWord(add_word_input),
+            shared.encode_websocket_request,
+          ),
+        ),
       )
     }
     InRoom(_uri, _player_id, _room_code, _player_name, Some(active_game), _),
@@ -422,7 +424,10 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
     -> {
       #(
         model,
-        ws.send(active_game.ws, shared.encode_request(shared.AddRandomWord)),
+        ws.send(
+          active_game.ws,
+          shared.encode(shared.AddRandomWord, shared.encode_websocket_request),
+        ),
       )
     }
     InRoom(_uri, _player_id, _room_code, _player_name, Some(active_game), _),
@@ -430,7 +435,13 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
     -> {
       #(
         model,
-        ws.send(active_game.ws, shared.encode_request(shared.RemoveWord(word))),
+        ws.send(
+          active_game.ws,
+          shared.encode(
+            shared.RemoveWord(word),
+            shared.encode_websocket_request,
+          ),
+        ),
       )
     }
     InRoom(
@@ -460,7 +471,10 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
     -> {
       #(
         model,
-        ws.send(active_game.ws, shared.encode_request(shared.StartRound)),
+        ws.send(
+          active_game.ws,
+          shared.encode(shared.StartRound, shared.encode_websocket_request),
+        ),
       )
     }
     InRoom(
@@ -549,9 +563,10 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         ),
         ws.send(
           ws,
-          shared.encode_request(shared.SubmitOrderedWords(
-            round_state.ordered_words,
-          )),
+          shared.encode(
+            shared.SubmitOrderedWords(round_state.ordered_words),
+            shared.encode_websocket_request,
+          ),
         ),
       )
     }
@@ -582,7 +597,7 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
       Some(active_game),
       display_state,
     ) ->
-      case shared.decode_websocket_response(msg) {
+      case shared.decode(msg, shared.websocket_response_decoder()) {
         Ok(shared.InitialRoomState(room)) -> #(
           InRoom(
             uri,
@@ -688,8 +703,12 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
             effect.none(),
           )
         }
-        Ok(shared.ServerError(reason)) | Error(reason) -> {
-          io.debug(reason)
+        Ok(shared.ServerError(reason)) | Ok(shared.UnknownResponse(reason)) -> {
+          echo reason
+          #(model, effect.none())
+        }
+        Error(err) -> {
+          echo err
           #(model, effect.none())
         }
       }
@@ -699,15 +718,16 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
 fn start_game(uri: uri.Uri) {
   lustre_http.get(
     server("http", uri, "/createroom"),
-    lustre_http.expect_json(shared.decode_http_response_json, JoinedRoom),
+    lustre_http.expect_json(shared.http_response_decoder(), JoinedRoom),
   )
 }
 
 fn join_game(uri: uri.Uri, room_code: RoomCode) {
+  echo "joining room"
   lustre_http.post(
     server("http", uri, "/joinroom"),
     shared.encode_http_request(shared.JoinRoomRequest(room_code)),
-    lustre_http.expect_json(shared.decode_http_response_json, JoinedRoom),
+    lustre_http.expect_json(shared.http_response_decoder(), JoinedRoom),
   )
 }
 
@@ -761,14 +781,14 @@ fn header(model: Model) {
     NotInRoom(_, Play(Some(_)), _, _) ->
       html.div([], [
         html.nav([class("flex items-center bg-sky-100 text-blue-900")], [
-          link("/", [icon.home([class("mr-2")]), element.text("Home")], ""),
+          link("/", [icon.house([class("mr-2 inline")]), element.text("Home")], ""),
         ]),
         html.h1([class("text-2xl my-5")], [element.text("Joining game...")]),
       ])
     NotInRoom(_, Play(None), _, _) ->
       html.div([], [
         html.nav([class("flex items-center bg-sky-100 text-blue-900")], [
-          link("/", [icon.home([class("mr-2")]), element.text("Home")], ""),
+          link("/", [icon.house([class("mr-2 inline")]), element.text("Home")], ""),
         ]),
         html.h1([class("text-2xl my-5 mx-4")], [element.text("Join game")]),
       ])
@@ -789,7 +809,7 @@ fn header(model: Model) {
         ]),
         html.button(
           [event.on_click(ShowMenu(True)), class("ml-auto px-3 py-2")],
-          [element.text("Menu"), icon.hamburger_menu([class("ml-2")])],
+          [element.text("Menu"), icon.menu([class("ml-2 inline")])],
         ),
       ])
     InRoom(_uri, _, room_code, _, _, DisplayState(_, True)) ->
@@ -809,7 +829,7 @@ fn header(model: Model) {
         ]),
         html.button(
           [event.on_click(ShowMenu(False)), class("ml-auto px-3 py-2")],
-          [element.text("Close"), icon.close([class("ml-2")])],
+          [element.text("Close"), icon.x([class("ml-2 inline")])],
         ),
       ])
     NotInRoom(_, NotFound, _, _) ->
@@ -941,7 +961,7 @@ fn content(model: Model) {
                   "py-2 px-3 rounded m-2 bg-red-100 text-red-800 hover:shadow-md hover:bg-red-200 disabled:bg-red-100 disabled:opacity-50 disabled:shadow-none",
                 ),
               ],
-              [element.text("Clear"), icon.cross([class("ml-2")])],
+              [element.text("Clear"), icon.x([class("ml-2 inline")])],
             ),
             html.button(
               [
@@ -955,7 +975,7 @@ fn content(model: Model) {
                   "py-2 px-3 m-2 rounded bg-green-100 text-green-900 hover:shadow-md hover:bg-green-200 disabled:green-50 disabled:opacity-50 disabled:shadow-none",
                 ),
               ],
-              [element.text("Submit"), icon.check([class("ml-2")])],
+              [element.text("Submit"), icon.check([class("ml-2 inline")])],
             ),
           ]),
           case round_state.submitted {
@@ -1074,7 +1094,7 @@ fn content(model: Model) {
       html.div([class("flex flex-col m-4 max-w-2xl mx-auto")], [
         html.form([event.on_submit(SetPlayerName), class("flex flex-col m-4")], [
           html.label([attribute.for("name-input")], [element.text("Name:")]),
-          input.input([
+          html.input([
             attribute.id("name-input"),
             attribute.placeholder("Enter name..."),
             event.on_input(UpdatePlayerName),
@@ -1320,7 +1340,7 @@ fn display_menu(current_view: InGameView, game_started: Bool) {
     html.hr([class("mt-4 mb-2 mx-2 w-4/5")]),
     link(
       "/",
-      [icon.exit([class("mr-2")]), element.text("Leave game")],
+      [icon.log_out([class("mr-2 inline")]), element.text("Leave game")],
       "flex items-center p-2",
     ),
   ])
@@ -1335,7 +1355,7 @@ fn display_full_word_list(room: shared.Room, add_word_input: String) {
           element.text("Add to list"),
         ]),
         html.div([class("flex max-w-80 min-w-56 flex-auto")], [
-          input.input([
+          html.input([
             attribute.id("add-word-input"),
             attribute.type_("text"),
             attribute.placeholder("A full fridge"),
@@ -1352,7 +1372,7 @@ fn display_full_word_list(room: shared.Room, add_word_input: String) {
                 "py-2 px-3 ml-2 bg-green-200 hover:bg-green-300 rounded flex-none self-center",
               ),
             ],
-            [element.text("Add"), icon.plus([class("ml-2")])],
+            [element.text("Add"), icon.plus([class("ml-2 inline")])],
           ),
         ]),
       ],
@@ -1386,7 +1406,7 @@ fn display_full_word_list(room: shared.Room, add_word_input: String) {
                     "rounded text-red-800 bg-red-50 border border-solid border-red-100 py-1 px-2 hover:bg-red-100",
                   ),
                 ],
-                [icon.cross([])],
+                [icon.x([class("inline")])],
               ),
             ],
           )

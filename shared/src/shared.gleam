@@ -1,8 +1,6 @@
-import gleam/dynamic
+import gleam/dynamic/decode
 import gleam/json
-import gleam/list
 import gleam/option.{type Option}
-import gleam/pair
 import gleam/result
 
 pub type PlayerName {
@@ -22,32 +20,222 @@ pub type HttpRequest {
   JoinRoomRequest(room_code: RoomCode)
 }
 
+pub fn http_request_decoder() -> decode.Decoder(HttpRequest) {
+  use variant <- decode.field("type", decode.string)
+  case variant {
+    "create_room_request" -> decode.success(CreateRoomRequest)
+    "join_room_request" -> {
+      use room_code <- decode.field("room_code", string_decoder(RoomCode))
+      decode.success(JoinRoomRequest(room_code:))
+    }
+    request_type ->
+      decode.failure(
+        CreateRoomRequest,
+        "HttpRequest: unknown request type: " <> request_type,
+      )
+  }
+}
+
+pub fn encode_http_request(http_request: HttpRequest) -> json.Json {
+  case http_request {
+    CreateRoomRequest ->
+      json.object([#("type", json.string("create_room_request"))])
+    JoinRoomRequest(room_code) ->
+      json.object([
+        #("type", json.string("join_room_request")),
+        #("room_code", room_code |> string_encoder(room_code_to_string)),
+      ])
+  }
+}
+
 pub type HttpResponse {
   // Returned from successfully creating/joining a room.
   RoomResponse(room_code: RoomCode, player_id: PlayerId)
 }
 
+pub fn http_response_decoder() -> decode.Decoder(HttpResponse) {
+  use room_code <- decode.field("room_code", string_decoder(RoomCode))
+  use player_id <- decode.field("player_id", string_decoder(PlayerId))
+  decode.success(RoomResponse(room_code:, player_id:))
+}
+
+pub fn encode_http_response(http_response: HttpResponse) -> json.Json {
+  json.object([
+    #(
+      "room_code",
+      http_response.room_code |> string_encoder(room_code_to_string),
+    ),
+    #(
+      "player_id",
+      http_response.player_id |> string_encoder(player_id_to_string),
+    ),
+  ])
+}
+
 pub type WebsocketRequest {
-  AddWord(String)
+  AddWord(word: String)
   AddRandomWord
-  RemoveWord(String)
+  RemoveWord(word: String)
   ListWords
   StartRound
-  SubmitOrderedWords(List(String))
+  SubmitOrderedWords(words: List(String))
+}
+
+pub fn websocket_request_decoder() -> decode.Decoder(WebsocketRequest) {
+  use variant <- decode.field("type", decode.string)
+  case variant {
+    "add_word" -> {
+      use word <- decode.field("word", decode.string)
+      decode.success(AddWord(word:))
+    }
+    "add_random_word" -> decode.success(AddRandomWord)
+    "remove_word" -> {
+      use word <- decode.field("word", decode.string)
+      decode.success(RemoveWord(word:))
+    }
+    "list_words" -> decode.success(ListWords)
+    "start_round" -> decode.success(StartRound)
+    "submit_ordered_words" -> {
+      use words <- decode.field("words", decode.list(decode.string))
+      decode.success(SubmitOrderedWords(words:))
+    }
+    request_type ->
+      decode.failure(
+        AddRandomWord,
+        "WebsocketRequest type unknown: " <> request_type,
+      )
+  }
+}
+
+pub fn encode_websocket_request(websocket_request: WebsocketRequest) -> json.Json {
+  case websocket_request {
+    AddWord(..) ->
+      json.object([
+        #("type", json.string("add_word")),
+        #("word", json.string(websocket_request.word)),
+      ])
+    AddRandomWord -> json.object([#("type", json.string("add_random_word"))])
+    RemoveWord(..) ->
+      json.object([
+        #("type", json.string("remove_word")),
+        #("word", json.string(websocket_request.word)),
+      ])
+    ListWords -> json.object([#("type", json.string("list_words"))])
+    StartRound -> json.object([#("type", json.string("start_round"))])
+    SubmitOrderedWords(..) ->
+      json.object([
+        #("type", json.string("submit_ordered_words")),
+        #("words", json.array(websocket_request.words, json.string)),
+      ])
+  }
 }
 
 pub type WebsocketResponse {
+  UnknownResponse(response_type: String)
   // Sent after connecting to a room.
-  InitialRoomState(Room)
-  PlayersInRoom(List(Player))
-  WordList(List(String))
-  RoundInfo(Round)
-  RoundResult(FinishedRound)
+  InitialRoomState(room: Room)
+  PlayersInRoom(players: List(Player))
+  WordList(word_list: List(String))
+  RoundInfo(round: Round)
+  RoundResult(finished_round: FinishedRound)
   ServerError(reason: String)
+}
+
+pub fn websocket_response_decoder() -> decode.Decoder(WebsocketResponse) {
+  use variant <- decode.field("type", decode.string)
+  case variant {
+    "initial_room_state" -> {
+      use room <- decode.field("room", room_decoder())
+      decode.success(InitialRoomState(room:))
+    }
+    "players_in_room" -> {
+      use players <- decode.field("players", decode.list(player_decoder()))
+      decode.success(PlayersInRoom(players:))
+    }
+    "word_list" -> {
+      use word_list <- decode.field("word_list", decode.list(decode.string))
+      decode.success(WordList(word_list:))
+    }
+    "round_info" -> {
+      use round <- decode.field("round", round_decoder())
+      decode.success(RoundInfo(round:))
+    }
+    "round_result" -> {
+      use finished_round <- decode.field(
+        "finished_round",
+        finished_round_decoder(),
+      )
+      decode.success(RoundResult(finished_round:))
+    }
+    "server_error" -> {
+      use reason <- decode.field("reason", decode.string)
+      decode.success(ServerError(reason:))
+    }
+    response_type ->
+      decode.failure(UnknownResponse(response_type), "WebsocketResponse")
+  }
+}
+
+pub fn encode_websocket_response(websocket_response: WebsocketResponse) -> json.Json {
+  case websocket_response {
+    UnknownResponse(..) ->
+      json.object([
+        #("type", json.string("unknown_response")),
+        #("response_type", json.string(websocket_response.response_type)),
+      ])
+    InitialRoomState(..) ->
+      json.object([
+        #("type", json.string("initial_room_state")),
+        #("room", encode_room(websocket_response.room)),
+      ])
+    PlayersInRoom(..) ->
+      json.object([
+        #("type", json.string("players_in_room")),
+        #("players", json.array(websocket_response.players, encode_player)),
+      ])
+    WordList(..) ->
+      json.object([
+        #("type", json.string("word_list")),
+        #("word_list", json.array(websocket_response.word_list, json.string)),
+      ])
+    RoundInfo(..) ->
+      json.object([
+        #("type", json.string("round_info")),
+        #("round", encode_round(websocket_response.round)),
+      ])
+    RoundResult(..) ->
+      json.object([
+        #("type", json.string("round_result")),
+        #(
+          "finished_round",
+          encode_finished_round(websocket_response.finished_round),
+        ),
+      ])
+    ServerError(..) ->
+      json.object([
+        #("type", json.string("server_error")),
+        #("reason", json.string(websocket_response.reason)),
+      ])
+  }
 }
 
 pub type Player {
   Player(id: PlayerId, name: PlayerName, connected: Bool)
+}
+
+fn player_decoder() -> decode.Decoder(Player) {
+  use id <- decode.field("id", decode.string)
+  use name <- decode.field("name", decode.string)
+  use connected <- decode.field("connected", decode.bool)
+  decode.success(Player(id: PlayerId(id), name: PlayerName(name), connected:))
+}
+
+fn encode_player(player: Player) -> json.Json {
+  json.object([
+    #("id", player.id |> string_encoder(player_id_to_string)),
+    #("name", player.name |> string_encoder(player_name_to_string)),
+    #("connected", json.bool(player.connected)),
+  ])
 }
 
 pub type PlayerWithOrderedPreferences =
@@ -66,6 +254,33 @@ pub type Round {
   )
 }
 
+fn round_decoder() -> decode.Decoder(Round) {
+  use words <- decode.field("words", decode.list(decode.string))
+  use leading_player_id <- decode.field(
+    "leading_player_id",
+    string_decoder(PlayerId),
+  )
+  use submitted <- decode.field(
+    "submitted",
+    decode.list(string_decoder(PlayerId)),
+  )
+  decode.success(Round(words:, leading_player_id:, submitted:))
+}
+
+fn encode_round(round: Round) -> json.Json {
+  json.object([
+    #("words", json.array(round.words, json.string)),
+    #(
+      "leading_player_id",
+      round.leading_player_id |> string_encoder(player_id_to_string),
+    ),
+    #(
+      "submitted",
+      json.array(round.submitted, string_encoder(player_id_to_string)),
+    ),
+  ])
+}
+
 pub type FinishedRound {
   FinishedRound(
     words: List(String),
@@ -74,8 +289,50 @@ pub type FinishedRound {
   )
 }
 
+fn finished_round_decoder() -> decode.Decoder(FinishedRound) {
+  use words <- decode.field("words", decode.list(decode.string))
+  use leading_player_id <- decode.field(
+    "leading_player_id",
+    string_decoder(PlayerId),
+  )
+  use player_scores <- decode.field(
+    "player_scores",
+    decode.list(player_score_decoder()),
+  )
+  decode.success(FinishedRound(words:, leading_player_id:, player_scores:))
+}
+
+fn encode_finished_round(finished_round: FinishedRound) -> json.Json {
+  json.object([
+    #("words", json.array(finished_round.words, json.string)),
+    #(
+      "leading_player_id",
+      finished_round.leading_player_id |> string_encoder(player_id_to_string),
+    ),
+    #(
+      "player_scores",
+      json.array(finished_round.player_scores, encode_player_score),
+    ),
+  ])
+}
+
 pub type PlayerScore {
   PlayerScore(player: Player, words: List(String), score: Int)
+}
+
+fn player_score_decoder() -> decode.Decoder(PlayerScore) {
+  use player <- decode.field("player", player_decoder())
+  use words <- decode.field("words", decode.list(decode.string))
+  use score <- decode.field("score", decode.int)
+  decode.success(PlayerScore(player:, words:, score:))
+}
+
+fn encode_player_score(player_score: PlayerScore) -> json.Json {
+  json.object([
+    #("player", encode_player(player_score.player)),
+    #("words", json.array(player_score.words, json.string)),
+    #("score", json.int(player_score.score)),
+  ])
 }
 
 pub type ScoringMethod {
@@ -87,6 +344,24 @@ pub type ScoringMethod {
   // Smart scoring awards points from 0 to 8, with 5 points as the highest
   // score with a single adjacent pair swapped.
   Smart
+}
+
+fn scoring_method_decoder() -> decode.Decoder(ScoringMethod) {
+  use variant <- decode.then(decode.string)
+  case variant {
+    "exact_match" -> decode.success(ExactMatch)
+    "equal_positions" -> decode.success(EqualPositions)
+    "smart" -> decode.success(Smart)
+    str -> decode.failure(ExactMatch, "ScoringMethod unknown: " <> str)
+  }
+}
+
+fn encode_scoring_method(scoring_method: ScoringMethod) -> json.Json {
+  case scoring_method {
+    ExactMatch -> json.string("exact_match")
+    EqualPositions -> json.string("equal_positions")
+    Smart -> json.string("smart")
+  }
 }
 
 pub type Room {
@@ -101,6 +376,47 @@ pub type Room {
   )
 }
 
+fn room_decoder() -> decode.Decoder(Room) {
+  use room_code <- decode.field("room_code", string_decoder(RoomCode))
+  use players <- decode.field("players", decode.list(player_decoder()))
+  use word_list <- decode.field("word_list", decode.list(decode.string))
+  use round <- decode.field("round", decode.optional(round_decoder()))
+  use finished_rounds <- decode.field(
+    "finished_rounds",
+    decode.list(finished_round_decoder()),
+  )
+  use scoring_method <- decode.field("scoring_method", scoring_method_decoder())
+  decode.success(Room(
+    room_code:,
+    players:,
+    word_list:,
+    round:,
+    finished_rounds:,
+    scoring_method:,
+  ))
+}
+
+fn encode_room(room: Room) -> json.Json {
+  json.object([
+    #("room_code", room.room_code |> string_encoder(room_code_to_string)),
+    #("players", json.array(room.players, encode_player)),
+    #("word_list", json.array(room.word_list, json.string)),
+    #("round", case room.round {
+      option.None -> json.null()
+      option.Some(value) -> encode_round(value)
+    }),
+    #(
+      "finished_rounds",
+      json.array(room.finished_rounds, encode_finished_round),
+    ),
+    #("scoring_method", encode_scoring_method(room.scoring_method)),
+  ])
+}
+
+fn string_decoder(constructor: fn(String) -> a) -> decode.Decoder(a) {
+  decode.then(decode.string, fn(str) { decode.success(constructor(str)) })
+}
+
 pub fn player_name_to_string(player_name: PlayerName) -> String {
   let PlayerName(name) = player_name
   name
@@ -111,390 +427,29 @@ pub fn player_id_to_string(player_id: PlayerId) -> String {
   id
 }
 
+fn string_encoder(to_string: fn(a) -> String) -> fn(a) -> json.Json {
+  fn(str) { to_string(str) |> json.string }
+}
+
 pub fn room_code_to_string(room_code: RoomCode) -> String {
   let RoomCode(code) = room_code
   code
 }
 
-fn player_id_to_json(id: PlayerId) -> json.Json {
-  player_id_to_string(id) |> json.string
+pub fn decode(str: String, with decoder: decode.Decoder(a)) -> Result(a, String) {
+  json.parse(str, decoder) |> result.map_error(json_decode_err_to_string)
 }
 
-fn room_code_to_json(room_code: RoomCode) -> json.Json {
-  room_code_to_string(room_code) |> json.string
+pub fn encode(a, with encoder: fn(a) -> json.Json) -> String {
+  encoder(a) |> json.to_string
 }
 
-fn player_to_json(player: Player) {
-  json.object([
-    #("id", player.id |> player_id_to_string |> json.string),
-    #("name", player.name |> player_name_to_string |> json.string),
-    #("connected", json.bool(player.connected)),
-  ])
-}
-
-fn from_dynamic_string(constructor: fn(String) -> a) {
-  fn(str: dynamic.Dynamic) -> Result(a, List(dynamic.DecodeError)) {
-    str |> dynamic.decode1(constructor, dynamic.string)
+fn json_decode_err_to_string(err: json.DecodeError) -> String {
+  case err {
+    json.UnableToDecode(_) -> "UnableToDecode"
+    json.UnexpectedByte(x) -> "UnexpectedByte: " <> x
+    json.UnexpectedEndOfInput -> "UnexpectedEndOfInput"
+    json.UnexpectedFormat(_) -> "UnexpectedFormat"
+    json.UnexpectedSequence(x) -> "UnexpectedSequence: " <> x
   }
-}
-
-pub fn player_from_json(
-  player: dynamic.Dynamic,
-) -> Result(Player, List(dynamic.DecodeError)) {
-  player
-  |> dynamic.decode3(
-    Player,
-    dynamic.field("id", from_dynamic_string(PlayerId)),
-    dynamic.field("name", from_dynamic_string(PlayerName)),
-    dynamic.field("connected", dynamic.bool),
-  )
-}
-
-pub fn round_to_json(round: Round) -> json.Json {
-  json.object([
-    #("words", json.array(round.words, of: json.string)),
-    #("leadingPlayerId", player_id_to_json(round.leading_player_id)),
-    #("submitted", json.array(round.submitted, of: player_id_to_json)),
-  ])
-}
-
-pub fn round_from_json(
-  round: dynamic.Dynamic,
-) -> Result(Round, List(dynamic.DecodeError)) {
-  round
-  |> dynamic.decode3(
-    Round,
-    dynamic.field("words", dynamic.list(dynamic.string)),
-    dynamic.field("leadingPlayerId", from_dynamic_string(PlayerId)),
-    dynamic.field("submitted", dynamic.list(from_dynamic_string(PlayerId))),
-  )
-}
-
-pub fn finished_round_to_json(round: FinishedRound) -> json.Json {
-  json.object([
-    #("words", json.array(round.words, of: json.string)),
-    #("leadingPlayerId", player_id_to_json(round.leading_player_id)),
-    #("scores", json.array(round.player_scores, of: player_score_to_json)),
-  ])
-}
-
-pub fn finished_round_from_json(
-  round: dynamic.Dynamic,
-) -> Result(FinishedRound, List(dynamic.DecodeError)) {
-  round
-  |> dynamic.decode3(
-    FinishedRound,
-    dynamic.field("words", dynamic.list(dynamic.string)),
-    dynamic.field("leadingPlayerId", from_dynamic_string(PlayerId)),
-    dynamic.field("scores", dynamic.list(player_score_from_json)),
-  )
-}
-
-pub fn player_score_to_json(player_score: PlayerScore) -> json.Json {
-  json.object([
-    #("player", player_to_json(player_score.player)),
-    #("words", json.array(player_score.words, of: json.string)),
-    #("score", json.int(player_score.score)),
-  ])
-}
-
-pub fn player_score_from_json(
-  player_score: dynamic.Dynamic,
-) -> Result(PlayerScore, List(dynamic.DecodeError)) {
-  player_score
-  |> dynamic.decode3(
-    PlayerScore,
-    dynamic.field("player", player_from_json),
-    dynamic.field("words", dynamic.list(dynamic.string)),
-    dynamic.field("score", dynamic.int),
-  )
-}
-
-fn scoring_method_to_json(scoring_method: ScoringMethod) -> json.Json {
-  case scoring_method {
-    ExactMatch -> json.string("EXACT_MATCH")
-    EqualPositions -> json.string("EQUAL_POSITIONS")
-    Smart -> json.string("SMART")
-  }
-}
-
-fn scoring_method_from_json(
-  scoring_method: dynamic.Dynamic,
-) -> Result(ScoringMethod, List(dynamic.DecodeError)) {
-  case dynamic.string(scoring_method) {
-    Ok("EXACT_MATCH") -> Ok(ExactMatch)
-    Ok("EQUAL_POSITIONS") -> Ok(EqualPositions)
-    Ok("SMART") -> Ok(Smart)
-    Ok(method) ->
-      Error([
-        dynamic.DecodeError(expected: "scoring method", found: method, path: []),
-      ])
-    Error(a) -> Error(a)
-  }
-}
-
-pub fn room_to_json(room: Room) -> json.Json {
-  json.object([
-    #("roomCode", room_code_to_json(room.room_code)),
-    #("players", json.array(room.players, of: player_to_json)),
-    #("wordList", json.array(room.word_list, of: json.string)),
-    #("round", json.nullable(room.round, of: round_to_json)),
-    #(
-      "finishedRounds",
-      json.array(room.finished_rounds, of: finished_round_to_json),
-    ),
-    #("scoringMethod", scoring_method_to_json(room.scoring_method)),
-  ])
-}
-
-pub fn room_from_json(
-  room: dynamic.Dynamic,
-) -> Result(Room, List(dynamic.DecodeError)) {
-  room
-  |> dynamic.decode6(
-    Room,
-    dynamic.field("roomCode", from_dynamic_string(RoomCode)),
-    dynamic.field("players", dynamic.list(player_from_json)),
-    dynamic.field("wordList", dynamic.list(dynamic.string)),
-    dynamic.field("round", dynamic.optional(round_from_json)),
-    dynamic.field("finishedRounds", dynamic.list(finished_round_from_json)),
-    dynamic.field("scoringMethod", scoring_method_from_json),
-  )
-}
-
-pub fn encode_http_request(request: HttpRequest) {
-  let #(t, message) =
-    case request {
-      CreateRoomRequest -> #("createRoom", json.null())
-      JoinRoomRequest(room_code) -> #("joinRoom", room_code_to_json(room_code))
-    }
-    |> pair.map_first(json.string)
-  json.object([#("type", t), #("message", message)])
-}
-
-pub fn encode_request(request: WebsocketRequest) {
-  let #(t, message) =
-    case request {
-      AddWord(word) -> #("addWord", json.string(word))
-      AddRandomWord -> #("addRandomWord", json.null())
-      RemoveWord(word) -> #("removeWord", json.string(word))
-      ListWords -> #("listWords", json.null())
-      StartRound -> #("startRound", json.null())
-      SubmitOrderedWords(ordered_words) -> #(
-        "submitOrderedWords",
-        json.array(from: ordered_words, of: json.string),
-      )
-    }
-    |> pair.map_first(json.string)
-  json.object([#("type", t), #("message", message)])
-  |> json.to_string
-}
-
-pub fn decode_http_request(request: String) -> Result(HttpRequest, String) {
-  let type_decoder =
-    dynamic.decode2(
-      fn(t, msg) { #(t, msg) },
-      dynamic.field("type", dynamic.string),
-      dynamic.field("message", dynamic.dynamic),
-    )
-  let request_with_type = json.decode(request, type_decoder)
-
-  case request_with_type {
-    Ok(#("createRoom", _)) -> Ok(CreateRoomRequest)
-    Ok(#("joinRoom", msg)) ->
-      msg
-      |> dynamic.decode1(JoinRoomRequest, from_dynamic_string(RoomCode))
-    Ok(#(request_type, _)) ->
-      Error([dynamic.DecodeError("unknown request type", request_type, [])])
-    Error(json.UnexpectedFormat(e)) -> Error(e)
-    Error(json.UnexpectedByte(byte, _))
-    | Error(json.UnexpectedSequence(byte, _)) ->
-      Error([dynamic.DecodeError("invalid request", byte, [])])
-    Error(json.UnexpectedEndOfInput) ->
-      Error([
-        dynamic.DecodeError("bad request: unexpected end of input", "", []),
-      ])
-  }
-  |> result.map_error(decode_errs_to_string)
-}
-
-pub fn decode_websocket_request(
-  text: String,
-) -> Result(WebsocketRequest, String) {
-  let type_decoder =
-    dynamic.decode2(
-      fn(t, msg) { #(t, msg) },
-      dynamic.field("type", dynamic.string),
-      dynamic.field("message", dynamic.dynamic),
-    )
-  let request_with_type = json.decode(text, type_decoder)
-
-  case request_with_type {
-    Ok(#("addWord", msg)) ->
-      msg
-      |> dynamic.decode1(AddWord, dynamic.string)
-    Ok(#("addRandomWord", _)) -> Ok(AddRandomWord)
-    Ok(#("removeWord", msg)) ->
-      msg |> dynamic.decode1(RemoveWord, dynamic.string)
-    Ok(#("listWords", _)) -> Ok(ListWords)
-    Ok(#("startRound", _)) -> Ok(StartRound)
-    Ok(#("submitOrderedWords", msg)) ->
-      msg
-      |> dynamic.decode1(SubmitOrderedWords, dynamic.list(of: dynamic.string))
-    Ok(#(request_type, _)) ->
-      Error([dynamic.DecodeError("unknown request type", request_type, [])])
-    Error(json.UnexpectedFormat(e)) -> Error(e)
-    Error(json.UnexpectedByte(byte, _))
-    | Error(json.UnexpectedSequence(byte, _)) ->
-      Error([dynamic.DecodeError("invalid request", byte, [])])
-    Error(json.UnexpectedEndOfInput) ->
-      Error([
-        dynamic.DecodeError("bad request: unexpected end of input", "", []),
-      ])
-  }
-  |> result.map_error(decode_errs_to_string)
-}
-
-pub fn encode_http_response(response: HttpResponse) {
-  let #(t, message) =
-    case response {
-      RoomResponse(room_code, player_id) -> #(
-        "joinedRoom",
-        json.object([
-          #("roomCode", room_code_to_json(room_code)),
-          #("playerId", player_id_to_json(player_id)),
-        ]),
-      )
-    }
-    |> pair.map_first(json.string)
-  json.object([#("type", t), #("message", message)])
-  |> json.to_string
-}
-
-pub fn encode_websocket_response(response: WebsocketResponse) {
-  let #(t, message) =
-    case response {
-      InitialRoomState(room) -> #("room", room_to_json(room))
-      PlayersInRoom(players) -> #(
-        "playersInRoom",
-        json.array(from: players, of: player_to_json),
-      )
-      WordList(word_list) -> #(
-        "wordList",
-        json.array(from: word_list, of: json.string),
-      )
-      RoundInfo(round) -> #("roundInfo", round_to_json(round))
-      RoundResult(finished_round) -> #(
-        "roundResult",
-        finished_round_to_json(finished_round),
-      )
-      ServerError(reason) -> #("error", json.string(reason))
-    }
-    |> pair.map_first(json.string)
-  json.object([#("type", t), #("message", message)])
-  |> json.to_string
-}
-
-pub fn decode_http_response_json(
-  response: dynamic.Dynamic,
-) -> Result(HttpResponse, dynamic.DecodeErrors) {
-  let type_decoder =
-    dynamic.decode2(
-      fn(t, msg) { #(t, msg) },
-      dynamic.field("type", dynamic.string),
-      dynamic.field("message", dynamic.dynamic),
-    )
-  case type_decoder(response) {
-    Ok(#("joinedRoom", msg)) ->
-      msg
-      |> dynamic.decode2(
-        RoomResponse,
-        dynamic.field("roomCode", from_dynamic_string(RoomCode)),
-        dynamic.field("playerId", from_dynamic_string(PlayerId)),
-      )
-    Ok(#(request_type, _)) ->
-      Error([dynamic.DecodeError("unknown request type", request_type, [])])
-    Error(e) -> Error(e)
-  }
-}
-
-pub fn decode_http_response(request: String) -> Result(HttpResponse, String) {
-  let type_decoder =
-    dynamic.decode2(
-      fn(t, msg) { #(t, msg) },
-      dynamic.field("type", dynamic.string),
-      dynamic.field("message", dynamic.dynamic),
-    )
-  let response_with_type = json.decode(request, type_decoder)
-  case response_with_type {
-    Ok(#("room", msg)) ->
-      msg
-      |> dynamic.decode2(
-        RoomResponse,
-        dynamic.field("roomCode", from_dynamic_string(RoomCode)),
-        dynamic.field("playerId", from_dynamic_string(PlayerId)),
-      )
-    Ok(#(request_type, _)) ->
-      Error([dynamic.DecodeError("unknown request type", request_type, [])])
-    Error(json.UnexpectedFormat(e)) -> Error(e)
-    Error(json.UnexpectedByte(byte, _))
-    | Error(json.UnexpectedSequence(byte, _)) ->
-      Error([dynamic.DecodeError("invalid request", byte, [])])
-    Error(json.UnexpectedEndOfInput) ->
-      Error([
-        dynamic.DecodeError("bad request: unexpected end of input", "", []),
-      ])
-  }
-  |> result.map_error(decode_errs_to_string)
-}
-
-pub fn decode_websocket_response(
-  text: String,
-) -> Result(WebsocketResponse, String) {
-  let type_decoder =
-    dynamic.decode2(
-      fn(t, msg) { #(t, msg) },
-      dynamic.field("type", dynamic.string),
-      dynamic.field("message", dynamic.dynamic),
-    )
-  let response_with_type = json.decode(text, type_decoder)
-
-  case response_with_type {
-    Ok(#("room", msg)) ->
-      msg |> dynamic.decode1(InitialRoomState, room_from_json)
-    Ok(#("playersInRoom", msg)) ->
-      msg
-      |> dynamic.decode1(PlayersInRoom, dynamic.list(of: player_from_json))
-    Ok(#("wordList", msg)) ->
-      msg
-      |> dynamic.decode1(WordList, dynamic.list(of: dynamic.string))
-    Ok(#("roundInfo", msg)) ->
-      msg
-      |> dynamic.decode1(RoundInfo, round_from_json)
-    Ok(#("roundResult", msg)) ->
-      msg
-      |> dynamic.decode1(RoundResult, finished_round_from_json)
-    Ok(#("error", msg)) ->
-      msg
-      |> dynamic.decode1(ServerError, dynamic.string)
-
-    Ok(#(request_type, _)) ->
-      Error([dynamic.DecodeError("unknown request type", request_type, [])])
-    Error(json.UnexpectedFormat(e)) -> Error(e)
-    Error(json.UnexpectedByte(byte, _))
-    | Error(json.UnexpectedSequence(byte, _)) ->
-      Error([dynamic.DecodeError("invalid request", byte, [])])
-    Error(json.UnexpectedEndOfInput) ->
-      Error([
-        dynamic.DecodeError("bad request: unexpected end of input", "", []),
-      ])
-  }
-  |> result.map_error(decode_errs_to_string)
-}
-
-fn decode_errs_to_string(errs: dynamic.DecodeErrors) -> String {
-  list.fold(errs, "Error decoding message:", fn(err_string, err) {
-    let dynamic.DecodeError(expected, found, _) = err
-    err_string <> " expected: " <> expected <> ", found: " <> found <> ";"
-  })
 }
