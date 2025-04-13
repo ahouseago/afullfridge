@@ -626,6 +626,8 @@ fn names_match(name_a: PlayerName, name_b: PlayerName) -> Bool {
 }
 
 fn remove_player_from_room(state: State, player_id) {
+  // TODO: validate that the requesting player is in the same room for this
+  // request to be valid
   result.try(dict.get(state.players, player_id), fn(player) {
     use room_state <- result.map(dict.get(state.rooms, player.room_code))
     let room =
