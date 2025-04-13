@@ -78,7 +78,7 @@ pub type Msg {
   GetRoom(reply_with: Subject(Result(Room, Nil)), room_code: RoomCode)
   CreateRoom(reply_with: Subject(Result(#(RoomCode, PlayerId), Nil)))
   AddPlayerToRoom(
-    reply_with: Subject(Result(PlayerId, String)),
+    reply_with: Subject(Result(PlayerId, Nil)),
     room_code: RoomCode,
   )
 }
@@ -247,10 +247,11 @@ fn update(msg: Msg, state: State) -> actor.Next(Msg, State) {
       actor.continue(state)
     }
     GetRoom(subj, room_code) -> {
-      case dict.get(state.rooms, room_code) {
-        Ok(room_state) -> actor.send(subj, Ok(room_state.room))
-        Error(_) -> Nil
-      }
+      actor.send(
+        subj,
+        dict.get(state.rooms, room_code)
+          |> result.map(fn(room_state) { room_state.room }),
+      )
       actor.continue(state)
     }
     AddPlayerToRoom(subj, room_code) -> {
@@ -271,7 +272,10 @@ fn update(msg: Msg, state: State) -> actor.Next(Msg, State) {
           ),
         )
       })
-      |> result.unwrap(actor.continue(state))
+      |> result.unwrap({
+        actor.send(subj, Error(Nil))
+        actor.continue(state)
+      })
     }
   }
 }
