@@ -70,7 +70,7 @@ pub type Route {
 }
 
 pub type Msg {
-  OnRouteChange(uri.Uri, Route)
+  OnRouteChange(uri: uri.Uri, route: Route)
 
   WebSocketEvent(ws.WebSocketEvent)
   OnWebsocketMessage(shared.WebsocketResponse)
@@ -213,8 +213,11 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
 
 pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
   case model, msg {
-    NotInRoom(uri, _, _, _), StartGame -> #(model, start_game(uri))
-    NotInRoom(uri, _, _, _),
+    NotInRoom(uri:, ..), StartGame -> #(model, start_game(uri))
+    NotInRoom(
+      uri:,
+      ..,
+    ),
       JoinedRoom(Ok(shared.RoomResponse(room_code, player_id)))
     -> {
       #(
@@ -238,7 +241,11 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         ),
       )
     }
-    NotInRoom(uri, _, room_code_input, _err),
+    NotInRoom(
+      uri:,
+      room_code_input:,
+      ..,
+    ),
       JoinedRoom(Error(lustre_http.NotFound))
     -> {
       #(
@@ -251,27 +258,25 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         effect.none(),
       )
     }
-    NotInRoom(_, _route, room_code_input, _err),
-      OnRouteChange(uri, Play(Some(room_code)))
-    -> #(
+    NotInRoom(room_code_input:, ..), OnRouteChange(uri, Play(Some(room_code))) -> #(
       NotInRoom(uri, Play(Some(room_code)), room_code_input, None),
       join_game(uri, RoomCode(room_code)),
     )
-    NotInRoom(_, _route, room_code_input, _err), OnRouteChange(uri, route) -> #(
+    NotInRoom(room_code_input:, ..), OnRouteChange(uri, route) -> #(
       NotInRoom(uri, route, room_code_input, None),
       effect.none(),
     )
-    NotInRoom(uri, route, _room_code_input, _err), UpdateRoomCode(room_code) -> #(
+    NotInRoom(uri:, route:, ..), UpdateRoomCode(room_code) -> #(
       NotInRoom(uri, route, string.uppercase(room_code), None),
       effect.none(),
     )
-    NotInRoom(uri, _, room_code_input, _), JoinGame -> #(
+    NotInRoom(uri:, room_code_input:, ..), JoinGame -> #(
       model,
       join_game(uri, RoomCode(room_code_input)),
     )
-    NotInRoom(_, _, _, _), UpdatePlayerName(_) -> #(model, effect.none())
-    NotInRoom(_, _, _, _), _ -> #(model, effect.none())
-    InRoom(_, _, room_code, _, _, _, _), CopyRoomCode -> {
+    NotInRoom(..), UpdatePlayerName(_) -> #(model, effect.none())
+    NotInRoom(..), _ -> #(model, effect.none())
+    InRoom(room_code:, ..), CopyRoomCode -> {
       let _ = clipboard.write_text(shared.room_code_to_string(room_code))
       #(model, effect.none())
     }
@@ -290,14 +295,21 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         effect.none(),
       )
     }
-    InRoom(uri, _, RoomCode(room_code), _, _, _, _error),
-      OnRouteChange(_uri, Play(Some(new_room_code)))
+    InRoom(
+      uri:,
+      room_code: RoomCode(room_code),
+      ..,
+    ),
+      OnRouteChange(
+        route: Play(Some(new_room_code)),
+        ..,
+      )
       if room_code != new_room_code
     -> #(
       NotInRoom(uri, Play(Some(new_room_code)), new_room_code, None),
       join_game(uri, RoomCode(room_code)),
     )
-    InRoom(..), OnRouteChange(_uri, Play(Some(_room_code))) -> #(
+    InRoom(..), OnRouteChange(route: Play(Some(..)), ..) -> #(
       model,
       effect.none(),
     )
@@ -309,8 +321,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       InRoom(..model, player_name: PlayerName(player_name)),
       effect.none(),
     )
-    InRoom(uri, player_id, _room_code, player_name, None, _display, _error),
-      SetPlayerName
+    InRoom(uri:, player_id:, player_name:, active_game: None, ..), SetPlayerName
     -> {
       #(
         model,
@@ -325,13 +336,12 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       )
     }
     InRoom(
-      uri,
-      PlayerId(player_id),
-      RoomCode(room_code),
-      PlayerName(player_name),
-      None,
-      _display,
-      _error,
+      uri:,
+      player_id: PlayerId(player_id),
+      room_code: RoomCode(room_code),
+      player_name: PlayerName(player_name),
+      active_game: None,
+      ..,
     ),
       NameIsValid(response)
     -> {
@@ -404,13 +414,8 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       }
     }
     InRoom(
-      _uri,
-      _player_id,
-      _room_code,
-      _player_name,
-      Some(ActiveGame(ws, room, round, add_word_input)),
-      _display_state,
-      _error,
+      active_game: Some(ActiveGame(ws, room, round, add_word_input)),
+      ..,
     ),
       AddWord
       if add_word_input != ""
@@ -426,17 +431,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         ),
       )
     }
-    InRoom(
-      _uri,
-      _player_id,
-      _room_code,
-      _player_name,
-      Some(active_game),
-      _,
-      _error,
-    ),
-      AddRandomWord
-    -> {
+    InRoom(active_game: Some(active_game), ..), AddRandomWord -> {
       #(
         model,
         ws.send(
@@ -445,17 +440,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         ),
       )
     }
-    InRoom(
-      _uri,
-      _player_id,
-      _room_code,
-      _player_name,
-      Some(active_game),
-      _,
-      _error,
-    ),
-      RemoveWord(word)
-    -> {
+    InRoom(active_game: Some(active_game), ..), RemoveWord(word) -> {
       #(
         model,
         ws.send(
@@ -467,17 +452,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         ),
       )
     }
-    InRoom(
-      _uri,
-      _player_id,
-      _room_code,
-      _player_name,
-      Some(active_game),
-      _display_state,
-      _error,
-    ),
-      UpdateAddWordInput(value)
-    -> {
+    InRoom(active_game: Some(active_game), ..), UpdateAddWordInput(value) -> {
       #(
         InRoom(
           ..model,
@@ -486,17 +461,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         effect.none(),
       )
     }
-    InRoom(
-      _uri,
-      _player_id,
-      _room_code,
-      _player_name,
-      Some(active_game),
-      _,
-      _error,
-    ),
-      StartRound
-    -> {
+    InRoom(active_game: Some(active_game), ..), StartRound -> {
       #(
         model,
         ws.send(
@@ -506,13 +471,8 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       )
     }
     InRoom(
-      _uri,
-      _player_id,
-      _room_code,
-      _player_name,
-      Some(ActiveGame(ws, room, Some(round_state), add_word_input)),
-      _display_state,
-      _error,
+      active_game: Some(ActiveGame(ws, room, Some(round_state), add_word_input)),
+      ..,
     ),
       AddNextPreferedWord(word)
     -> {
@@ -536,13 +496,8 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       )
     }
     InRoom(
-      _uri,
-      _player_id,
-      _room_code,
-      _player_name,
-      Some(ActiveGame(ws, room, Some(round_state), add_word_input)),
-      _display_state,
-      _error,
+      active_game: Some(ActiveGame(ws, room, Some(round_state), add_word_input)),
+      ..,
     ),
       ClearOrderedWords
     -> {
@@ -560,13 +515,8 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       )
     }
     InRoom(
-      _uri,
-      _player_id,
-      _room_code,
-      _player_name,
-      Some(ActiveGame(ws, room, Some(round_state), add_word_input)),
-      _display_state,
-      _error,
+      active_game: Some(ActiveGame(ws, room, Some(round_state), add_word_input)),
+      ..,
     ),
       SubmitOrderedWords
     -> {
@@ -589,17 +539,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         ),
       )
     }
-    InRoom(
-      _uri,
-      player_id,
-      _room_code,
-      _player_name,
-      Some(ActiveGame(ws, _room, _round_state, _add_word_input)),
-      _display_state,
-      _error,
-    ),
-      LeaveGame
-    -> {
+    InRoom(player_id:, active_game: Some(ActiveGame(ws:, ..)), ..), LeaveGame -> {
       #(
         model,
         ws.send(
@@ -617,19 +557,8 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
 
 fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) {
   case model {
-    NotInRoom(_, _, _, _) | InRoom(_uri, _, _, _, None, _, _error) -> #(
-      model,
-      effect.none(),
-    )
-    InRoom(
-      _uri,
-      _player_id,
-      _room_code,
-      _player_name,
-      Some(active_game),
-      _display_state,
-      _error,
-    ) ->
+    NotInRoom(..) | InRoom(active_game: None, ..) -> #(model, effect.none())
+    InRoom(active_game: Some(active_game), ..) ->
       case shared.decode(msg, shared.websocket_response_decoder()) {
         Ok(shared.InitialRoomState(room)) -> #(
           InRoom(
@@ -785,11 +714,11 @@ fn link(href, content, class_name) {
 
 fn header(model: Model) {
   case model {
-    NotInRoom(_, Home, _, _) ->
+    NotInRoom(route: Home, ..) ->
       html.h1([class("text-4xl my-10 text-center")], [
         element.text("A Full Fridge"),
       ])
-    NotInRoom(_, Play(Some(_)), _, _) ->
+    NotInRoom(route: Play(Some(_)), ..) ->
       html.div([], [
         html.nav([class("flex items-center bg-sky-100 text-blue-900")], [
           link(
@@ -800,7 +729,7 @@ fn header(model: Model) {
         ]),
         html.h1([class("text-2xl my-5")], [element.text("Joining game...")]),
       ])
-    NotInRoom(_, Play(None), _, _) ->
+    NotInRoom(route: Play(None), ..) ->
       html.div([], [
         html.nav([class("flex items-center bg-sky-100 text-blue-900")], [
           link(
@@ -811,7 +740,7 @@ fn header(model: Model) {
         ]),
         html.h1([class("text-2xl my-5 mx-4")], [element.text("Join game")]),
       ])
-    InRoom(_uri, _, room_code, _, _, DisplayState(_, False), _error) ->
+    InRoom(room_code:, display_state: DisplayState(menu_open: False, ..), ..) ->
       html.div([class("flex bg-green-700 text-gray-100")], [
         html.h1([class("text-xl my-5 mx-2")], [
           element.text("Game:"),
@@ -831,7 +760,7 @@ fn header(model: Model) {
           [element.text("Menu"), icon.menu([class("ml-2 inline")])],
         ),
       ])
-    InRoom(_uri, _, room_code, _, _, DisplayState(_, True), _error) ->
+    InRoom(room_code:, display_state: DisplayState(menu_open: True, ..), ..) ->
       html.div([class("flex bg-green-700 text-gray-100")], [
         html.h1([class("text-xl my-5 mx-2")], [
           element.text("Game:"),
@@ -851,7 +780,7 @@ fn header(model: Model) {
           [element.text("Close"), icon.x([class("ml-2 inline")])],
         ),
       ])
-    NotInRoom(_, NotFound, _, _) ->
+    NotInRoom(route: NotFound, ..) ->
       html.div([], [
         html.nav([class("flex items-center")], [
           link("/", [element.text("Home")], ""),
@@ -863,7 +792,7 @@ fn header(model: Model) {
 
 fn content(model: Model) {
   case model {
-    NotInRoom(_, Home, _, join_room_err) ->
+    NotInRoom(route: Home, join_room_err:, ..) ->
       html.div([class("text-center")], [
         case join_room_err {
           Some(err) -> html.div([class("bg-red-50")], [element.text(err)])
@@ -889,9 +818,9 @@ fn content(model: Model) {
           ),
         ]),
       ])
-    NotInRoom(_, Play(Some(room_code)), _, None) ->
+    NotInRoom(route: Play(Some(room_code)), join_room_err: None, ..) ->
       element.text("Joining room " <> room_code <> "...")
-    NotInRoom(_, Play(None), room_code_input, err) ->
+    NotInRoom(route: Play(None), room_code_input:, join_room_err:, ..) ->
       html.form(
         [event.on_submit(JoinGame), class("flex flex-wrap items-center mx-4")],
         [
@@ -923,7 +852,7 @@ fn content(model: Model) {
               [element.text("Join")],
             ),
           ]),
-          case err {
+          case join_room_err {
             Some(err) ->
               html.div([class("ml-2 text-red-800")], [element.text(err)])
             None -> element.none()
@@ -931,13 +860,14 @@ fn content(model: Model) {
         ],
       )
     InRoom(
-      _uri,
-      player_id,
-      _room_code,
-      _player_name,
-      Some(ActiveGame(_ws, Some(room), Some(round_state), _add_word_input)),
-      DisplayState(Round, False),
-      _error,
+      player_id:,
+      active_game: Some(ActiveGame(
+        room: Some(room),
+        round: Some(round_state),
+        ..,
+      )),
+      display_state: DisplayState(Round, False),
+      ..,
     ) ->
       html.div([class("flex flex-col max-w-2xl mx-auto")], [
         html.div([class("m-4")], [
@@ -1028,13 +958,14 @@ fn content(model: Model) {
         ]),
       ])
     InRoom(
-      _uri,
-      player_id,
-      _room_code,
-      _player_name,
-      Some(ActiveGame(_ws, Some(room), Some(round_state), _add_word_input)),
-      DisplayState(Scores, False),
-      _error,
+      player_id:,
+      active_game: Some(ActiveGame(
+        room: Some(room),
+        round: Some(round_state),
+        ..,
+      )),
+      display_state: DisplayState(Scores, False),
+      ..,
     ) ->
       html.div([class("max-w-2xl mx-auto")], [
         html.div([class("flex flex-col m-4")], [
@@ -1054,35 +985,33 @@ fn content(model: Model) {
         ]),
       ])
     InRoom(
-      _uri,
-      _player_id,
-      _room_code,
-      _player_name,
-      Some(ActiveGame(_ws, Some(room), Some(_round_state), add_word_input)),
-      DisplayState(WordList, False),
-      _error,
+      active_game: Some(ActiveGame(
+        room: Some(room),
+        round: Some(..),
+        add_word_input:,
+        ..,
+      )),
+      display_state: DisplayState(WordList, False),
+      ..,
     ) ->
       html.div(
         [class("flex flex-col p-4 max-w-2xl mx-auto")],
         display_full_word_list(room, add_word_input),
       )
     InRoom(
-      _uri,
-      _player_id,
-      _room_code,
-      _player_name,
-      Some(ActiveGame(_ws, Some(_room), round_state, _add_word_input)),
-      DisplayState(view, True),
-      _error,
-    ) -> display_menu(view, option.is_some(round_state))
+      active_game: Some(ActiveGame(room: Some(..), round:, ..)),
+      display_state: DisplayState(view, True),
+      ..,
+    ) -> display_menu(view, option.is_some(round))
     InRoom(
-      _uri,
-      player_id,
-      _room_code,
-      _player_name,
-      Some(ActiveGame(_ws, Some(room), None, add_word_input)),
-      _,
-      _error,
+      player_id:,
+      active_game: Some(ActiveGame(
+        room: Some(room),
+        round: None,
+        add_word_input:,
+        ..,
+      )),
+      ..,
     ) ->
       html.div([class("flex flex-col p-4 max-w-2xl mx-auto")], [
         html.div([], [
@@ -1118,7 +1047,7 @@ fn content(model: Model) {
         ]),
         ..display_full_word_list(room, add_word_input)
       ])
-    InRoom(_uri, _player_id, _room_code, player_name, None, _, error) ->
+    InRoom(player_name:, active_game: None, error:, ..) ->
       html.div([class("flex flex-col m-4 max-w-2xl mx-auto")], [
         html.form([event.on_submit(SetPlayerName), class("flex flex-col m-4")], [
           html.label([attribute.for("name-input")], [element.text("Name:")]),
@@ -1152,13 +1081,11 @@ fn content(model: Model) {
         ]),
       ])
     InRoom(
-      _uri,
-      _player_id,
-      room_code,
-      player_name,
-      Some(ActiveGame(_ws, None, _round, _)),
-      _,
-      error,
+      room_code:,
+      player_name:,
+      active_game: Some(ActiveGame(room: None, ..)),
+      error:,
+      ..,
     ) -> {
       html.div([class("flex flex-col m-4")], [
         html.div([], [
@@ -1175,21 +1102,13 @@ fn content(model: Model) {
         ]),
       ])
     }
-    NotInRoom(_, NotFound, _, _) | _ -> element.text("Page not found")
+    NotInRoom(route: NotFound, ..) | _ -> element.text("Page not found")
   }
 }
 
 fn footer(model: Model) {
   case model {
-    InRoom(
-      _uri,
-      _player_id,
-      _room_code,
-      _player_name,
-      Some(ActiveGame(_ws, Some(_room), None, _add_word_input)),
-      _,
-      _error,
-    ) ->
+    InRoom(active_game: Some(ActiveGame(room: Some(..), round: None, ..)), ..) ->
       html.button(
         [
           event.on_click(StartRound),
@@ -1200,13 +1119,12 @@ fn footer(model: Model) {
         [element.text("Start game 🚀")],
       )
     InRoom(
-      _uri,
-      _player_id,
-      _room_code,
-      _player_name,
-      Some(ActiveGame(_ws, Some(_room), Some(_round_state), _add_word_input)),
-      DisplayState(Scores, _),
-      _error,
+      active_game: Some(ActiveGame(room: Some(..), round: Some(..), ..)),
+      display_state: DisplayState(
+        view: Scores,
+        ..,
+      ),
+      ..,
     ) ->
       html.button(
         [
