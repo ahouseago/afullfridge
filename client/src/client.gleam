@@ -122,20 +122,8 @@ pub fn main() {
   Nil
 }
 
-fn new_uri() -> uri.Uri {
-  uri.Uri(
-    scheme: None,
-    userinfo: None,
-    host: None,
-    port: None,
-    path: "",
-    query: None,
-    fragment: None,
-  )
-}
-
 fn relative(path: String) -> uri.Uri {
-  uri.Uri(..new_uri(), path: path)
+  uri.Uri(..uri.empty, path: path)
 }
 
 fn init(_flags) -> #(Model, effect.Effect(Msg)) {
