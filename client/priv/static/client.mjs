@@ -5852,12 +5852,6 @@ var RemovePlayer = class extends CustomType {
     this.player_id = player_id;
   }
 };
-var UnknownResponse = class extends CustomType {
-  constructor(response_type) {
-    super();
-    this.response_type = response_type;
-  }
-};
 var InitialRoomState = class extends CustomType {
   constructor(room) {
     super();
@@ -5893,6 +5887,8 @@ var ServerError = class extends CustomType {
     super();
     this.reason = reason;
   }
+};
+var Kicked = class extends CustomType {
 };
 var Player = class extends CustomType {
   constructor(id2, name, connected) {
@@ -6339,11 +6335,13 @@ function websocket_response_decoder() {
             return success(new ServerError(reason));
           }
         );
+      } else if (variant === "kicked") {
+        return success(new Kicked());
       } else {
         let response_type = variant;
         return failure(
-          new UnknownResponse(response_type),
-          "WebsocketResponse"
+          new PlayersInRoom(toList([])),
+          "WebsocketResponse: " + response_type
         );
       }
     }
@@ -6648,10 +6646,10 @@ var Play = class extends CustomType {
 var NotFound2 = class extends CustomType {
 };
 var OnRouteChange = class extends CustomType {
-  constructor(x0, x1) {
+  constructor(uri, route) {
     super();
-    this[0] = x0;
-    this[1] = x1;
+    this.uri = uri;
+    this.route = route;
   }
 };
 var WebSocketEvent = class extends CustomType {
@@ -6734,19 +6732,8 @@ var ClearOrderedWords = class extends CustomType {
 };
 var SubmitOrderedWords2 = class extends CustomType {
 };
-function new_uri() {
-  return new Uri(
-    new None(),
-    new None(),
-    new None(),
-    new None(),
-    "",
-    new None(),
-    new None()
-  );
-}
 function relative2(path2) {
-  let _record = new_uri();
+  let _record = empty;
   return new Uri(
     _record.scheme,
     _record.userinfo,
@@ -6763,6 +6750,7 @@ function handle_ws_message(model, msg) {
   } else if (model instanceof InRoom && model.active_game instanceof None) {
     return [model, none()];
   } else {
+    let uri = model.uri;
     let active_game = model.active_game[0];
     let $ = decode2(msg, websocket_response_decoder());
     if ($.isOk() && $[0] instanceof InitialRoomState) {
@@ -6975,17 +6963,18 @@ function handle_ws_message(model, msg) {
         })(),
         none()
       ];
+    } else if ($.isOk() && $[0] instanceof Kicked) {
+      return [
+        new NotInRoom(uri, new Home(), "", new None()),
+        push("/", new None(), new None())
+      ];
     } else if ($.isOk() && $[0] instanceof ServerError) {
       let reason = $[0].reason;
-      echo(reason, "src/client.gleam", 718);
-      return [model, none()];
-    } else if ($.isOk() && $[0] instanceof UnknownResponse) {
-      let reason = $[0].response_type;
-      echo(reason, "src/client.gleam", 718);
+      echo(reason, "src/client.gleam", 638);
       return [model, none()];
     } else {
       let err = $[0];
-      echo(err, "src/client.gleam", 722);
+      echo(err, "src/client.gleam", 642);
       return [model, none()];
     }
   }
@@ -7578,7 +7567,7 @@ function content(model) {
     return text("Joining room " + room_code + "...");
   } else if (model instanceof NotInRoom && model.route instanceof Play && model.route.room_code instanceof None) {
     let room_code_input = model.room_code_input;
-    let err = model.join_room_err;
+    let join_room_err = model.join_room_err;
     return form(
       toList([
         on_submit(new JoinGame()),
@@ -7624,11 +7613,11 @@ function content(model) {
           ])
         ),
         (() => {
-          if (err instanceof Some) {
-            let err$1 = err[0];
+          if (join_room_err instanceof Some) {
+            let err = join_room_err[0];
             return div(
               toList([class$("ml-2 text-red-800")]),
-              toList([text(err$1)])
+              toList([text(err)])
             );
           } else {
             return none2();
@@ -7837,9 +7826,9 @@ function content(model) {
       display_full_word_list(room, add_word_input)
     );
   } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].room instanceof Some && model.display_state instanceof DisplayState && model.display_state.menu_open) {
-    let round_state = model.active_game[0].round;
+    let round3 = model.active_game[0].round;
     let view$1 = model.display_state.view;
-    return display_menu(view$1, is_some(round_state));
+    return display_menu(view$1, is_some(round3));
   } else if (model instanceof InRoom && model.active_game instanceof Some && model.active_game[0] instanceof ActiveGame && model.active_game[0].room instanceof Some && model.active_game[0].round instanceof None) {
     let player_id = model.player_id;
     let room = model.active_game[0].room[0];
@@ -8062,7 +8051,7 @@ function start_game(uri) {
   );
 }
 function join_game(uri, room_code) {
-  echo("joining room", "src/client.gleam", 737);
+  echo("joining room", "src/client.gleam", 657);
   return post(
     server(uri, "/joinroom"),
     encode_http_request(new JoinRoomRequest(room_code)),
@@ -8215,10 +8204,10 @@ function update(model, msg) {
       ),
       none()
     ];
-  } else if (model instanceof NotInRoom && msg instanceof OnRouteChange && msg[1] instanceof Play && msg[1].room_code instanceof Some) {
+  } else if (model instanceof NotInRoom && msg instanceof OnRouteChange && msg.route instanceof Play && msg.route.room_code instanceof Some) {
     let room_code_input = model.room_code_input;
-    let uri = msg[0];
-    let room_code = msg[1].room_code[0];
+    let uri = msg.uri;
+    let room_code = msg.route.room_code[0];
     return [
       new NotInRoom(
         uri,
@@ -8230,8 +8219,8 @@ function update(model, msg) {
     ];
   } else if (model instanceof NotInRoom && msg instanceof OnRouteChange) {
     let room_code_input = model.room_code_input;
-    let uri = msg[0];
-    let route = msg[1];
+    let uri = msg.uri;
+    let route = msg.route;
     return [
       new NotInRoom(uri, route, room_code_input, new None()),
       none()
@@ -8293,10 +8282,10 @@ function update(model, msg) {
       })(),
       none()
     ];
-  } else if (model instanceof InRoom && model.room_code instanceof RoomCode && msg instanceof OnRouteChange && msg[1] instanceof Play && msg[1].room_code instanceof Some && model.room_code[0] !== msg[1].room_code[0]) {
+  } else if (model instanceof InRoom && model.room_code instanceof RoomCode && msg instanceof OnRouteChange && msg.route instanceof Play && msg.route.room_code instanceof Some && model.room_code[0] !== msg.route.room_code[0]) {
     let uri = model.uri;
     let room_code = model.room_code[0];
-    let new_room_code = msg[1].room_code[0];
+    let new_room_code = msg.route.room_code[0];
     return [
       new NotInRoom(
         uri,
@@ -8306,11 +8295,11 @@ function update(model, msg) {
       ),
       join_game(uri, new RoomCode(room_code))
     ];
-  } else if (model instanceof InRoom && msg instanceof OnRouteChange && msg[1] instanceof Play && msg[1].room_code instanceof Some) {
+  } else if (model instanceof InRoom && msg instanceof OnRouteChange && msg.route instanceof Play && msg.route.room_code instanceof Some) {
     return [model, none()];
   } else if (model instanceof InRoom && msg instanceof OnRouteChange) {
-    let uri = msg[0];
-    let route = msg[1];
+    let uri = msg.uri;
+    let route = msg.route;
     return [new NotInRoom(uri, route, "", new None()), none()];
   } else if (model instanceof InRoom && msg instanceof UpdatePlayerName) {
     let player_name = msg[0];
@@ -8383,7 +8372,7 @@ function update(model, msg) {
       echo(
         "received incorrect response from validate name",
         "src/client.gleam",
-        358
+        356
       );
       return [
         (() => {
@@ -8419,8 +8408,8 @@ function update(model, msg) {
       ];
     } else {
       let error = response[0];
-      echo("failed to validate name", "src/client.gleam", 368);
-      echo(error, "src/client.gleam", 369);
+      echo("failed to validate name", "src/client.gleam", 366);
+      echo(error, "src/client.gleam", 367);
       return [model, none()];
     }
   } else if (model instanceof InRoom && msg instanceof WebSocketEvent) {
@@ -8429,7 +8418,7 @@ function update(model, msg) {
       throw makeError(
         "panic",
         "client",
-        376,
+        374,
         "update",
         "`panic` expression evaluated.",
         {}

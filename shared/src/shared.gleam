@@ -179,7 +179,6 @@ pub fn encode_websocket_request(
 }
 
 pub type WebsocketResponse {
-  UnknownResponse(response_type: String)
   // Sent after connecting to a room.
   InitialRoomState(room: Room)
   PlayersInRoom(players: List(Player))
@@ -187,6 +186,7 @@ pub type WebsocketResponse {
   RoundInfo(round: Round)
   RoundResult(finished_round: FinishedRound)
   ServerError(reason: String)
+  Kicked
 }
 
 pub fn websocket_response_decoder() -> decode.Decoder(WebsocketResponse) {
@@ -219,8 +219,9 @@ pub fn websocket_response_decoder() -> decode.Decoder(WebsocketResponse) {
       use reason <- decode.field("reason", decode.string)
       decode.success(ServerError(reason:))
     }
+    "kicked" -> decode.success(Kicked)
     response_type ->
-      decode.failure(UnknownResponse(response_type), "WebsocketResponse")
+      decode.failure(Kicked, "WebsocketResponse: " <> response_type)
   }
 }
 
@@ -228,11 +229,6 @@ pub fn encode_websocket_response(
   websocket_response: WebsocketResponse,
 ) -> json.Json {
   case websocket_response {
-    UnknownResponse(..) ->
-      json.object([
-        #("type", json.string("unknown_response")),
-        #("response_type", json.string(websocket_response.response_type)),
-      ])
     InitialRoomState(..) ->
       json.object([
         #("type", json.string("initial_room_state")),
@@ -266,6 +262,9 @@ pub fn encode_websocket_response(
         #("type", json.string("server_error")),
         #("reason", json.string(websocket_response.reason)),
       ])
+    Kicked -> json.object([
+      #("type", json.string("kicked")),
+    ])
   }
 }
 

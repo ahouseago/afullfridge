@@ -323,6 +323,16 @@ fn broadcast_message(
   send_fn(msg)
 }
 
+fn send_message(
+  connections: Dict(PlayerId, fn(shared.WebsocketResponse) -> Nil),
+  to player_id: PlayerId,
+  message msg: shared.WebsocketResponse,
+) {
+  let _ =
+    result.map(dict.get(connections, player_id), fn(send_fn) { send_fn(msg) })
+  Nil
+}
+
 fn handle_websocket_request(
   state: State,
   from: PlayerId,
@@ -465,13 +475,11 @@ fn submit_words(
 
   let #(round_state, round) = case lists_equal {
     False -> {
-      let _ =
-        dict.get(state.connections, player.id)
-        |> result.map(fn(send_fn) {
-          send_fn(shared.ServerError(
-            "submitted words don't match the word list",
-          ))
-        })
+      send_message(
+        state.connections,
+        player.id,
+        shared.ServerError("submitted words don't match the word list"),
+      )
       #(round_state, round)
     }
     True -> {
@@ -648,6 +656,7 @@ fn remove_player_from_room(state: State, player_id, requesting_player_id) {
           p.id != player_id
         }),
       )
+    send_message(state.connections, to: player_id, message: shared.Kicked)
     broadcast_message(
       state.connections,
       to: room.players,

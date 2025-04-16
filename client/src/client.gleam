@@ -546,7 +546,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
 fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) {
   case model {
     NotInRoom(..) | InRoom(active_game: None, ..) -> #(model, effect.none())
-    InRoom(active_game: Some(active_game), ..) ->
+    InRoom(uri:, active_game: Some(active_game), ..) ->
       case shared.decode(msg, shared.websocket_response_decoder()) {
         Ok(shared.InitialRoomState(room)) -> #(
           InRoom(
@@ -631,7 +631,10 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
             effect.none(),
           )
         }
-        Ok(shared.ServerError(reason)) | Ok(shared.UnknownResponse(reason)) -> {
+        Ok(shared.Kicked) -> {
+          #(NotInRoom(uri, Home, "", None), modem.push("/", None, None))
+        }
+        Ok(shared.ServerError(reason)) -> {
           echo reason
           #(model, effect.none())
         }
