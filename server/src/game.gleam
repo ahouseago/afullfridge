@@ -359,7 +359,7 @@ fn handle_websocket_request(
       |> option.unwrap(state)
     }
     RemovePlayer(player_id) -> {
-      result.unwrap(remove_player_from_room(state, player_id), state)
+      result.unwrap(remove_player_from_room(state, player_id, from), state)
     }
   }
 }
@@ -625,10 +625,16 @@ fn names_match(name_a: PlayerName, name_b: PlayerName) -> Bool {
   == shared.player_name_to_string(name_b) |> string.lowercase
 }
 
-fn remove_player_from_room(state: State, player_id) {
-  // TODO: validate that the requesting player is in the same room for this
-  // request to be valid
-  result.try(dict.get(state.players, player_id), fn(player) {
+fn remove_player_from_room(state: State, player_id, requesting_player_id) {
+  // Validate that the requesting player is in the same room
+  let requesting_player = dict.get(state.players, requesting_player_id)
+  let player = dict.get(state.players, player_id)
+  case player, requesting_player {
+    Ok(player), Ok(requester) if player.room_code == requester.room_code ->
+      Ok(player)
+    _, _ -> Error(Nil)
+  }
+  |> result.try(fn(player) {
     use room_state <- result.map(dict.get(state.rooms, player.room_code))
     let room =
       Room(
