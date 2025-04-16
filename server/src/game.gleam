@@ -129,15 +129,20 @@ fn update(msg: Msg, state: State) -> actor.Next(Msg, State) {
             ),
           )
         }
-        Ok(PlayerConnection(id, room_code, player_name)) -> {
+        Ok(PlayerConnection(id:, room_code:, ..)) -> {
           let connections = dict.insert(state.connections, id, send_fn)
           let rooms = case dict.get(state.rooms, room_code) {
             Ok(room_state) -> {
               let room =
-                Room(..room_state.room, players: [
-                  Player(id: id, name: player_name, connected: True),
-                  ..list.filter(room_state.room.players, fn(p) { p.id != id })
-                ])
+                Room(
+                  ..room_state.room,
+                  players: list.map(room_state.room.players, fn(player) {
+                    Player(
+                      ..player,
+                      connected: player.id == player.id || player.connected,
+                    )
+                  }),
+                )
               broadcast_message(
                 state.connections,
                 to: room.players,
@@ -640,7 +645,7 @@ fn remove_player_from_room(state: State, player_id, requesting_player_id) {
       Room(
         ..room_state.room,
         players: list.filter(room_state.room.players, fn(p) {
-          p.id == player_id
+          p.id != player_id
         }),
       )
     broadcast_message(
