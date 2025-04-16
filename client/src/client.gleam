@@ -100,7 +100,7 @@ pub type Msg {
   SubmitOrderedWords
 }
 
-const dev_mode = True
+const dev_mode = False
 
 fn server(uri: uri.Uri, path) -> String {
   let host = option.unwrap(uri.host, "localhost")

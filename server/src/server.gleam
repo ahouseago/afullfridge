@@ -182,6 +182,7 @@ pub fn main() {
       }
     }
     |> mist.new
+    |> mist.bind("0.0.0.0")
     |> mist.port(8080)
     |> mist.start_http
 

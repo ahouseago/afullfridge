@@ -8034,7 +8034,7 @@ function view(model) {
     ])
   );
 }
-var dev_mode = true;
+var dev_mode = false;
 function server(uri, path2) {
   let host = unwrap(uri.host, "localhost");
   let $ = dev_mode;

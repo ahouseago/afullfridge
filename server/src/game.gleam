@@ -74,7 +74,11 @@ pub type Msg {
   Disconnect(PlayerId)
   ProcessWebsocketRequest(from: PlayerId, message: shared.WebsocketRequest)
 
-  ValidateName(reply_with: Subject(Result(Nil, String)), PlayerId, PlayerName)
+  ValidateName(
+    reply_with: Subject(Result(Nil, String)),
+    player_id: PlayerId,
+    player_name: PlayerName,
+  )
   GetRoom(reply_with: Subject(Result(Room, Nil)), room_code: RoomCode)
   CreateRoom(reply_with: Subject(Result(#(RoomCode, PlayerId), Nil)))
   AddPlayerToRoom(
