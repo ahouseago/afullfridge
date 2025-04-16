@@ -1199,7 +1199,13 @@ fn display_players(
         html.div(
           [class("my-1 p-2 rounded flex justify-between" <> extra_class)],
           [
-            element.text(shared.player_name_to_string(player.name)),
+            html.span([], [
+              element.text(shared.player_name_to_string(player.name)),
+              case player.connected {
+                True -> element.none()
+                False -> element.text(" - disconnected")
+              },
+            ]),
             html.strong([], [element.text(score)]),
           ],
         )

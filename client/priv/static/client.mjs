@@ -6340,7 +6340,7 @@ function websocket_response_decoder() {
       } else {
         let response_type = variant;
         return failure(
-          new PlayersInRoom(toList([])),
+          new Kicked(),
           "WebsocketResponse: " + response_type
         );
       }
@@ -7284,7 +7284,20 @@ function display_players(players, leading_player_id, finished_rounds) {
               class$("my-1 p-2 rounded flex justify-between" + extra_class)
             ]),
             toList([
-              text(player_name_to_string(player.name)),
+              span(
+                toList([]),
+                toList([
+                  text(player_name_to_string(player.name)),
+                  (() => {
+                    let $ = player.connected;
+                    if ($) {
+                      return none2();
+                    } else {
+                      return text(" - disconnected");
+                    }
+                  })()
+                ])
+              ),
               strong(toList([]), toList([text(score)]))
             ])
           );
