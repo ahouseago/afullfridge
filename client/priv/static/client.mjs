@@ -5776,24 +5776,6 @@ function null_or(val) {
 }
 
 // build/dev/javascript/shared/shared.mjs
-var PlayerName = class extends CustomType {
-  constructor(x0) {
-    super();
-    this[0] = x0;
-  }
-};
-var PlayerId = class extends CustomType {
-  constructor(x0) {
-    super();
-    this[0] = x0;
-  }
-};
-var RoomCode = class extends CustomType {
-  constructor(x0) {
-    super();
-    this[0] = x0;
-  }
-};
 var CreateRoomRequest = class extends CustomType {
 };
 var JoinRoomRequest = class extends CustomType {
@@ -5890,6 +5872,12 @@ var ServerError = class extends CustomType {
 };
 var Kicked = class extends CustomType {
 };
+var Id = class extends CustomType {
+  constructor(x0) {
+    super();
+    this[0] = x0;
+  }
+};
 var Player = class extends CustomType {
   constructor(id2, name, connected) {
     super();
@@ -5939,19 +5927,55 @@ var Room = class extends CustomType {
     this.scoring_method = scoring_method;
   }
 };
-function player_name_to_string(player_name) {
-  let name = player_name[0];
-  return name;
+function id_to_string(id2) {
+  let id$1 = id2[0];
+  return id$1;
 }
-function player_id_to_string(player_id) {
-  let id2 = player_id[0];
-  return id2;
+function encode_id(id2) {
+  let _pipe = id2;
+  let _pipe$1 = id_to_string(_pipe);
+  return string4(_pipe$1);
 }
-function string_encoder(to_string4) {
-  return (str) => {
-    let _pipe = to_string4(str);
-    return string4(_pipe);
-  };
+function encode_http_request(http_request) {
+  if (http_request instanceof CreateRoomRequest) {
+    return object2(toList([["type", string4("create_room_request")]]));
+  } else if (http_request instanceof JoinRoomRequest) {
+    let room_code = http_request.room_code;
+    return object2(
+      toList([
+        ["type", string4("join_room_request")],
+        [
+          "room_code",
+          (() => {
+            let _pipe = room_code;
+            return encode_id(_pipe);
+          })()
+        ]
+      ])
+    );
+  } else {
+    let player_id = http_request.player_id;
+    let name = http_request.name;
+    return object2(
+      toList([
+        ["type", string4("validate_name_request")],
+        [
+          "player_id",
+          (() => {
+            let _pipe = player_id;
+            return encode_id(_pipe);
+          })()
+        ],
+        [
+          "name",
+          (() => {
+            let _pipe = name;
+            return string4(_pipe);
+          })()
+        ]
+      ])
+    );
+  }
 }
 function encode_websocket_request(websocket_request) {
   if (websocket_request instanceof AddWord) {
@@ -5990,57 +6014,15 @@ function encode_websocket_request(websocket_request) {
           "player_id",
           (() => {
             let _pipe = player_id;
-            return string_encoder(player_id_to_string)(_pipe);
+            return encode_id(_pipe);
           })()
         ]
       ])
     );
   }
 }
-function room_code_to_string(room_code) {
-  let code2 = room_code[0];
-  return code2;
-}
-function encode_http_request(http_request) {
-  if (http_request instanceof CreateRoomRequest) {
-    return object2(toList([["type", string4("create_room_request")]]));
-  } else if (http_request instanceof JoinRoomRequest) {
-    let room_code = http_request.room_code;
-    return object2(
-      toList([
-        ["type", string4("join_room_request")],
-        [
-          "room_code",
-          (() => {
-            let _pipe = room_code;
-            return string_encoder(room_code_to_string)(_pipe);
-          })()
-        ]
-      ])
-    );
-  } else {
-    let player_id = http_request.player_id;
-    let name = http_request.name;
-    return object2(
-      toList([
-        ["type", string4("validate_name_request")],
-        [
-          "player_id",
-          (() => {
-            let _pipe = player_id;
-            return string_encoder(player_id_to_string)(_pipe);
-          })()
-        ],
-        [
-          "name",
-          (() => {
-            let _pipe = name;
-            return string_encoder(player_name_to_string)(_pipe);
-          })()
-        ]
-      ])
-    );
-  }
+function id_from_string(id2) {
+  return new Id(id2);
 }
 function encode(a2, encoder) {
   let _pipe = encoder(a2);
@@ -6065,6 +6047,51 @@ function decode2(str, decoder) {
   let _pipe = parse2(str, decoder);
   return map_error(_pipe, json_decode_err_to_string);
 }
+function id_decoder() {
+  return then$3(
+    string3,
+    (str) => {
+      return success(new Id(str));
+    }
+  );
+}
+function http_response_decoder() {
+  return field2(
+    "type",
+    string3,
+    (variant) => {
+      if (variant === "room_response") {
+        return field2(
+          "room_code",
+          id_decoder(),
+          (room_code) => {
+            return field2(
+              "player_id",
+              id_decoder(),
+              (player_id) => {
+                return success(new RoomResponse(room_code, player_id));
+              }
+            );
+          }
+        );
+      } else if (variant === "validate_name_response") {
+        return field2(
+          "valid",
+          bool,
+          (valid) => {
+            return success(new ValidateNameResponse(valid));
+          }
+        );
+      } else {
+        let str = variant;
+        return failure(
+          new ValidateNameResponse(false),
+          "HttpResponse: unknown response: " + str
+        );
+      }
+    }
+  );
+}
 function player_decoder() {
   return field2(
     "id",
@@ -6078,8 +6105,29 @@ function player_decoder() {
             "connected",
             bool,
             (connected) => {
+              return success(new Player(new Id(id2), name, connected));
+            }
+          );
+        }
+      );
+    }
+  );
+}
+function round_decoder() {
+  return field2(
+    "words",
+    list2(string3),
+    (words) => {
+      return field2(
+        "leading_player_id",
+        id_decoder(),
+        (leading_player_id) => {
+          return field2(
+            "submitted",
+            list2(id_decoder()),
+            (submitted) => {
               return success(
-                new Player(new PlayerId(id2), new PlayerName(name), connected)
+                new Round(words, leading_player_id, submitted)
               );
             }
           );
@@ -6109,6 +6157,29 @@ function player_score_decoder() {
     }
   );
 }
+function finished_round_decoder() {
+  return field2(
+    "words",
+    list2(string3),
+    (words) => {
+      return field2(
+        "leading_player_id",
+        id_decoder(),
+        (leading_player_id) => {
+          return field2(
+            "player_scores",
+            list2(player_score_decoder()),
+            (player_scores) => {
+              return success(
+                new FinishedRound(words, leading_player_id, player_scores)
+              );
+            }
+          );
+        }
+      );
+    }
+  );
+}
 function scoring_method_decoder() {
   return then$3(
     string3,
@@ -6129,115 +6200,10 @@ function scoring_method_decoder() {
     }
   );
 }
-function string_decoder(constructor) {
-  return then$3(
-    string3,
-    (str) => {
-      return success(constructor(str));
-    }
-  );
-}
-function http_response_decoder() {
-  return field2(
-    "type",
-    string3,
-    (variant) => {
-      if (variant === "room_response") {
-        return field2(
-          "room_code",
-          string_decoder((var0) => {
-            return new RoomCode(var0);
-          }),
-          (room_code) => {
-            return field2(
-              "player_id",
-              string_decoder((var0) => {
-                return new PlayerId(var0);
-              }),
-              (player_id) => {
-                return success(new RoomResponse(room_code, player_id));
-              }
-            );
-          }
-        );
-      } else if (variant === "validate_name_response") {
-        return field2(
-          "valid",
-          bool,
-          (valid) => {
-            return success(new ValidateNameResponse(valid));
-          }
-        );
-      } else {
-        let str = variant;
-        return failure(
-          new ValidateNameResponse(false),
-          "HttpResponse: unknown response: " + str
-        );
-      }
-    }
-  );
-}
-function round_decoder() {
-  return field2(
-    "words",
-    list2(string3),
-    (words) => {
-      return field2(
-        "leading_player_id",
-        string_decoder((var0) => {
-          return new PlayerId(var0);
-        }),
-        (leading_player_id) => {
-          return field2(
-            "submitted",
-            list2(
-              string_decoder((var0) => {
-                return new PlayerId(var0);
-              })
-            ),
-            (submitted) => {
-              return success(
-                new Round(words, leading_player_id, submitted)
-              );
-            }
-          );
-        }
-      );
-    }
-  );
-}
-function finished_round_decoder() {
-  return field2(
-    "words",
-    list2(string3),
-    (words) => {
-      return field2(
-        "leading_player_id",
-        string_decoder((var0) => {
-          return new PlayerId(var0);
-        }),
-        (leading_player_id) => {
-          return field2(
-            "player_scores",
-            list2(player_score_decoder()),
-            (player_scores) => {
-              return success(
-                new FinishedRound(words, leading_player_id, player_scores)
-              );
-            }
-          );
-        }
-      );
-    }
-  );
-}
 function room_decoder() {
   return field2(
     "room_code",
-    string_decoder((var0) => {
-      return new RoomCode(var0);
-    }),
+    id_decoder(),
     (room_code) => {
       return field2(
         "players",
@@ -6970,11 +6936,11 @@ function handle_ws_message(model, msg) {
       ];
     } else if ($.isOk() && $[0] instanceof ServerError) {
       let reason = $[0].reason;
-      echo(reason, "src/client.gleam", 638);
+      echo(reason, "src/client.gleam", 643);
       return [model, none()];
     } else {
       let err = $[0];
-      echo(err, "src/client.gleam", 642);
+      echo(err, "src/client.gleam", 647);
       return [model, none()];
     }
   }
@@ -7091,7 +7057,7 @@ function header(model) {
                   "mx-1 px-1 text-gray-100 border-dashed border-2 rounded-sm border-transparent hover:border-slate-500 hover:bg-green-200 hover:text-gray-800 cursor-pointer"
                 )
               ]),
-              toList([text(room_code_to_string(room_code))])
+              toList([text(id_to_string(room_code))])
             )
           ])
         ),
@@ -7124,7 +7090,7 @@ function header(model) {
                   "mx-1 px-1 text-gray-100 border-dashed border-2 rounded-sm border-transparent hover:border-slate-500 hover:bg-green-200 hover:text-gray-800 cursor-pointer"
                 )
               ]),
-              toList([text(room_code_to_string(room_code))])
+              toList([text(id_to_string(room_code))])
             )
           ])
         ),
@@ -7193,7 +7159,7 @@ function choosing_player_heading(players, self_player_id, leading_player_id) {
     (player) => {
       let $ = isEqual(player.id, self_player_id);
       if (!$) {
-        return "You are guessing " + player_name_to_string(player.name) + "'s order of preference";
+        return "You are guessing " + player.name + "'s order of preference";
       } else {
         return "It's your turn! Select the things below in your preference order";
       }
@@ -7287,7 +7253,7 @@ function display_players(players, leading_player_id, finished_rounds) {
               span(
                 toList([]),
                 toList([
-                  text(player_name_to_string(player.name)),
+                  text(player.name),
                   (() => {
                     let $ = player.connected;
                     if ($) {
@@ -7311,11 +7277,9 @@ function display_finished_round(player_id) {
     let player_text = (player, score) => {
       let $ = isEqual(player.id, finished_round.leading_player_id);
       if ($) {
-        return player_name_to_string(player.name) + "'s ranking";
+        return player.name + "'s ranking";
       } else {
-        return player_name_to_string(player.name) + "'s guess - " + to_string(
-          score
-        ) + " points";
+        return player.name + "'s guess - " + to_string(score) + " points";
       }
     };
     return div(
@@ -7762,15 +7726,7 @@ function content(model) {
                             return new Ok(
                               li(
                                 toList([]),
-                                toList([
-                                  (() => {
-                                    let _pipe = player.name;
-                                    let _pipe$1 = player_name_to_string(
-                                      _pipe
-                                    );
-                                    return text(_pipe$1);
-                                  })()
-                                ])
+                                toList([text(player.name)])
                               )
                             );
                           } else {
@@ -7875,18 +7831,18 @@ function content(model) {
                       let _pipe$1 = (() => {
                         let $ = player.name;
                         let $1 = player.id;
-                        if ($ instanceof PlayerName && $[0] === "" && isEqual($1, player_id)) {
+                        if ($ === "" && isEqual($1, player_id)) {
                           let id2 = $1;
-                          return player_id_to_string(id2) + " (you)";
-                        } else if ($ instanceof PlayerName && isEqual($1, player_id)) {
-                          let name = $[0];
+                          return id_to_string(id2) + " (you)";
+                        } else if (isEqual($1, player_id)) {
+                          let name = $;
                           let id2 = $1;
                           return name + " (you)";
-                        } else if ($ instanceof PlayerName && $[0] === "") {
+                        } else if ($ === "") {
                           let id2 = $1;
-                          return player_id_to_string(id2);
+                          return id_to_string(id2);
                         } else {
-                          let name = $[0];
+                          let name = $;
                           return name;
                         }
                       })();
@@ -7946,7 +7902,7 @@ function content(model) {
                     return new UpdatePlayerName(var0);
                   }
                 ),
-                value(player_name_to_string(player_name)),
+                value(player_name),
                 type_("text"),
                 class$(
                   "my-2 p-2 border-2 rounded placeholder:text-slate-300 placeholder:opacity-50"
@@ -7956,9 +7912,7 @@ function content(model) {
             button(
               toList([
                 type_("submit"),
-                disabled(
-                  trim(player_name_to_string(player_name)) === ""
-                ),
+                disabled(trim(player_name) === ""),
                 class$(
                   "p-2 text-lime-900 bg-emerald-100 hover:bg-emerald-200 rounded disabled:bg-emerald-100 disabled:text-lime-700 disabled:opacity-50"
                 )
@@ -7990,19 +7944,14 @@ function content(model) {
         div(
           toList([]),
           toList([
-            h2(
-              toList([]),
-              toList([text(player_name_to_string(player_name))])
-            ),
+            h2(toList([]), toList([text(player_name)])),
             (() => {
               if (error instanceof Some) {
                 let error$1 = error[0];
                 return text(error$1);
               } else {
                 return text(
-                  "Connecting to room " + room_code_to_string(
-                    room_code
-                  ) + "..."
+                  "Connecting to room " + id_to_string(room_code) + "..."
                 );
               }
             })()
@@ -8064,7 +8013,7 @@ function start_game(uri) {
   );
 }
 function join_game(uri, room_code) {
-  echo("joining room", "src/client.gleam", 657);
+  echo("joining room", "src/client.gleam", 662);
   return post(
     server(uri, "/joinroom"),
     encode_http_request(new JoinRoomRequest(room_code)),
@@ -8133,9 +8082,9 @@ function init4(_) {
       return [
         new InRoom(
           uri$1,
-          new PlayerId(id2),
-          new RoomCode(room_code),
-          new PlayerName(name),
+          id_from_string(id2),
+          id_from_string(room_code),
+          name,
           new None(),
           new DisplayState(new Round2(), false),
           new None()
@@ -8152,7 +8101,7 @@ function init4(_) {
         ),
         batch(
           toList([
-            join_game(uri$1, new RoomCode(room_code)),
+            join_game(uri$1, id_from_string(room_code)),
             init3(on_url_change)
           ])
         )
@@ -8190,7 +8139,7 @@ function update(model, msg) {
         uri,
         player_id,
         room_code,
-        new PlayerName(""),
+        "",
         new None(),
         new DisplayState(new Round2(), false),
         new None()
@@ -8198,9 +8147,7 @@ function update(model, msg) {
       push(
         "/play",
         new Some(
-          query_to_string(
-            toList([["game", room_code_to_string(room_code)]])
-          )
+          query_to_string(toList([["game", id_to_string(room_code)]]))
         ),
         new None()
       )
@@ -8228,7 +8175,7 @@ function update(model, msg) {
         room_code_input,
         new None()
       ),
-      join_game(uri, new RoomCode(room_code))
+      join_game(uri, id_from_string(room_code))
     ];
   } else if (model instanceof NotInRoom && msg instanceof OnRouteChange) {
     let room_code_input = model.room_code_input;
@@ -8249,14 +8196,14 @@ function update(model, msg) {
   } else if (model instanceof NotInRoom && msg instanceof JoinGame) {
     let uri = model.uri;
     let room_code_input = model.room_code_input;
-    return [model, join_game(uri, new RoomCode(room_code_input))];
+    return [model, join_game(uri, id_from_string(room_code_input))];
   } else if (model instanceof NotInRoom && msg instanceof UpdatePlayerName) {
     return [model, none()];
   } else if (model instanceof NotInRoom) {
     return [model, none()];
   } else if (model instanceof InRoom && msg instanceof CopyRoomCode) {
     let room_code = model.room_code;
-    let $ = writeText(room_code_to_string(room_code));
+    let $ = writeText(id_to_string(room_code));
     return [model, none()];
   } else if (model instanceof InRoom && msg instanceof ShowMenu) {
     let val = msg[0];
@@ -8295,21 +8242,24 @@ function update(model, msg) {
       })(),
       none()
     ];
-  } else if (model instanceof InRoom && model.room_code instanceof RoomCode && msg instanceof OnRouteChange && msg.route instanceof Play && msg.route.room_code instanceof Some && model.room_code[0] !== msg.route.room_code[0]) {
-    let uri = model.uri;
-    let room_code = model.room_code[0];
-    let new_room_code = msg.route.room_code[0];
-    return [
-      new NotInRoom(
-        uri,
-        new Play(new Some(new_room_code)),
-        new_room_code,
-        new None()
-      ),
-      join_game(uri, new RoomCode(room_code))
-    ];
   } else if (model instanceof InRoom && msg instanceof OnRouteChange && msg.route instanceof Play && msg.route.room_code instanceof Some) {
-    return [model, none()];
+    let uri = model.uri;
+    let room_code = model.room_code;
+    let new_room_code = msg.route.room_code[0];
+    let $ = isEqual(room_code, id_from_string(new_room_code));
+    if ($) {
+      return [model, none()];
+    } else {
+      return [
+        new NotInRoom(
+          uri,
+          new Play(new Some(new_room_code)),
+          new_room_code,
+          new None()
+        ),
+        join_game(uri, room_code)
+      ];
+    }
   } else if (model instanceof InRoom && msg instanceof OnRouteChange) {
     let uri = msg.uri;
     let route = msg.route;
@@ -8323,7 +8273,7 @@ function update(model, msg) {
           _record.uri,
           _record.player_id,
           _record.room_code,
-          new PlayerName(player_name),
+          player_name,
           _record.active_game,
           _record.display_state,
           _record.error
@@ -8350,11 +8300,11 @@ function update(model, msg) {
         )
       )
     ];
-  } else if (model instanceof InRoom && model.player_id instanceof PlayerId && model.room_code instanceof RoomCode && model.player_name instanceof PlayerName && model.active_game instanceof None && msg instanceof NameIsValid) {
+  } else if (model instanceof InRoom && model.active_game instanceof None && msg instanceof NameIsValid) {
     let uri = model.uri;
-    let player_id = model.player_id[0];
-    let room_code = model.room_code[0];
-    let player_name = model.player_name[0];
+    let player_id = model.player_id;
+    let room_code = model.room_code;
+    let player_name = model.player_name;
     let response = msg[0];
     if (response.isOk() && response[0] instanceof ValidateNameResponse && response[0].valid) {
       let $ = (() => {
@@ -8364,9 +8314,17 @@ function update(model, msg) {
           (session_storage) => {
             return all(
               toList([
-                setItem(session_storage, "connection_id", player_id),
+                setItem(
+                  session_storage,
+                  "connection_id",
+                  id_to_string(player_id)
+                ),
                 setItem(session_storage, "player_name", player_name),
-                setItem(session_storage, "room_code", room_code)
+                setItem(
+                  session_storage,
+                  "room_code",
+                  id_to_string(room_code)
+                )
               ])
             );
           }
@@ -8375,7 +8333,7 @@ function update(model, msg) {
       return [
         model,
         init2(
-          server(uri, "/ws/" + player_id + "/" + player_name),
+          server(uri, "/ws/" + id_to_string(player_id) + "/" + player_name),
           (var0) => {
             return new WebSocketEvent(var0);
           }
@@ -8385,7 +8343,7 @@ function update(model, msg) {
       echo(
         "received incorrect response from validate name",
         "src/client.gleam",
-        356
+        361
       );
       return [
         (() => {
@@ -8421,8 +8379,8 @@ function update(model, msg) {
       ];
     } else {
       let error = response[0];
-      echo("failed to validate name", "src/client.gleam", 366);
-      echo(error, "src/client.gleam", 367);
+      echo("failed to validate name", "src/client.gleam", 371);
+      echo(error, "src/client.gleam", 372);
       return [model, none()];
     }
   } else if (model instanceof InRoom && msg instanceof WebSocketEvent) {
@@ -8431,7 +8389,7 @@ function update(model, msg) {
       throw makeError(
         "panic",
         "client",
-        374,
+        379,
         "update",
         "`panic` expression evaluated.",
         {}
@@ -8723,7 +8681,7 @@ function main() {
     throw makeError(
       "let_assert",
       "client",
-      120,
+      118,
       "main",
       "Pattern match failed, no pattern matched the value.",
       { value: $ }

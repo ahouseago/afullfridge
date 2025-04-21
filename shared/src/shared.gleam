@@ -3,22 +3,10 @@ import gleam/json
 import gleam/option.{type Option}
 import gleam/result
 
-pub type PlayerName {
-  PlayerName(String)
-}
-
-pub type PlayerId {
-  PlayerId(String)
-}
-
-pub type RoomCode {
-  RoomCode(String)
-}
-
 pub type HttpRequest {
   CreateRoomRequest
-  JoinRoomRequest(room_code: RoomCode)
-  ValidateNameRequest(player_id: PlayerId, name: PlayerName)
+  JoinRoomRequest(room_code: Id(Room))
+  ValidateNameRequest(player_id: Id(Player), name: String)
 }
 
 pub fn http_request_decoder() -> decode.Decoder(HttpRequest) {
@@ -26,12 +14,12 @@ pub fn http_request_decoder() -> decode.Decoder(HttpRequest) {
   case variant {
     "create_room_request" -> decode.success(CreateRoomRequest)
     "join_room_request" -> {
-      use room_code <- decode.field("room_code", string_decoder(RoomCode))
+      use room_code <- decode.field("room_code", id_decoder())
       decode.success(JoinRoomRequest(room_code:))
     }
     "validate_name_request" -> {
-      use player_id <- decode.field("player_id", string_decoder(PlayerId))
-      use name <- decode.field("name", string_decoder(PlayerName))
+      use player_id <- decode.field("player_id", id_decoder())
+      use name <- decode.field("name", decode.string)
       decode.success(ValidateNameRequest(player_id:, name:))
     }
     request_type ->
@@ -49,20 +37,20 @@ pub fn encode_http_request(http_request: HttpRequest) -> json.Json {
     JoinRoomRequest(room_code) ->
       json.object([
         #("type", json.string("join_room_request")),
-        #("room_code", room_code |> string_encoder(room_code_to_string)),
+        #("room_code", room_code |> encode_id),
       ])
     ValidateNameRequest(player_id, name) ->
       json.object([
         #("type", json.string("validate_name_request")),
-        #("player_id", player_id |> string_encoder(player_id_to_string)),
-        #("name", name |> string_encoder(player_name_to_string)),
+        #("player_id", player_id |> encode_id),
+        #("name", name |> json.string),
       ])
   }
 }
 
 pub type HttpResponse {
   // Returned from successfully creating/joining a room.
-  RoomResponse(room_code: RoomCode, player_id: PlayerId)
+  RoomResponse(room_code: Id(Room), player_id: Id(Player))
   ValidateNameResponse(valid: Bool)
 }
 
@@ -70,8 +58,8 @@ pub fn http_response_decoder() -> decode.Decoder(HttpResponse) {
   use variant <- decode.field("type", decode.string)
   case variant {
     "room_response" -> {
-      use room_code <- decode.field("room_code", string_decoder(RoomCode))
-      use player_id <- decode.field("player_id", string_decoder(PlayerId))
+      use room_code <- decode.field("room_code", id_decoder())
+      use player_id <- decode.field("player_id", id_decoder())
       decode.success(RoomResponse(room_code:, player_id:))
     }
     "validate_name_response" -> {
@@ -91,14 +79,8 @@ pub fn encode_http_response(http_response: HttpResponse) -> json.Json {
     RoomResponse(..) ->
       json.object([
         #("type", json.string("room_response")),
-        #(
-          "room_code",
-          http_response.room_code |> string_encoder(room_code_to_string),
-        ),
-        #(
-          "player_id",
-          http_response.player_id |> string_encoder(player_id_to_string),
-        ),
+        #("room_code", http_response.room_code |> encode_id),
+        #("player_id", http_response.player_id |> encode_id),
       ])
     ValidateNameResponse(..) ->
       json.object([
@@ -115,7 +97,7 @@ pub type WebsocketRequest {
   ListWords
   StartRound
   SubmitOrderedWords(words: List(String))
-  RemovePlayer(player_id: PlayerId)
+  RemovePlayer(player_id: Id(Player))
 }
 
 pub fn websocket_request_decoder() -> decode.Decoder(WebsocketRequest) {
@@ -137,7 +119,7 @@ pub fn websocket_request_decoder() -> decode.Decoder(WebsocketRequest) {
       decode.success(SubmitOrderedWords(words:))
     }
     "remove_player" -> {
-      use player_id <- decode.field("player_id", string_decoder(PlayerId))
+      use player_id <- decode.field("player_id", id_decoder())
       decode.success(RemovePlayer(player_id:))
     }
     request_type ->
@@ -173,7 +155,7 @@ pub fn encode_websocket_request(
     RemovePlayer(player_id) ->
       json.object([
         #("type", json.string("remove_player")),
-        #("player_id", player_id |> string_encoder(player_id_to_string)),
+        #("player_id", player_id |> encode_id),
       ])
   }
 }
@@ -262,33 +244,52 @@ pub fn encode_websocket_response(
         #("type", json.string("server_error")),
         #("reason", json.string(websocket_response.reason)),
       ])
-    Kicked -> json.object([
-      #("type", json.string("kicked")),
-    ])
+    Kicked -> json.object([#("type", json.string("kicked"))])
   }
 }
 
+pub opaque type Id(a) {
+  Id(String)
+}
+
+pub fn id_to_string(id: Id(a)) -> String {
+  let Id(id) = id
+  id
+}
+
+fn encode_id(id: Id(a)) -> json.Json {
+  id |> id_to_string |> json.string
+}
+
+fn id_decoder() -> decode.Decoder(Id(a)) {
+  decode.then(decode.string, fn(str) { decode.success(Id(str)) })
+}
+
+pub fn id_from_string(id: String) -> Id(a) {
+  Id(id)
+}
+
 pub type Player {
-  Player(id: PlayerId, name: PlayerName, connected: Bool)
+  Player(id: Id(Player), name: String, connected: Bool)
 }
 
 fn player_decoder() -> decode.Decoder(Player) {
   use id <- decode.field("id", decode.string)
   use name <- decode.field("name", decode.string)
   use connected <- decode.field("connected", decode.bool)
-  decode.success(Player(id: PlayerId(id), name: PlayerName(name), connected:))
+  decode.success(Player(id: Id(id), name:, connected:))
 }
 
 fn encode_player(player: Player) -> json.Json {
   json.object([
-    #("id", player.id |> string_encoder(player_id_to_string)),
-    #("name", player.name |> string_encoder(player_name_to_string)),
+    #("id", player.id |> encode_id),
+    #("name", player.name |> json.string),
     #("connected", json.bool(player.connected)),
   ])
 }
 
 pub type PlayerWithOrderedPreferences =
-  #(PlayerId, List(String))
+  #(Id(Player), List(String))
 
 /// Round represents a round of the game within a room, where one player is
 /// selecting their order of preferences out of some given list of words, and the
@@ -297,53 +298,38 @@ pub type Round {
   Round(
     words: List(String),
     // The player who everyone is trying to guess the preference order of.
-    leading_player_id: PlayerId,
+    leading_player_id: Id(Player),
     // The other players who have submitted.
-    submitted: List(PlayerId),
+    submitted: List(Id(Player)),
   )
 }
 
 fn round_decoder() -> decode.Decoder(Round) {
   use words <- decode.field("words", decode.list(decode.string))
-  use leading_player_id <- decode.field(
-    "leading_player_id",
-    string_decoder(PlayerId),
-  )
-  use submitted <- decode.field(
-    "submitted",
-    decode.list(string_decoder(PlayerId)),
-  )
+  use leading_player_id <- decode.field("leading_player_id", id_decoder())
+  use submitted <- decode.field("submitted", decode.list(id_decoder()))
   decode.success(Round(words:, leading_player_id:, submitted:))
 }
 
 fn encode_round(round: Round) -> json.Json {
   json.object([
     #("words", json.array(round.words, json.string)),
-    #(
-      "leading_player_id",
-      round.leading_player_id |> string_encoder(player_id_to_string),
-    ),
-    #(
-      "submitted",
-      json.array(round.submitted, string_encoder(player_id_to_string)),
-    ),
+    #("leading_player_id", round.leading_player_id |> encode_id),
+    #("submitted", json.array(round.submitted, encode_id)),
   ])
 }
 
 pub type FinishedRound {
   FinishedRound(
     words: List(String),
-    leading_player_id: PlayerId,
+    leading_player_id: Id(Player),
     player_scores: List(PlayerScore),
   )
 }
 
 fn finished_round_decoder() -> decode.Decoder(FinishedRound) {
   use words <- decode.field("words", decode.list(decode.string))
-  use leading_player_id <- decode.field(
-    "leading_player_id",
-    string_decoder(PlayerId),
-  )
+  use leading_player_id <- decode.field("leading_player_id", id_decoder())
   use player_scores <- decode.field(
     "player_scores",
     decode.list(player_score_decoder()),
@@ -354,10 +340,7 @@ fn finished_round_decoder() -> decode.Decoder(FinishedRound) {
 fn encode_finished_round(finished_round: FinishedRound) -> json.Json {
   json.object([
     #("words", json.array(finished_round.words, json.string)),
-    #(
-      "leading_player_id",
-      finished_round.leading_player_id |> string_encoder(player_id_to_string),
-    ),
+    #("leading_player_id", finished_round.leading_player_id |> encode_id),
     #(
       "player_scores",
       json.array(finished_round.player_scores, encode_player_score),
@@ -415,7 +398,7 @@ fn encode_scoring_method(scoring_method: ScoringMethod) -> json.Json {
 
 pub type Room {
   Room(
-    room_code: RoomCode,
+    room_code: Id(Room),
     players: List(Player),
     // All of the words that can be chosen from to create a round.
     word_list: List(String),
@@ -426,7 +409,7 @@ pub type Room {
 }
 
 fn room_decoder() -> decode.Decoder(Room) {
-  use room_code <- decode.field("room_code", string_decoder(RoomCode))
+  use room_code <- decode.field("room_code", id_decoder())
   use players <- decode.field("players", decode.list(player_decoder()))
   use word_list <- decode.field("word_list", decode.list(decode.string))
   use round <- decode.field("round", decode.optional(round_decoder()))
@@ -447,7 +430,7 @@ fn room_decoder() -> decode.Decoder(Room) {
 
 fn encode_room(room: Room) -> json.Json {
   json.object([
-    #("room_code", room.room_code |> string_encoder(room_code_to_string)),
+    #("room_code", room.room_code |> encode_id),
     #("players", json.array(room.players, encode_player)),
     #("word_list", json.array(room.word_list, json.string)),
     #("round", case room.round {
@@ -460,29 +443,6 @@ fn encode_room(room: Room) -> json.Json {
     ),
     #("scoring_method", encode_scoring_method(room.scoring_method)),
   ])
-}
-
-fn string_decoder(constructor: fn(String) -> a) -> decode.Decoder(a) {
-  decode.then(decode.string, fn(str) { decode.success(constructor(str)) })
-}
-
-pub fn player_name_to_string(player_name: PlayerName) -> String {
-  let PlayerName(name) = player_name
-  name
-}
-
-pub fn player_id_to_string(player_id: PlayerId) -> String {
-  let PlayerId(id) = player_id
-  id
-}
-
-fn string_encoder(to_string: fn(a) -> String) -> fn(a) -> json.Json {
-  fn(str) { to_string(str) |> json.string }
-}
-
-pub fn room_code_to_string(room_code: RoomCode) -> String {
-  let RoomCode(code) = room_code
-  code
 }
 
 pub fn decode(str: String, with decoder: decode.Decoder(a)) -> Result(a, String) {

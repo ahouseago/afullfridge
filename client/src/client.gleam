@@ -18,9 +18,7 @@ import lustre_websocket as ws
 import modem
 import plinth/browser/clipboard
 import plinth/javascript/storage
-import shared.{
-  type PlayerId, type PlayerName, type RoomCode, PlayerId, PlayerName, RoomCode,
-}
+import shared.{type Id, type Player, type Room, id_from_string, id_to_string}
 
 pub type Model {
   NotInRoom(
@@ -31,9 +29,9 @@ pub type Model {
   )
   InRoom(
     uri: uri.Uri,
-    player_id: PlayerId,
-    room_code: RoomCode,
-    player_name: PlayerName,
+    player_id: Id(Player),
+    room_code: Id(Room),
+    player_name: String,
     active_game: Option(ActiveGame),
     display_state: DisplayState,
     error: Option(String),
@@ -165,9 +163,9 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
         Ok(#(id, name, msg)) -> #(
           InRoom(
             uri,
-            PlayerId(id),
-            RoomCode(room_code),
-            PlayerName(name),
+            id_from_string(id),
+            id_from_string(room_code),
+            name,
             None,
             DisplayState(Round, False),
             None,
@@ -182,7 +180,7 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
             Some("Sorry, please try joining again."),
           ),
           effect.batch([
-            join_game(uri, RoomCode(room_code)),
+            join_game(uri, id_from_string(room_code)),
             modem.init(on_url_change),
           ]),
         )
@@ -213,18 +211,14 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
           uri:,
           player_id:,
           room_code:,
-          player_name: PlayerName(""),
+          player_name: "",
           active_game: None,
           display_state: DisplayState(Round, False),
           error: None,
         ),
         modem.push(
           "/play",
-          Some(
-            uri.query_to_string([
-              #("game", shared.room_code_to_string(room_code)),
-            ]),
-          ),
+          Some(uri.query_to_string([#("game", id_to_string(room_code))])),
           None,
         ),
       )
@@ -248,7 +242,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
     }
     NotInRoom(room_code_input:, ..), OnRouteChange(uri, Play(Some(room_code))) -> #(
       NotInRoom(uri, Play(Some(room_code)), room_code_input, None),
-      join_game(uri, RoomCode(room_code)),
+      join_game(uri, id_from_string(room_code)),
     )
     NotInRoom(room_code_input:, ..), OnRouteChange(uri, route) -> #(
       NotInRoom(uri, route, room_code_input, None),
@@ -260,12 +254,12 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
     )
     NotInRoom(uri:, room_code_input:, ..), JoinGame -> #(
       model,
-      join_game(uri, RoomCode(room_code_input)),
+      join_game(uri, id_from_string(room_code_input)),
     )
     NotInRoom(..), UpdatePlayerName(_) -> #(model, effect.none())
     NotInRoom(..), _ -> #(model, effect.none())
     InRoom(room_code:, ..), CopyRoomCode -> {
-      let _ = clipboard.write_text(shared.room_code_to_string(room_code))
+      let _ = clipboard.write_text(id_to_string(room_code))
       #(model, effect.none())
     }
     InRoom(..), ShowMenu(val) -> {
@@ -285,28 +279,28 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
     }
     InRoom(
       uri:,
-      room_code: RoomCode(room_code),
+      room_code:,
       ..,
     ),
       OnRouteChange(
         route: Play(Some(new_room_code)),
         ..,
       )
-      if room_code != new_room_code
-    -> #(
-      NotInRoom(uri, Play(Some(new_room_code)), new_room_code, None),
-      join_game(uri, RoomCode(room_code)),
-    )
-    InRoom(..), OnRouteChange(route: Play(Some(..)), ..) -> #(
-      model,
-      effect.none(),
-    )
+    -> {
+      case room_code == id_from_string(new_room_code) {
+        True -> #(model, effect.none())
+        False -> #(
+          NotInRoom(uri, Play(Some(new_room_code)), new_room_code, None),
+          join_game(uri, room_code),
+        )
+      }
+    }
     InRoom(..), OnRouteChange(uri, route) -> #(
       NotInRoom(uri, route, "", None),
       effect.none(),
     )
     InRoom(..), UpdatePlayerName(player_name) -> #(
-      InRoom(..model, player_name: PlayerName(player_name)),
+      InRoom(..model, player_name: player_name),
       effect.none(),
     )
     InRoom(uri:, player_id:, player_name:, active_game: None, ..), SetPlayerName
@@ -325,9 +319,9 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
     }
     InRoom(
       uri:,
-      player_id: PlayerId(player_id),
-      room_code: RoomCode(room_code),
-      player_name: PlayerName(player_name),
+      player_id:,
+      room_code:,
+      player_name:,
       active_game: None,
       ..,
     ),
@@ -339,15 +333,26 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
             storage.session()
             |> result.try(fn(session_storage) {
               result.all([
-                storage.set_item(session_storage, "connection_id", player_id),
+                storage.set_item(
+                  session_storage,
+                  "connection_id",
+                  id_to_string(player_id),
+                ),
                 storage.set_item(session_storage, "player_name", player_name),
-                storage.set_item(session_storage, "room_code", room_code),
+                storage.set_item(
+                  session_storage,
+                  "room_code",
+                  id_to_string(room_code),
+                ),
               ])
             })
           #(
             model,
             ws.init(
-              server(uri, "/ws/" <> player_id <> "/" <> player_name),
+              server(
+                uri,
+                "/ws/" <> id_to_string(player_id) <> "/" <> player_name,
+              ),
               WebSocketEvent,
             ),
           )
@@ -653,7 +658,7 @@ fn start_game(uri: uri.Uri) {
   )
 }
 
-fn join_game(uri: uri.Uri, room_code: RoomCode) {
+fn join_game(uri: uri.Uri, room_code: Id(Room)) {
   echo "joining room"
   lustre_http.post(
     server(uri, "/joinroom"),
@@ -743,7 +748,7 @@ fn header(model: Model) {
                 "mx-1 px-1 text-gray-100 border-dashed border-2 rounded-sm border-transparent hover:border-slate-500 hover:bg-green-200 hover:text-gray-800 cursor-pointer",
               ),
             ],
-            [element.text(shared.room_code_to_string(room_code))],
+            [element.text(id_to_string(room_code))],
           ),
         ]),
         html.button(
@@ -763,7 +768,7 @@ fn header(model: Model) {
                 "mx-1 px-1 text-gray-100 border-dashed border-2 rounded-sm border-transparent hover:border-slate-500 hover:bg-green-200 hover:text-gray-800 cursor-pointer",
               ),
             ],
-            [element.text(shared.room_code_to_string(room_code))],
+            [element.text(id_to_string(room_code))],
           ),
         ]),
         html.button(
@@ -931,14 +936,7 @@ fn content(model: Model) {
                   [class("list-disc list-inside p-2")],
                   list.filter_map(room.players, fn(player) {
                     case list.contains(round_state.round.submitted, player.id) {
-                      False ->
-                        Ok(
-                          html.li([], [
-                            player.name
-                            |> shared.player_name_to_string
-                            |> element.text,
-                          ]),
-                        )
+                      False -> Ok(html.li([], [element.text(player.name)]))
                       True -> Error(Nil)
                     }
                   }),
@@ -1017,11 +1015,10 @@ fn content(model: Model) {
                 }
                 let display =
                   case player.name, player.id {
-                    PlayerName(""), id if id == player_id ->
-                      shared.player_id_to_string(id) <> " (you)"
-                    PlayerName(name), id if id == player_id -> name <> " (you)"
-                    PlayerName(""), id -> shared.player_id_to_string(id)
-                    PlayerName(name), _ -> name
+                    "", id if id == player_id -> id_to_string(id) <> " (you)"
+                    name, id if id == player_id -> name <> " (you)"
+                    "", id -> id_to_string(id)
+                    name, _ -> name
                   }
                   |> fn(name) { name <> connected }
                   |> element.text
@@ -1046,7 +1043,7 @@ fn content(model: Model) {
             attribute.id("name-input"),
             attribute.placeholder("Enter name..."),
             event.on_input(UpdatePlayerName),
-            attribute.value(shared.player_name_to_string(player_name)),
+            attribute.value(player_name),
             attribute.type_("text"),
             class(
               "my-2 p-2 border-2 rounded placeholder:text-slate-300 placeholder:opacity-50",
@@ -1055,9 +1052,7 @@ fn content(model: Model) {
           html.button(
             [
               attribute.type_("submit"),
-              attribute.disabled(
-                string.trim(shared.player_name_to_string(player_name)) == "",
-              ),
+              attribute.disabled(string.trim(player_name) == ""),
               class(
                 "p-2 text-lime-900 bg-emerald-100 hover:bg-emerald-200 rounded disabled:bg-emerald-100 disabled:text-lime-700 disabled:opacity-50",
               ),
@@ -1080,14 +1075,12 @@ fn content(model: Model) {
     ) -> {
       html.div([class("flex flex-col m-4")], [
         html.div([], [
-          html.h2([], [element.text(shared.player_name_to_string(player_name))]),
+          html.h2([], [element.text(player_name)]),
           case error {
             Some(error) -> element.text(error)
             None ->
               element.text(
-                "Connecting to room "
-                <> shared.room_code_to_string(room_code)
-                <> "...",
+                "Connecting to room " <> id_to_string(room_code) <> "...",
               )
           },
         ]),
@@ -1131,17 +1124,14 @@ fn footer(model: Model) {
 }
 
 fn choosing_player_heading(
-  players: List(shared.Player),
-  self_player_id: shared.PlayerId,
-  leading_player_id: shared.PlayerId,
+  players: List(Player),
+  self_player_id: Id(Player),
+  leading_player_id: Id(Player),
 ) {
   list.find(players, fn(player) { player.id == leading_player_id })
   |> result.map(fn(player) {
     case player.id == self_player_id {
-      False ->
-        "You are guessing "
-        <> shared.player_name_to_string(player.name)
-        <> "'s order of preference"
+      False -> "You are guessing " <> player.name <> "'s order of preference"
       True -> "It's your turn! Select the things below in your preference order"
     }
   })
@@ -1149,8 +1139,8 @@ fn choosing_player_heading(
 }
 
 fn display_players(
-  players: List(shared.Player),
-  leading_player_id: shared.PlayerId,
+  players: List(Player),
+  leading_player_id: shared.Id(Player),
   finished_rounds: List(shared.FinishedRound),
 ) {
   let scores =
@@ -1160,7 +1150,7 @@ fn display_players(
       list.fold(
         round_scores,
         scores,
-        fn(scores: List(#(shared.PlayerId, shared.PlayerScore)), round_score) {
+        fn(scores: List(#(shared.Id(Player), shared.PlayerScore)), round_score) {
           case list.find(scores, fn(s) { s.0 == round_score.0 }) {
             Ok(score) -> {
               let rest = scores |> list.filter(fn(s) { s.0 != score.0 })
@@ -1200,7 +1190,7 @@ fn display_players(
           [class("my-1 p-2 rounded flex justify-between" <> extra_class)],
           [
             html.span([], [
-              element.text(shared.player_name_to_string(player.name)),
+              element.text(player.name),
               case player.connected {
                 True -> element.none()
                 False -> element.text(" - disconnected")
@@ -1213,16 +1203,13 @@ fn display_players(
   )
 }
 
-fn display_finished_round(player_id: PlayerId) {
+fn display_finished_round(player_id: Id(Player)) {
   fn(finished_round: shared.FinishedRound, round_index: Int) {
-    let player_text = fn(player: shared.Player, score: Int) {
+    let player_text = fn(player: Player, score: Int) {
       case player.id == finished_round.leading_player_id {
-        True -> shared.player_name_to_string(player.name) <> "'s ranking"
+        True -> player.name <> "'s ranking"
         False ->
-          shared.player_name_to_string(player.name)
-          <> "'s guess - "
-          <> int.to_string(score)
-          <> " points"
+          player.name <> "'s guess - " <> int.to_string(score) <> " points"
       }
     }
 

@@ -16,10 +16,10 @@ import lustre/attribute
 import lustre/element
 import lustre/element/html
 import mist.{type Connection, type ResponseData}
-import shared.{type PlayerId, type PlayerName, PlayerId, PlayerName}
+import shared.{type Id, type Player, id_from_string, id_to_string}
 
 type WebsocketConnection {
-  WebsocketConnection(id: shared.PlayerId)
+  WebsocketConnection(id: Id(Player))
 }
 
 // Handling new connections:
@@ -32,8 +32,6 @@ type WebsocketConnection {
 // Messages sent to each websocket actor to update its state or for
 // communicating over its websocket.
 type WebsocketConnectionUpdate {
-  // Sent once set up so the websocket connection actor can set its internal state.
-  // SetupConnection(id: shared.PlayerId, room_code: RoomCode)
   // Sent to the actor from the state manager, which is then sent over the websocket.
   Request(shared.WebsocketRequest)
   // Sent to the actor to pass on to the state manager.
@@ -120,23 +118,27 @@ pub fn main() {
               })
 
             ["ws", player_id, player_name] ->
-              validate_player_name(game, player_id, player_name, fn() {
-                mist.websocket(
-                  request: req,
-                  on_init: on_init(
-                    _,
-                    game,
-                    PlayerId(player_id),
-                    uri.percent_decode(player_name)
-                      |> result.unwrap(player_name)
-                      |> PlayerName,
-                  ),
-                  on_close: fn(websocket) {
-                    process.send(websocket, Disconnect)
-                  },
-                  handler: handle_ws_message,
-                )
-              })
+              validate_player_name(
+                game,
+                id_from_string(player_id),
+                player_name,
+                fn() {
+                  mist.websocket(
+                    request: req,
+                    on_init: on_init(
+                      _,
+                      game,
+                      id_from_string(player_id),
+                      uri.percent_decode(player_name)
+                        |> result.unwrap(player_name),
+                    ),
+                    on_close: fn(websocket) {
+                      process.send(websocket, Disconnect)
+                    },
+                    handler: handle_ws_message,
+                  )
+                },
+              )
             ["createroom"] -> handle_create_room_request(game, req)
             ["joinroom"] -> handle_join_request(game, req)
             ["validatename"] -> handle_validate_name_request(game, req)
@@ -223,7 +225,7 @@ fn handle_create_room_request(
     response.new(200)
     |> response.set_cookie(
       "room_code",
-      shared.room_code_to_string(room.0),
+      id_to_string(room.0),
       cookie.Attributes(
         ..cookie.defaults(http.Https),
         max_age: Some(7200),
@@ -232,7 +234,7 @@ fn handle_create_room_request(
     )
     |> response.set_cookie(
       "player_id",
-      shared.player_id_to_string(room.1),
+      id_to_string(room.1),
       cookie.Attributes(
         ..cookie.defaults(http.Https),
         max_age: Some(7200),
@@ -272,7 +274,7 @@ fn handle_join_request(
             response.new(200)
             |> response.set_cookie(
               "room_code",
-              shared.room_code_to_string(room_code),
+              id_to_string(room_code),
               cookie.Attributes(
                 ..cookie.defaults(http.Https),
                 max_age: Some(7200),
@@ -281,7 +283,7 @@ fn handle_join_request(
             )
             |> response.set_cookie(
               "player_id",
-              shared.player_id_to_string(player_id),
+              id_to_string(player_id),
               cookie.Attributes(
                 ..cookie.defaults(http.Https),
                 max_age: Some(7200),
@@ -308,7 +310,7 @@ fn handle_join_request(
 fn handle_validate_name_request(game, req) {
   use req <- http_request_handler(req)
   case req {
-    shared.ValidateNameRequest(PlayerId(player_id), PlayerName(player_name)) ->
+    shared.ValidateNameRequest(player_id, player_name) ->
       validate_player_name(game, player_id, player_name, fn() {
         response.new(200)
         |> response.set_body(
@@ -329,15 +331,11 @@ fn handle_validate_name_request(game, req) {
 /// response.
 fn validate_player_name(
   game: Subject(game.Msg),
-  player_id: String,
+  player_id: Id(Player),
   player_name: String,
   next: fn() -> response.Response(ResponseData),
 ) -> response.Response(ResponseData) {
-  process.try_call(
-    game,
-    game.ValidateName(_, PlayerId(player_id), PlayerName(player_name)),
-    5,
-  )
+  process.try_call(game, game.ValidateName(_, player_id, player_name), 5)
   |> result.map(fn(valid) {
     case valid {
       Ok(_) -> next()
@@ -355,8 +353,8 @@ fn validate_player_name(
 fn on_init(
   _conn: mist.WebsocketConnection,
   game: Subject(game.Msg),
-  player_id: PlayerId,
-  player_name: PlayerName,
+  player_id: Id(Player),
+  player_name: String,
 ) -> #(
   Subject(WebsocketConnectionUpdate),
   Option(process.Selector(shared.WebsocketResponse)),
@@ -381,9 +379,7 @@ fn on_init(
           case connection_state {
             WebsocketConnection(id) -> {
               process.send(game, game.Disconnect(id))
-              io.println(
-                "Player " <> shared.player_id_to_string(id) <> " disconnected.",
-              )
+              io.println("Player " <> id_to_string(id) <> " disconnected.")
             }
           }
           actor.Stop(process.Normal)
