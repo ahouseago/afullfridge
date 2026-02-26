@@ -16,6 +16,7 @@ import lustre/attribute
 import lustre/element
 import lustre/element/html
 import mist.{type Connection, type ResponseData}
+import random_word
 import shared.{type Id, type Player, id_from_string, id_to_string}
 
 type WebsocketConnection {
@@ -142,6 +143,7 @@ pub fn main() {
             ["createroom"] -> handle_create_room_request(game, req)
             ["joinroom"] -> handle_join_request(game, req)
             ["validatename"] -> handle_validate_name_request(game, req)
+            ["randomword"] -> handle_random_word_request(req)
 
             _ ->
               response.new(200)
@@ -328,6 +330,27 @@ fn handle_validate_name_request(game, req) {
         )
       })
     _ -> bad_request("invalid request body")
+  }
+}
+
+fn handle_random_word_request(
+  req: request.Request(Connection),
+) -> response.Response(ResponseData) {
+  case req.method {
+    http.Get -> {
+      let random_word = random_word.new()
+      response.new(200)
+      |> response.prepend_header("content-type", "application/json")
+      |> response.set_body(
+        mist.Bytes(
+          bytes_tree.from_string(shared.encode(
+            shared.RandomWordResponse(random_word),
+            shared.encode_http_response,
+          )),
+        ),
+      )
+    }
+    _ -> bad_request("invalid method")
   }
 }
 

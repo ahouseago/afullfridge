@@ -93,7 +93,8 @@ pub type Msg {
   SetPlayerName(List(#(String, String)))
   UpdateAddWordInput(String)
   AddWord(List(#(String, String)))
-  AddRandomWord
+  GenerateRandomWord
+  ReturnedRandomWord(Result(shared.HttpResponse, rsvp.Error))
   RemoveWord(String)
   StartRound
   AddNextPreferedWord(String)
@@ -416,15 +417,21 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         ),
       )
     }
-    InRoom(active_game: Some(active_game), ..), AddRandomWord -> {
+    InRoom(uri:, ..), GenerateRandomWord -> {
+      #(model, get_random_word(uri))
+    }
+    InRoom(..), ReturnedRandomWord(Ok(shared.RandomWordResponse(word))) -> {
       #(
-        model,
-        ws.send(
-          active_game.ws,
-          shared.encode(shared.AddRandomWord, shared.encode_websocket_request),
+        InRoom(
+          ..model,
+          active_game: option.map(model.active_game, fn(active_game) {
+            ActiveGame(..active_game, add_word_input: word)
+          }),
         ),
+        effect.none(),
       )
     }
+    InRoom(..), ReturnedRandomWord(Error(_)) -> #(model, effect.none())
     InRoom(active_game: Some(active_game), ..), RemoveWord(word) -> {
       #(
         model,
@@ -656,6 +663,13 @@ fn join_game(uri: uri.Uri, room_code: Id(Room)) {
     server(uri, "/joinroom"),
     shared.encode_http_request(shared.JoinRoomRequest(room_code)),
     rsvp.expect_json(shared.http_response_decoder(), JoinedRoom),
+  )
+}
+
+fn get_random_word(uri: uri.Uri) {
+  rsvp.get(
+    server(uri, "/randomword"),
+    rsvp.expect_json(shared.http_response_decoder(), ReturnedRandomWord),
   )
 }
 
@@ -1295,6 +1309,15 @@ fn display_full_word_list(room: shared.Room, add_word_input: String) {
           ]),
           html.button(
             [
+              event.on_click(GenerateRandomWord),
+              class(
+                "p-2 rounded border-solid border border-gray-200 hover:bg-emerald-50",
+              ),
+            ],
+            [element.text("I'm feeling lucky... 🎲")],
+          ),
+          html.button(
+            [
               attribute.type_("submit"),
               class(
                 "py-2 px-3 ml-2 bg-green-200 hover:bg-green-300 rounded flex-none self-center",
@@ -1304,15 +1327,6 @@ fn display_full_word_list(room: shared.Room, add_word_input: String) {
           ),
         ]),
       ],
-    ),
-    html.button(
-      [
-        event.on_click(AddRandomWord),
-        class(
-          "p-2 rounded border-solid border border-gray-200 hover:bg-emerald-50",
-        ),
-      ],
-      [element.text("Add random 🎲")],
     ),
     html.div([], [
       html.h2([class("text-lg my-2")], [element.text("List of words:")]),

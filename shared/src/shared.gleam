@@ -52,6 +52,7 @@ pub type HttpResponse {
   // Returned from successfully creating/joining a room.
   RoomResponse(room_code: Id(Room), player_id: Id(Player))
   ValidateNameResponse(valid: Bool)
+  RandomWordResponse(word: String)
 }
 
 pub fn http_response_decoder() -> decode.Decoder(HttpResponse) {
@@ -65,6 +66,10 @@ pub fn http_response_decoder() -> decode.Decoder(HttpResponse) {
     "validate_name_response" -> {
       use valid <- decode.field("valid", decode.bool)
       decode.success(ValidateNameResponse(valid:))
+    }
+    "random_word_response" -> {
+      use word <- decode.field("word", decode.string)
+      decode.success(RandomWordResponse(word:))
     }
     str ->
       decode.failure(
@@ -87,12 +92,16 @@ pub fn encode_http_response(http_response: HttpResponse) -> json.Json {
         #("type", json.string("validate_name_response")),
         #("valid", json.bool(http_response.valid)),
       ])
+    RandomWordResponse(..) ->
+      json.object([
+        #("type", json.string("random_word_response")),
+        #("word", json.string(http_response.word)),
+      ])
   }
 }
 
 pub type WebsocketRequest {
   AddWord(word: String)
-  AddRandomWord
   RemoveWord(word: String)
   ListWords
   StartRound
@@ -107,7 +116,6 @@ pub fn websocket_request_decoder() -> decode.Decoder(WebsocketRequest) {
       use word <- decode.field("word", decode.string)
       decode.success(AddWord(word:))
     }
-    "add_random_word" -> decode.success(AddRandomWord)
     "remove_word" -> {
       use word <- decode.field("word", decode.string)
       decode.success(RemoveWord(word:))
@@ -124,7 +132,7 @@ pub fn websocket_request_decoder() -> decode.Decoder(WebsocketRequest) {
     }
     request_type ->
       decode.failure(
-        AddRandomWord,
+        ListWords,
         "WebsocketRequest type unknown: " <> request_type,
       )
   }
@@ -139,7 +147,6 @@ pub fn encode_websocket_request(
         #("type", json.string("add_word")),
         #("word", json.string(websocket_request.word)),
       ])
-    AddRandomWord -> json.object([#("type", json.string("add_random_word"))])
     RemoveWord(..) ->
       json.object([
         #("type", json.string("remove_word")),

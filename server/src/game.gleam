@@ -9,7 +9,6 @@ import gleam/result
 import gleam/string
 import internal/scoring
 import prng/random
-import random_word
 import shared.{
   type Id, type Player, type Room, AddWord, ListWords, Player, RemovePlayer,
   Room, Round, StartRound, SubmitOrderedWords, id_from_string, id_to_string,
@@ -339,11 +338,6 @@ fn handle_websocket_request(
   case request {
     AddWord(word) -> {
       let new_state = add_word_to_room(state, room_code, word)
-      let _ = result.try(new_state, list_words(_, room_code))
-      result.unwrap(new_state, state)
-    }
-    shared.AddRandomWord -> {
-      let new_state = add_word_to_room(state, room_code, random_word.new())
       let _ = result.try(new_state, list_words(_, room_code))
       result.unwrap(new_state, state)
     }
