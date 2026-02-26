@@ -273,7 +273,7 @@ pub type Player {
   Player(id: Id(Player), name: String, connected: Bool)
 }
 
-fn player_decoder() -> decode.Decoder(Player) {
+pub fn player_decoder() -> decode.Decoder(Player) {
   use id <- decode.field("id", decode.string)
   use name <- decode.field("name", decode.string)
   use connected <- decode.field("connected", decode.bool)
@@ -408,7 +408,7 @@ pub type Room {
   )
 }
 
-fn room_decoder() -> decode.Decoder(Room) {
+pub fn room_decoder() -> decode.Decoder(Room) {
   use room_code <- decode.field("room_code", id_decoder())
   use players <- decode.field("players", decode.list(player_decoder()))
   use word_list <- decode.field("word_list", decode.list(decode.string))
@@ -458,7 +458,6 @@ fn json_decode_err_to_string(err: json.DecodeError) -> String {
     json.UnableToDecode(_) -> "UnableToDecode"
     json.UnexpectedByte(x) -> "UnexpectedByte: " <> x
     json.UnexpectedEndOfInput -> "UnexpectedEndOfInput"
-    json.UnexpectedFormat(_) -> "UnexpectedFormat"
     json.UnexpectedSequence(x) -> "UnexpectedSequence: " <> x
   }
 }

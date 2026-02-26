@@ -9,7 +9,6 @@ import gleam/result
 import gleam/string
 import internal/scoring
 import prng/random
-import prng/seed
 import random_word
 import shared.{
   type Id, type Player, type Room, AddWord, ListWords, Player, RemovePlayer,
@@ -17,7 +16,10 @@ import shared.{
 }
 
 pub fn start() -> Result(Subject(Msg), actor.StartError) {
-  actor.start(initial_state(), update)
+  actor.new(initial_state())
+  |> actor.on_message(update)
+  |> actor.start
+  |> result.map(fn(a) { a.data })
 }
 
 type State {
@@ -35,7 +37,7 @@ fn initial_state() -> State {
     next_player_id: 0,
     room_code_generator: RoomCodeGenerator(
       generator: random.int(65, 90),
-      seed: seed.random(),
+      seed: random.new_seed(1234),
     ),
     players: dict.new(),
     rooms: dict.new(),
@@ -60,7 +62,7 @@ pub type InProgressRound {
 }
 
 type RoomCodeGenerator {
-  RoomCodeGenerator(generator: random.Generator(Int), seed: seed.Seed)
+  RoomCodeGenerator(generator: random.Generator(Int), seed: random.Seed)
 }
 
 // These messages are the ways to communicate with the game state actor.
@@ -86,7 +88,7 @@ pub type Msg {
   )
 }
 
-fn update(msg: Msg, state: State) -> actor.Next(Msg, State) {
+fn update(state: State, msg: Msg) -> actor.Next(State, Msg) {
   case msg {
     NewConnection(player_id, send_fn, player_name) -> {
       case dict.get(state.players, player_id) {
@@ -142,7 +144,7 @@ fn update(msg: Msg, state: State) -> actor.Next(Msg, State) {
                   players: list.map(room_state.room.players, fn(player) {
                     Player(
                       ..player,
-                      connected: player.id == player.id || player.connected,
+                      connected: player.id == id || player.connected,
                     )
                   }),
                 )
@@ -230,11 +232,11 @@ fn update(msg: Msg, state: State) -> actor.Next(Msg, State) {
     }
     ValidateName(subj, player_id, player_name) -> {
       let valid = {
-        use player <- result.then(
+        use player <- result.try(
           dict.get(state.players, player_id)
           |> result.replace_error("Player not found"),
         )
-        use room_state <- result.then(
+        use room_state <- result.try(
           dict.get(state.rooms, player.room_code)
           |> result.replace_error("Player not in room"),
         )
@@ -288,8 +290,7 @@ fn get_next_player_id(state: State) -> #(State, Id(Player)) {
 
 fn generate_room_code(state: State) {
   let #(utf_points, new_seed) =
-    list.range(1, 4)
-    |> list.fold(#([], state.room_code_generator.seed), fn(rolls, _) {
+    int.range(0, 4, #([], state.room_code_generator.seed), fn(rolls, _) {
       let #(roll, new_seed) =
         random.step(state.room_code_generator.generator, rolls.1)
       let assert Ok(utf_point) = string.utf_codepoint(roll)

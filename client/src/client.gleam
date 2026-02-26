@@ -1,4 +1,6 @@
+import components/link
 import gleam/bit_array
+import gleam/http/response
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -13,11 +15,11 @@ import lustre/effect
 import lustre/element
 import lustre/element/html
 import lustre/event
-import lustre_http
 import lustre_websocket as ws
 import modem
 import plinth/browser/clipboard
 import plinth/javascript/storage
+import rsvp
 import shared.{type Id, type Player, type Room, id_from_string, id_to_string}
 
 pub type Model {
@@ -74,9 +76,10 @@ pub type Msg {
   OnWebsocketMessage(shared.WebsocketResponse)
 
   StartGame
-  JoinGame
-  JoinedRoom(Result(shared.HttpResponse, lustre_http.HttpError))
-  NameIsValid(Result(shared.HttpResponse, lustre_http.HttpError))
+  // JoinGame includes all of the form fields
+  JoinGame(List(#(String, String)))
+  JoinedRoom(Result(shared.HttpResponse, rsvp.Error))
+  NameIsValid(Result(shared.HttpResponse, rsvp.Error))
   LeaveGame
 
   // Display actions
@@ -87,9 +90,9 @@ pub type Msg {
   // Game Actions
   UpdateRoomCode(String)
   UpdatePlayerName(String)
-  SetPlayerName
+  SetPlayerName(List(#(String, String)))
   UpdateAddWordInput(String)
-  AddWord
+  AddWord(List(#(String, String)))
   AddRandomWord
   RemoveWord(String)
   StartRound
@@ -98,9 +101,9 @@ pub type Msg {
   SubmitOrderedWords
 }
 
-const dev_mode = False
+const dev_mode = True
 
-fn server(uri: uri.Uri, path) -> String {
+pub fn server(uri: uri.Uri, path) -> String {
   let host = option.unwrap(uri.host, "localhost")
   case dev_mode {
     True -> "http://localhost:8080" <> path
@@ -200,10 +203,7 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
 pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
   case model, msg {
     NotInRoom(uri:, ..), StartGame -> #(model, start_game(uri))
-    NotInRoom(
-      uri:,
-      ..,
-    ),
+    NotInRoom(uri:, ..),
       JoinedRoom(Ok(shared.RoomResponse(room_code, player_id)))
     -> {
       #(
@@ -223,12 +223,8 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         ),
       )
     }
-    NotInRoom(
-      uri:,
-      room_code_input:,
-      ..,
-    ),
-      JoinedRoom(Error(lustre_http.NotFound))
+    NotInRoom(uri:, room_code_input:, ..),
+      JoinedRoom(Error(rsvp.HttpError(response.Response(status: 404, ..))))
     -> {
       #(
         NotInRoom(
@@ -252,7 +248,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       NotInRoom(uri, route, string.uppercase(room_code), None),
       effect.none(),
     )
-    NotInRoom(uri:, room_code_input:, ..), JoinGame -> #(
+    NotInRoom(uri:, ..), JoinGame([#("room-code-input", room_code_input)]) -> #(
       model,
       join_game(uri, id_from_string(room_code_input)),
     )
@@ -277,15 +273,8 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         effect.none(),
       )
     }
-    InRoom(
-      uri:,
-      room_code:,
-      ..,
-    ),
-      OnRouteChange(
-        route: Play(Some(new_room_code)),
-        ..,
-      )
+    InRoom(uri:, room_code:, ..),
+      OnRouteChange(route: Play(Some(new_room_code)), ..)
     -> {
       case room_code == id_from_string(new_room_code) {
         True -> #(model, effect.none())
@@ -303,28 +292,22 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       InRoom(..model, player_name: player_name),
       effect.none(),
     )
-    InRoom(uri:, player_id:, player_name:, active_game: None, ..), SetPlayerName
+    InRoom(uri:, player_id:, active_game: None, ..),
+      SetPlayerName([#("name-input", player_name)])
     -> {
       #(
         model,
-        lustre_http.post(
+        rsvp.post(
           server(uri, "/validatename"),
           shared.encode_http_request(shared.ValidateNameRequest(
             player_id,
             player_name,
           )),
-          lustre_http.expect_json(shared.http_response_decoder(), NameIsValid),
+          rsvp.expect_json(shared.http_response_decoder(), NameIsValid),
         ),
       )
     }
-    InRoom(
-      uri:,
-      player_id:,
-      room_code:,
-      player_name:,
-      active_game: None,
-      ..,
-    ),
+    InRoom(uri:, player_id:, room_code:, player_name:, active_game: None, ..),
       NameIsValid(response)
     -> {
       case response {
@@ -364,9 +347,9 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
             effect.none(),
           )
         }
-        Error(lustre_http.OtherError(412, reason)) -> {
-          #(InRoom(..model, error: Some(reason)), effect.none())
-        }
+        // Error(rsvp.OtherError(412, reason)) -> {
+        //   #(InRoom(..model, error: Some(reason)), effect.none())
+        // }
         Error(error) -> {
           echo "failed to validate name"
           echo error
@@ -406,11 +389,8 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         )
       }
     }
-    InRoom(
-      active_game: Some(ActiveGame(ws, room, round, add_word_input)),
-      ..,
-    ),
-      AddWord
+    InRoom(active_game: Some(ActiveGame(ws, room, round, _)), ..),
+      AddWord([#("add-word-input", add_word_input)])
       if add_word_input != ""
     -> {
       #(
@@ -652,18 +632,18 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
 }
 
 fn start_game(uri: uri.Uri) {
-  lustre_http.get(
+  rsvp.get(
     server(uri, "/createroom"),
-    lustre_http.expect_json(shared.http_response_decoder(), JoinedRoom),
+    rsvp.expect_json(shared.http_response_decoder(), JoinedRoom),
   )
 }
 
 fn join_game(uri: uri.Uri, room_code: Id(Room)) {
   echo "joining room"
-  lustre_http.post(
+  rsvp.post(
     server(uri, "/joinroom"),
     shared.encode_http_request(shared.JoinRoomRequest(room_code)),
-    lustre_http.expect_json(shared.http_response_decoder(), JoinedRoom),
+    rsvp.expect_json(shared.http_response_decoder(), JoinedRoom),
   )
 }
 
@@ -698,16 +678,6 @@ pub fn view(model: Model) -> element.Element(Msg) {
   ])
 }
 
-fn link(href, content, class_name) {
-  html.a(
-    [
-      class("p-2 underline border-solid rounded m-2 " <> class_name),
-      attribute.href(href),
-    ],
-    content,
-  )
-}
-
 fn header(model: Model) {
   case model {
     NotInRoom(route: Home, ..) ->
@@ -717,7 +687,7 @@ fn header(model: Model) {
     NotInRoom(route: Play(Some(_)), ..) ->
       html.div([], [
         html.nav([class("flex items-center bg-sky-100 text-blue-900")], [
-          link(
+          link.view(
             "/",
             [icon.house([class("mr-2 inline")]), element.text("Home")],
             "",
@@ -728,7 +698,7 @@ fn header(model: Model) {
     NotInRoom(route: Play(None), ..) ->
       html.div([], [
         html.nav([class("flex items-center bg-sky-100 text-blue-900")], [
-          link(
+          link.view(
             "/",
             [icon.house([class("mr-2 inline")]), element.text("Home")],
             "",
@@ -779,7 +749,7 @@ fn header(model: Model) {
     NotInRoom(route: NotFound, ..) ->
       html.div([], [
         html.nav([class("flex items-center")], [
-          link("/", [element.text("Home")], ""),
+          link.view("/", [element.text("Home")], ""),
         ]),
         html.h1([class("text-2xl my-5")], [element.text("Page not found")]),
       ])
@@ -807,7 +777,7 @@ fn content(model: Model) {
             ],
             [element.text("Start new game")],
           ),
-          link(
+          link.view(
             "/play",
             [element.text("Join a game")],
             "w-36 text-white bg-sky-600 rounded hover:bg-sky-500 no-underline",
@@ -826,6 +796,7 @@ fn content(model: Model) {
           ),
           html.div([class("mb-2")], [
             html.input([
+              attribute.name("room-code-input"),
               attribute.id("room-code-input"),
               attribute.placeholder("ABCD"),
               attribute.type_("text"),
@@ -1040,6 +1011,7 @@ fn content(model: Model) {
         html.form([event.on_submit(SetPlayerName), class("flex flex-col m-4")], [
           html.label([attribute.for("name-input")], [element.text("Name:")]),
           html.input([
+            attribute.name("name-input"),
             attribute.id("name-input"),
             attribute.placeholder("Enter name..."),
             event.on_input(UpdatePlayerName),
@@ -1104,10 +1076,7 @@ fn footer(model: Model) {
       )
     InRoom(
       active_game: Some(ActiveGame(room: Some(..), round: Some(..), ..)),
-      display_state: DisplayState(
-        view: Scores,
-        ..,
-      ),
+      display_state: DisplayState(view: Scores, ..),
       ..,
     ) ->
       html.button(
@@ -1302,6 +1271,7 @@ fn display_full_word_list(room: shared.Room, add_word_input: String) {
         ]),
         html.div([class("flex max-w-80 min-w-56 flex-auto")], [
           html.input([
+            attribute.name("add-word-input"),
             attribute.id("add-word-input"),
             attribute.type_("text"),
             attribute.placeholder("A full fridge"),

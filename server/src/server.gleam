@@ -1,7 +1,7 @@
 import game
 import gleam/bit_array
 import gleam/bytes_tree
-import gleam/erlang
+import gleam/erlang/application
 import gleam/erlang/process.{type Subject}
 import gleam/http
 import gleam/http/cookie
@@ -69,7 +69,7 @@ fn internal_error(reason) {
 pub fn main() {
   let assert Ok(game) = game.start()
 
-  let assert Ok(priv) = erlang.priv_directory("server")
+  let assert Ok(priv) = application.priv_directory("server")
 
   let assert Ok(_) =
     fn(req: request.Request(Connection)) -> response.Response(ResponseData) {
@@ -169,7 +169,7 @@ pub fn main() {
                   ]),
                   html.body([], [html.div([attribute.id("app")], [])]),
                 ])
-                |> element.to_document_string_builder
+                |> element.to_document_string_tree
                 |> bytes_tree.from_string_tree
                 |> mist.Bytes,
               )
@@ -186,7 +186,7 @@ pub fn main() {
     |> mist.new
     |> mist.bind("0.0.0.0")
     |> mist.port(8080)
-    |> mist.start_http
+    |> mist.start
 
   process.sleep_forever()
 }
@@ -195,32 +195,37 @@ fn http_request_handler(
   req: request.Request(Connection),
   handle: fn(shared.HttpRequest) -> response.Response(ResponseData),
 ) {
-  result.unwrap_both({
-    use req <- result.try(
-      mist.read_body(req, 1024 * 1024 * 10)
-      |> result.map_error(fn(read_error) {
-        case read_error {
-          mist.ExcessBody -> bad_request("body too large")
-          mist.MalformedBody -> bad_request("malformed request body")
-        }
-      }),
-    )
-    use body <- result.map(
-      bit_array.to_string(req.body)
-      |> result.replace_error(bad_request("invalid body")),
-    )
-    case shared.decode(body, shared.http_request_decoder()) {
-      Ok(req) -> handle(req)
-      Error(err) -> bad_request(err)
+  case
+    {
+      use req <- result.try(
+        mist.read_body(req, 1024 * 1024 * 10)
+        |> result.map_error(fn(read_error) {
+          case read_error {
+            mist.ExcessBody -> bad_request("body too large")
+            mist.MalformedBody -> bad_request("malformed request body")
+          }
+        }),
+      )
+      use body <- result.map(
+        bit_array.to_string(req.body)
+        |> result.replace_error(bad_request("invalid body")),
+      )
+      case shared.decode(body, shared.http_request_decoder()) {
+        Ok(req) -> handle(req)
+        Error(err) -> bad_request(err)
+      }
     }
-  })
+  {
+    Ok(response) -> response
+    Error(response) -> response
+  }
 }
 
 fn handle_create_room_request(
   game,
   _req: request.Request(Connection),
 ) -> response.Response(ResponseData) {
-  process.call(game, game.CreateRoom, 2)
+  process.call(game, 2, game.CreateRoom)
   |> result.map(fn(room) {
     response.new(200)
     |> response.set_cookie(
@@ -249,8 +254,7 @@ fn handle_create_room_request(
       |> bytes_tree.from_string,
     ))
   })
-  |> result.map_error(fn(_) { internal_error("creating room") })
-  |> result.unwrap_both
+  |> result.unwrap(internal_error("creating room"))
 }
 
 fn handle_join_request(
@@ -260,17 +264,15 @@ fn handle_join_request(
   use req <- http_request_handler(req)
   case req {
     shared.JoinRoomRequest(room_code) -> {
-      process.try_call(game, game.GetRoom(_, room_code), 5)
-      |> result.replace_error(internal_error("getting room"))
-      |> result.try(fn(res) { result.replace_error(res, not_found()) })
+      process.call(game, 5, game.GetRoom(_, room_code))
       |> result.map(fn(_room) {
         case
-          process.try_call(game, game.AddPlayerToRoom(_, room_code), 2)
+          process.call(game, 2, game.AddPlayerToRoom(_, room_code))
           |> result.replace_error(internal_error("calling AddPlayerToRoom"))
         {
           Error(err) -> err
-          Ok(Error(Nil)) -> internal_error("adding player to room")
-          Ok(Ok(player_id)) -> {
+          // Ok(Error(Nil)) -> internal_error("adding player to room")
+          Ok(player_id) -> {
             response.new(200)
             |> response.set_cookie(
               "room_code",
@@ -301,7 +303,7 @@ fn handle_join_request(
           }
         }
       })
-      |> result.unwrap_both
+      |> result.unwrap(not_found())
     }
     _ -> bad_request("invalid request")
   }
@@ -335,19 +337,12 @@ fn validate_player_name(
   player_name: String,
   next: fn() -> response.Response(ResponseData),
 ) -> response.Response(ResponseData) {
-  process.try_call(game, game.ValidateName(_, player_id, player_name), 5)
-  |> result.map(fn(valid) {
-    case valid {
-      Ok(_) -> next()
-      Error(err) ->
-        response.new(412)
-        |> response.set_body(mist.Bytes(bytes_tree.from_string(err)))
-    }
-  })
-  |> result.unwrap(
-    response.new(500)
-    |> response.set_body(mist.Bytes(bytes_tree.from_string("Internal error"))),
-  )
+  case process.call(game, 5, game.ValidateName(_, player_id, player_name)) {
+    Ok(_) -> next()
+    Error(err) ->
+      response.new(412)
+      |> response.set_body(mist.Bytes(bytes_tree.from_string(err)))
+  }
 }
 
 fn on_init(
@@ -360,8 +355,9 @@ fn on_init(
   Option(process.Selector(shared.WebsocketResponse)),
 ) {
   let self = process.new_subject()
-  let assert Ok(connection_subject) =
-    actor.start(WebsocketConnection(player_id), fn(update, connection_state) {
+  let assert Ok(connection_actor) =
+    actor.new(WebsocketConnection(player_id))
+    |> actor.on_message(fn(connection_state, update) {
       case update {
         Request(req) -> {
           let WebsocketConnection(id) = connection_state
@@ -382,26 +378,25 @@ fn on_init(
               io.println("Player " <> id_to_string(id) <> " disconnected.")
             }
           }
-          actor.Stop(process.Normal)
+          actor.stop()
         }
       }
     })
+    |> actor.start()
+  let connection_subject = connection_actor.data
 
   process.send(
     game,
     game.NewConnection(player_id, process.send(self, _), player_name),
   )
 
-  #(
-    connection_subject,
-    Some(process.selecting(process.new_selector(), self, fn(a) { a })),
-  )
+  #(connection_subject, Some(process.select(process.new_selector(), self)))
 }
 
 fn handle_ws_message(
   websocket: Subject(WebsocketConnectionUpdate),
-  conn: mist.WebsocketConnection,
   message: mist.WebsocketMessage(shared.WebsocketResponse),
+  conn: mist.WebsocketConnection,
 ) {
   case message {
     mist.Text(text) -> {
@@ -413,7 +408,7 @@ fn handle_ws_message(
           io.println("invalid request: " <> err)
         }
       }
-      actor.continue(websocket)
+      mist.continue(websocket)
     }
     mist.Custom(response) -> {
       let assert Ok(_) =
@@ -421,11 +416,11 @@ fn handle_ws_message(
           conn,
           shared.encode(response, shared.encode_websocket_response),
         )
-      actor.continue(websocket)
+      mist.continue(websocket)
     }
     mist.Binary(_) -> {
-      actor.continue(websocket)
+      mist.continue(websocket)
     }
-    mist.Closed | mist.Shutdown -> actor.Stop(process.Normal)
+    mist.Closed | mist.Shutdown -> mist.stop()
   }
 }

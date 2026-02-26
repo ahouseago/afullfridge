@@ -2,7 +2,7 @@ import gleam/json
 import gleam/option.{None}
 import gleeunit
 import gleeunit/should
-import shared.{Player, PlayerId, PlayerName, Room, RoomCode}
+import shared.{Player, Room}
 
 pub fn main() {
   gleeunit.main()
@@ -10,34 +10,34 @@ pub fn main() {
 
 pub fn player_from_json_test() {
   "{\"id\": \"99\", \"name\": \"alex\", \"connected\": false}"
-  |> json.decode(shared.player_from_json)
+  |> json.parse(shared.player_decoder())
   |> should.equal(
-    Ok(Player(id: PlayerId("99"), name: PlayerName("alex"), connected: False)),
+    Ok(Player(id: shared.id_from_string("99"), name: "alex", connected: False)),
   )
 }
 
 pub fn room_from_json_test() {
   "
   {
-    \"roomCode\": \"abcd\",
+    \"room_code\": \"abcd\",
     \"players\": [{\"name\": \"bartholemew\", \"id\": \"12\", \"connected\": true}, {\"name\": \"susan\", \"id\": \"26\", \"connected\": false}],
-    \"wordList\": [\"sand\", \"squirrels\", \"wild swimming\"],
+    \"word_list\": [\"sand\", \"squirrels\", \"wild swimming\"],
     \"round\": null,
-    \"finishedRounds\": [],
-    \"scoringMethod\": \"SMART\"
+    \"finished_rounds\": [],
+    \"scoring_method\": \"smart\"
   }
   "
-  |> json.decode(shared.room_from_json)
+  |> json.parse(shared.room_decoder())
   |> should.equal(
     Ok(Room(
-      room_code: RoomCode("abcd"),
+      room_code: shared.id_from_string("abcd"),
       players: [
         Player(
-          name: PlayerName("bartholemew"),
-          id: PlayerId("12"),
+          name: "bartholemew",
+          id: shared.id_from_string("12"),
           connected: True,
         ),
-        Player(name: PlayerName("susan"), id: PlayerId("26"), connected: False),
+        Player(name: "susan", id: shared.id_from_string("26"), connected: False),
       ],
       word_list: ["sand", "squirrels", "wild swimming"],
       round: None,
@@ -50,20 +50,20 @@ pub fn room_from_json_test() {
 pub fn room_from_json_again_test() {
   "
   {
-    \"roomCode\":\"ZSRU\",
+    \"room_code\":\"ZSRU\",
     \"players\":[{\"id\":\"0\", \"name\":\"alex\", \"connected\": true}],
-    \"wordList\":[],
+    \"word_list\":[],
     \"round\":null,
-    \"finishedRounds\":[],
-    \"scoringMethod\":\"SMART\"
+    \"finished_rounds\":[],
+    \"scoring_method\":\"smart\"
   }
   "
-  |> json.decode(shared.room_from_json)
+  |> json.parse(shared.room_decoder())
   |> should.equal(
     Ok(Room(
-      room_code: RoomCode("ZSRU"),
+      room_code: shared.id_from_string("ZSRU"),
       players: [
-        Player(name: PlayerName("alex"), id: PlayerId("0"), connected: True),
+        Player(name: "alex", id: shared.id_from_string("0"), connected: True),
       ],
       word_list: [],
       round: None,

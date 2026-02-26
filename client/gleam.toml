@@ -15,17 +15,18 @@ target = "javascript"
 
 [dependencies]
 shared = { path = "../shared" }
-gleam_stdlib = ">= 0.34.0 and < 2.0.0"
-lustre = ">= 4.3.0 and < 5.0.0"
-lustre_http = ">= 0.5.2 and < 1.0.0"
-lustre_websocket = ">= 0.7.6 and < 1.0.0"
-modem = ">= 1.1.0 and < 3.0.0"
-plinth = ">= 0.4.1 and < 1.0.0"
+gleam_stdlib = ">= 0.34.0 and < 3.0.0"
+lucide_lustre = ">= 2.0.3 and < 3.0.0"
+modem = ">= 2.1.2 and < 3.0.0"
+lustre_websocket = ">= 0.9.0 and < 1.0.0"
+plinth = ">= 0.9.3 and < 1.0.0"
+lustre = ">= 5.6.0 and < 6.0.0"
+rsvp = ">= 1.2.0 and < 2.0.0"
+gleam_http = ">= 4.3.0 and < 5.0.0"
 
 [dev-dependencies]
 gleeunit = ">= 1.0.0 and < 2.0.0"
-lustre_dev_tools = ">= 1.7.0 and < 2.0.0"
-lucide_lustre = ">= 2.0.0 and < 3.0.0"
+lustre_dev_tools = ">= 2.3.4 and < 3.0.0"
 
 [lucide_lustre]
 output_module = "icon"
