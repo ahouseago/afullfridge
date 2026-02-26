@@ -236,6 +236,15 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         effect.none(),
       )
     }
+    NotInRoom(..), JoinedRoom(Error(_)) -> {
+      #(
+        NotInRoom(
+          ..model,
+          join_room_err: Some("An error occurred, please try again."),
+        ),
+        effect.none(),
+      )
+    }
     NotInRoom(room_code_input:, ..), OnRouteChange(uri, Play(Some(room_code))) -> #(
       NotInRoom(uri, Play(Some(room_code)), room_code_input, None),
       join_game(uri, id_from_string(room_code)),
@@ -253,7 +262,10 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       join_game(uri, id_from_string(room_code_input)),
     )
     NotInRoom(..), UpdatePlayerName(_) -> #(model, effect.none())
-    NotInRoom(..), _ -> #(model, effect.none())
+    NotInRoom(..), _ -> {
+      // TODO: handle these cases individually to prevent accidentally swallowing errors
+      #(model, effect.none())
+    }
     InRoom(room_code:, ..), CopyRoomCode -> {
       let _ = clipboard.write_text(id_to_string(room_code))
       #(model, effect.none())

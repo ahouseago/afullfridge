@@ -246,6 +246,7 @@ fn handle_create_room_request(
         path: None,
       ),
     )
+    |> response.prepend_header("content-type", "application/json")
     |> response.set_body(mist.Bytes(
       shared.encode(
         shared.RoomResponse(room.0, room.1),
@@ -292,6 +293,7 @@ fn handle_join_request(
                 path: None,
               ),
             )
+            |> response.prepend_header("content-type", "application/json")
             |> response.set_body(
               mist.Bytes(
                 bytes_tree.from_string(shared.encode(
@@ -315,6 +317,7 @@ fn handle_validate_name_request(game, req) {
     shared.ValidateNameRequest(player_id, player_name) ->
       validate_player_name(game, player_id, player_name, fn() {
         response.new(200)
+        |> response.prepend_header("content-type", "application/json")
         |> response.set_body(
           mist.Bytes(
             bytes_tree.from_string(shared.encode(
