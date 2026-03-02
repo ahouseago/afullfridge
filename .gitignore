@@ -4,3 +4,4 @@ shared/build
 client/build
 server/build
 server/erl_crash.dump
+client/.lustre
