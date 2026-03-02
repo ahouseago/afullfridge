@@ -30,3 +30,12 @@ lustre_dev_tools = ">= 2.3.4 and < 3.0.0"
 
 [lucide_lustre]
 output_module = "icon"
+
+[tools.lustre.build]
+outdir = "../server/priv/static"
+
+[tools.lustre.dev]
+# proxy = { from = "/", to = "http://localhost:8080/" }
+
+[tools.lustre.html]
+title = "A Full Fridge"

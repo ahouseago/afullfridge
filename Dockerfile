@@ -8,8 +8,8 @@ COPY ./server /build/server
 
 RUN cd /build/client && gleam run -m lustre/dev build app
 
-RUN mkdir -p /build/server/priv/static
-RUN cp /build/client/priv/static/* /build/server/priv/static/
+# RUN mkdir -p /build/server/priv/static
+# RUN cp /build/client/priv/static/* /build/server/priv/static/
 
 # Compile the project
 RUN cd /build/server && gleam export erlang-shipment

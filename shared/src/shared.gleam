@@ -3,101 +3,97 @@ import gleam/json
 import gleam/option.{type Option}
 import gleam/result
 
-pub type HttpRequest {
-  CreateRoomRequest
+pub type JoinRoomRequest {
   JoinRoomRequest(room_code: Id(Room))
+}
+
+pub fn join_room_request_decoder() -> decode.Decoder(JoinRoomRequest) {
+  use room_code <- decode.field("room_code", id_decoder())
+  decode.success(JoinRoomRequest(room_code:))
+}
+
+pub fn join_room_request_to_json(
+  join_room_request: JoinRoomRequest,
+) -> json.Json {
+  let JoinRoomRequest(room_code:) = join_room_request
+  json.object([
+    #("room_code", encode_id(room_code)),
+  ])
+}
+
+pub type ValidateNameRequest {
   ValidateNameRequest(player_id: Id(Player), name: String)
 }
 
-pub fn http_request_decoder() -> decode.Decoder(HttpRequest) {
-  use variant <- decode.field("type", decode.string)
-  case variant {
-    "create_room_request" -> decode.success(CreateRoomRequest)
-    "join_room_request" -> {
-      use room_code <- decode.field("room_code", id_decoder())
-      decode.success(JoinRoomRequest(room_code:))
-    }
-    "validate_name_request" -> {
-      use player_id <- decode.field("player_id", id_decoder())
-      use name <- decode.field("name", decode.string)
-      decode.success(ValidateNameRequest(player_id:, name:))
-    }
-    request_type ->
-      decode.failure(
-        CreateRoomRequest,
-        "HttpRequest: unknown request type: " <> request_type,
-      )
-  }
+pub fn validate_name_request_decoder() -> decode.Decoder(ValidateNameRequest) {
+  use player_id <- decode.field("player_id", id_decoder())
+  use name <- decode.field("name", decode.string)
+  decode.success(ValidateNameRequest(player_id:, name:))
 }
 
-pub fn encode_http_request(http_request: HttpRequest) -> json.Json {
-  case http_request {
-    CreateRoomRequest ->
-      json.object([#("type", json.string("create_room_request"))])
-    JoinRoomRequest(room_code) ->
-      json.object([
-        #("type", json.string("join_room_request")),
-        #("room_code", room_code |> encode_id),
-      ])
-    ValidateNameRequest(player_id, name) ->
-      json.object([
-        #("type", json.string("validate_name_request")),
-        #("player_id", player_id |> encode_id),
-        #("name", name |> json.string),
-      ])
-  }
+pub fn validate_name_request_to_json(
+  validate_name_request: ValidateNameRequest,
+) -> json.Json {
+  let ValidateNameRequest(player_id:, name:) = validate_name_request
+  json.object([
+    #("player_id", encode_id(player_id)),
+    #("name", json.string(name)),
+  ])
 }
 
-pub type HttpResponse {
+pub type RoomResponse {
   // Returned from successfully creating/joining a room.
   RoomResponse(room_code: Id(Room), player_id: Id(Player))
+}
+
+pub fn room_response_decoder() -> decode.Decoder(RoomResponse) {
+  use room_code <- decode.field("room_code", id_decoder())
+  use player_id <- decode.field("player_id", id_decoder())
+  decode.success(RoomResponse(room_code:, player_id:))
+}
+
+pub fn room_response_to_json(room_response: RoomResponse) -> json.Json {
+  let RoomResponse(room_code:, player_id:) = room_response
+  json.object([
+    #("room_code", encode_id(room_code)),
+    #("player_id", encode_id(player_id)),
+  ])
+}
+
+pub type ValidateNameResponse {
   ValidateNameResponse(valid: Bool)
+}
+
+pub fn validate_name_response_decoder() -> decode.Decoder(ValidateNameResponse) {
+  use valid <- decode.field("valid", decode.bool)
+  decode.success(ValidateNameResponse(valid:))
+}
+
+pub fn validate_name_response_to_json(
+  validate_name_response: ValidateNameResponse,
+) -> json.Json {
+  let ValidateNameResponse(valid:) = validate_name_response
+  json.object([
+    #("valid", json.bool(valid)),
+  ])
+}
+
+pub type RandomWordResponse {
   RandomWordResponse(word: String)
 }
 
-pub fn http_response_decoder() -> decode.Decoder(HttpResponse) {
-  use variant <- decode.field("type", decode.string)
-  case variant {
-    "room_response" -> {
-      use room_code <- decode.field("room_code", id_decoder())
-      use player_id <- decode.field("player_id", id_decoder())
-      decode.success(RoomResponse(room_code:, player_id:))
-    }
-    "validate_name_response" -> {
-      use valid <- decode.field("valid", decode.bool)
-      decode.success(ValidateNameResponse(valid:))
-    }
-    "random_word_response" -> {
-      use word <- decode.field("word", decode.string)
-      decode.success(RandomWordResponse(word:))
-    }
-    str ->
-      decode.failure(
-        ValidateNameResponse(False),
-        "HttpResponse: unknown response: " <> str,
-      )
-  }
+pub fn random_word_response_decoder() -> decode.Decoder(RandomWordResponse) {
+  use word <- decode.field("word", decode.string)
+  decode.success(RandomWordResponse(word:))
 }
 
-pub fn encode_http_response(http_response: HttpResponse) -> json.Json {
-  case http_response {
-    RoomResponse(..) ->
-      json.object([
-        #("type", json.string("room_response")),
-        #("room_code", http_response.room_code |> encode_id),
-        #("player_id", http_response.player_id |> encode_id),
-      ])
-    ValidateNameResponse(..) ->
-      json.object([
-        #("type", json.string("validate_name_response")),
-        #("valid", json.bool(http_response.valid)),
-      ])
-    RandomWordResponse(..) ->
-      json.object([
-        #("type", json.string("random_word_response")),
-        #("word", json.string(http_response.word)),
-      ])
-  }
+pub fn random_word_response_to_json(
+  random_word_response: RandomWordResponse,
+) -> json.Json {
+  let RandomWordResponse(word:) = random_word_response
+  json.object([
+    #("word", json.string(word)),
+  ])
 }
 
 pub type WebsocketRequest {

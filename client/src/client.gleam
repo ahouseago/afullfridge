@@ -1,6 +1,5 @@
 import components/link
 import gleam/bit_array
-import gleam/http/response
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -19,7 +18,10 @@ import lustre_websocket as ws
 import modem
 import plinth/browser/clipboard
 import plinth/javascript/storage
+import routes/join
+import routes/start
 import rsvp
+import server
 import shared.{type Id, type Player, type Room, id_from_string, id_to_string}
 
 pub type Model {
@@ -64,7 +66,8 @@ pub type RoundState {
 }
 
 pub type Route {
-  Home
+  Home(start.Model)
+  Join(join.Model)
   Play(room_code: Option(String))
   NotFound
 }
@@ -75,11 +78,9 @@ pub type Msg {
   WebSocketEvent(ws.WebSocketEvent)
   OnWebsocketMessage(shared.WebsocketResponse)
 
-  StartGame
-  // JoinGame includes all of the form fields
-  JoinGame(List(#(String, String)))
-  JoinedRoom(Result(shared.HttpResponse, rsvp.Error))
-  NameIsValid(Result(shared.HttpResponse, rsvp.Error))
+  StartGameMsg(start.Msg)
+  JoinGameMsg(join.Msg)
+  NameIsValid(Result(shared.ValidateNameResponse, rsvp.Error))
   LeaveGame
 
   // Display actions
@@ -88,33 +89,17 @@ pub type Msg {
   CopyRoomCode
 
   // Game Actions
-  UpdateRoomCode(String)
   UpdatePlayerName(String)
   SetPlayerName(List(#(String, String)))
   UpdateAddWordInput(String)
   AddWord(List(#(String, String)))
   GenerateRandomWord
-  ReturnedRandomWord(Result(shared.HttpResponse, rsvp.Error))
+  ReturnedRandomWord(Result(shared.RandomWordResponse, rsvp.Error))
   RemoveWord(String)
   StartRound
   AddNextPreferedWord(String)
   ClearOrderedWords
   SubmitOrderedWords
-}
-
-const dev_mode = True
-
-pub fn server(uri: uri.Uri, path) -> String {
-  let host = option.unwrap(uri.host, "localhost")
-  case dev_mode {
-    True -> "http://localhost:8080" <> path
-    False ->
-      "https://"
-      <> host
-      <> option.map(uri.port, fn(port) { ":" <> int.to_string(port) })
-      |> option.unwrap("")
-      <> path
-  }
 }
 
 pub fn main() {
@@ -153,7 +138,7 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
                 id,
                 name,
                 ws.init(
-                  server(uri, "/ws/" <> id <> "/" <> name),
+                  server.url(uri, "/ws/" <> id <> "/" <> name),
                   WebSocketEvent,
                 ),
               ))
@@ -184,7 +169,7 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
             Some("Sorry, please try joining again."),
           ),
           effect.batch([
-            join_game(uri, id_from_string(room_code)),
+            effect.map(join_game(uri, id_from_string(room_code)), JoinGameMsg),
             modem.init(on_url_change),
           ]),
         )
@@ -195,7 +180,7 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
       modem.init(on_url_change),
     )
     Error(Nil), _ | _, Error(Nil) -> #(
-      NotInRoom(relative(""), Home, "", None),
+      NotInRoom(relative(""), Home(start.init(uri.empty)), "", None),
       modem.init(on_url_change),
     )
   }
@@ -203,9 +188,16 @@ fn init(_flags) -> #(Model, effect.Effect(Msg)) {
 
 pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
   case model, msg {
-    NotInRoom(uri:, ..), StartGame -> #(model, start_game(uri))
-    NotInRoom(uri:, ..),
-      JoinedRoom(Ok(shared.RoomResponse(room_code, player_id)))
+    NotInRoom(uri:, route: Home(..), ..),
+      StartGameMsg(start.ApiReturnedRoom(Ok(shared.RoomResponse(
+        player_id:,
+        room_code:,
+      ))))
+    | NotInRoom(uri:, route: Join(..), ..),
+      JoinGameMsg(join.ApiReturnedRoom(Ok(shared.RoomResponse(
+        room_code:,
+        player_id:,
+      ))))
     -> {
       #(
         InRoom(
@@ -224,43 +216,27 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         ),
       )
     }
-    NotInRoom(uri:, room_code_input:, ..),
-      JoinedRoom(Error(rsvp.HttpError(response.Response(status: 404, ..))))
-    -> {
+    NotInRoom(uri:, route: Home(start_model), ..), StartGameMsg(start_msg) -> {
+      let #(start_model, start_effect) = start.update(start_msg, start_model)
       #(
-        NotInRoom(
-          uri,
-          Play(None),
-          room_code_input,
-          Some("No game found with that room code."),
-        ),
-        effect.none(),
+        NotInRoom(..model, uri:, route: Home(start_model)),
+        effect.map(start_effect, StartGameMsg),
       )
     }
-    NotInRoom(..), JoinedRoom(Error(_)) -> {
+    NotInRoom(uri:, route: Join(join_model), ..), JoinGameMsg(join_msg) -> {
+      let #(join_model, join_effect) = join.update(join_msg, join_model)
       #(
-        NotInRoom(
-          ..model,
-          join_room_err: Some("An error occurred, please try again."),
-        ),
-        effect.none(),
+        NotInRoom(..model, uri:, route: Join(join_model)),
+        effect.map(join_effect, JoinGameMsg),
       )
     }
     NotInRoom(room_code_input:, ..), OnRouteChange(uri, Play(Some(room_code))) -> #(
       NotInRoom(uri, Play(Some(room_code)), room_code_input, None),
-      join_game(uri, id_from_string(room_code)),
+      join_game(uri, id_from_string(room_code)) |> effect.map(JoinGameMsg),
     )
     NotInRoom(room_code_input:, ..), OnRouteChange(uri, route) -> #(
       NotInRoom(uri, route, room_code_input, None),
       effect.none(),
-    )
-    NotInRoom(uri:, route:, ..), UpdateRoomCode(room_code) -> #(
-      NotInRoom(uri, route, string.uppercase(room_code), None),
-      effect.none(),
-    )
-    NotInRoom(uri:, ..), JoinGame([#("room-code-input", room_code_input)]) -> #(
-      model,
-      join_game(uri, id_from_string(room_code_input)),
     )
     NotInRoom(..), UpdatePlayerName(_) -> #(model, effect.none())
     NotInRoom(..), _ -> {
@@ -293,7 +269,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         True -> #(model, effect.none())
         False -> #(
           NotInRoom(uri, Play(Some(new_room_code)), new_room_code, None),
-          join_game(uri, room_code),
+          join_game(uri, room_code) |> effect.map(JoinGameMsg),
         )
       }
     }
@@ -311,12 +287,12 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       #(
         model,
         rsvp.post(
-          server(uri, "/validatename"),
-          shared.encode_http_request(shared.ValidateNameRequest(
+          server.url(uri, "/validatename"),
+          shared.validate_name_request_to_json(shared.ValidateNameRequest(
             player_id,
             player_name,
           )),
-          rsvp.expect_json(shared.http_response_decoder(), NameIsValid),
+          rsvp.expect_json(shared.validate_name_response_decoder(), NameIsValid),
         ),
       )
     }
@@ -345,7 +321,7 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
           #(
             model,
             ws.init(
-              server(
+              server.url(
                 uri,
                 "/ws/" <> id_to_string(player_id) <> "/" <> player_name,
               ),
@@ -360,9 +336,6 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
             effect.none(),
           )
         }
-        // Error(rsvp.OtherError(412, reason)) -> {
-        //   #(InRoom(..model, error: Some(reason)), effect.none())
-        // }
         Error(error) -> {
           echo "failed to validate name"
           echo error
@@ -636,7 +609,10 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
           )
         }
         Ok(shared.Kicked) -> {
-          #(NotInRoom(uri, Home, "", None), modem.push("/", None, None))
+          #(
+            NotInRoom(uri, Home(start.init(uri)), "", None),
+            modem.push("/", None, None),
+          )
         }
         Ok(shared.ServerError(reason)) -> {
           echo reason
@@ -650,26 +626,19 @@ fn handle_ws_message(model: Model, msg: String) -> #(Model, effect.Effect(Msg)) 
   }
 }
 
-fn start_game(uri: uri.Uri) {
-  rsvp.get(
-    server(uri, "/createroom"),
-    rsvp.expect_json(shared.http_response_decoder(), JoinedRoom),
-  )
-}
-
 fn join_game(uri: uri.Uri, room_code: Id(Room)) {
   echo "joining room"
   rsvp.post(
-    server(uri, "/joinroom"),
-    shared.encode_http_request(shared.JoinRoomRequest(room_code)),
-    rsvp.expect_json(shared.http_response_decoder(), JoinedRoom),
+    server.url(uri, "/joinroom"),
+    shared.join_room_request_to_json(shared.JoinRoomRequest(room_code)),
+    rsvp.expect_json(shared.room_response_decoder(), join.ApiReturnedRoom),
   )
 }
 
 fn get_random_word(uri: uri.Uri) {
   rsvp.get(
-    server(uri, "/randomword"),
-    rsvp.expect_json(shared.http_response_decoder(), ReturnedRandomWord),
+    server.url(uri, "/randomword"),
+    rsvp.expect_json(shared.random_word_response_decoder(), ReturnedRandomWord),
   )
 }
 
@@ -684,7 +653,8 @@ fn get_route_from_uri(uri: uri.Uri) -> Route {
       }
     })
   case uri.path_segments(uri.path), room_code {
-    [""], _ | [], _ -> Home
+    [""], _ | [], _ -> Home(start.init(uri))
+    ["join"], _ -> Join(join.init(uri))
     ["play"], room_code -> Play(room_code)
     _, _ -> NotFound
   }
@@ -706,9 +676,20 @@ pub fn view(model: Model) -> element.Element(Msg) {
 
 fn header(model: Model) {
   case model {
-    NotInRoom(route: Home, ..) ->
+    NotInRoom(route: Home(..), ..) ->
       html.h1([class("text-4xl my-10 text-center")], [
         element.text("A Full Fridge"),
+      ])
+    NotInRoom(route: Join(..), ..) ->
+      html.div([], [
+        html.nav([class("flex items-center bg-sky-100 text-blue-900")], [
+          link.view(
+            "/",
+            [icon.house([class("mr-2 inline")]), element.text("Home")],
+            "",
+          ),
+        ]),
+        html.h1([class("text-2xl my-5")], [element.text("Joining game...")]),
       ])
     NotInRoom(route: Play(Some(_)), ..) ->
       html.div([], [
@@ -784,74 +765,12 @@ fn header(model: Model) {
 
 fn content(model: Model) {
   case model {
-    NotInRoom(route: Home, join_room_err:, ..) ->
-      html.div([class("text-center")], [
-        case join_room_err {
-          Some(err) -> html.div([class("bg-red-50")], [element.text(err)])
-          None -> element.none()
-        },
-        html.p([class("mx-4 text-lg mb-8")], [
-          element.text("A game about preferences best played with friends."),
-        ]),
-        html.div([class("flex flex-col items-center")], [
-          html.button(
-            [
-              event.on_click(StartGame),
-              class(
-                "w-36 p-2 bg-green-700 text-white rounded hover:bg-green-600",
-              ),
-            ],
-            [element.text("Start new game")],
-          ),
-          link.view(
-            "/play",
-            [element.text("Join a game")],
-            "w-36 text-white bg-sky-600 rounded hover:bg-sky-500 no-underline",
-          ),
-        ]),
-      ])
+    NotInRoom(route: Home(model), ..) ->
+      element.map(start.view(model), StartGameMsg)
+    NotInRoom(route: Join(model), ..) ->
+      element.map(join.view(model), JoinGameMsg)
     NotInRoom(route: Play(Some(room_code)), join_room_err: None, ..) ->
       element.text("Joining room " <> room_code <> "...")
-    NotInRoom(route: Play(None), room_code_input:, join_room_err:, ..) ->
-      html.form(
-        [event.on_submit(JoinGame), class("flex flex-wrap items-center mx-4")],
-        [
-          html.label(
-            [attribute.for("room-code-input"), class("flex-initial mr-2 mb-2")],
-            [element.text("Enter game code:")],
-          ),
-          html.div([class("mb-2")], [
-            html.input([
-              attribute.name("room-code-input"),
-              attribute.id("room-code-input"),
-              attribute.placeholder("ABCD"),
-              attribute.type_("text"),
-              class(
-                "mr-2 p-2 w-16 border-2 rounded placeholder:text-slate-300 placeholder:tracking-widest font-mono placeholder:opacity-50 tracking-widest",
-              ),
-              event.on_input(UpdateRoomCode),
-              attribute.value(room_code_input),
-            ]),
-            html.button(
-              [
-                attribute.type_("submit"),
-                attribute.disabled(
-                  string.length(string.trim(room_code_input)) != 4,
-                ),
-                class(
-                  "rounded px-3 py-2 border bg-sky-600 hover:bg-sky-500 text-white hover:shadow-md disabled:opacity-50 disabled:bg-sky-600 disabled:shadow-none",
-                ),
-              ],
-              [element.text("Join")],
-            ),
-          ]),
-          case join_room_err {
-            Some(err) ->
-              html.div([class("ml-2 text-red-800")], [element.text(err)])
-            None -> element.none()
-          },
-        ],
-      )
     InRoom(
       player_id:,
       active_game: Some(ActiveGame(
@@ -1309,6 +1228,7 @@ fn display_full_word_list(room: shared.Room, add_word_input: String) {
           ]),
           html.button(
             [
+              attribute.type_("button"),
               event.on_click(GenerateRandomWord),
               class(
                 "p-2 rounded border-solid border border-gray-200 hover:bg-emerald-50",
