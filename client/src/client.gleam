@@ -17,6 +17,7 @@ import lustre/element/html
 import lustre/event
 import lustre_websocket as ws
 import modem
+import ordering
 import plinth/browser/clipboard
 import plinth/javascript/storage
 import routes/join
@@ -90,6 +91,7 @@ pub type Msg {
   CopyRoomCode
 
   // Game Actions
+  OrderingMsg(ordering.Msg)
   UpdatePlayerName(String)
   SetPlayerName(List(#(String, String)))
   UpdateAddWordInput(String)
@@ -822,86 +824,97 @@ fn content(model: Model) {
       display_state: DisplayState(Round, False),
       ..,
     ) ->
-      html.div([attribute.class("flex flex-col max-w-2xl mx-auto")], [
-        html.div([attribute.class("m-4")], [
-          html.h2([attribute.class("text-lg mb-2")], [
-            element.text(choosing_player_heading(
-              room.players,
-              player_id,
-              round_state.round.leading_player_id,
-            )),
-          ]),
-          html.div(
-            [attribute.class("flex flex-col flex-wrap")],
-            list.map(round_state.round.words, fn(word) {
-              let bg_colour = case
-                list.find(round_state.ordered_words, fn(w) { w == word })
-              {
-                Ok(_) -> "bg-green-50"
-                Error(_) -> ""
-              }
-              html.button(
-                [
-                  event.on_click(AddNextPreferedWord(word)),
-                  attribute.class(
-                    "p-2 m-1 rounded border border-slate-200 hover:shadow-md "
-                    <> bg_colour,
-                  ),
-                ],
-                [element.text(word)],
-              )
-            }),
-          ),
-          html.ol(
-            [attribute.class("list-decimal list-inside p-3")],
-            list.reverse(round_state.ordered_words)
-              |> list.map(fn(word) { html.li([], [element.text(word)]) }),
-          ),
-          html.div([attribute.class("mb-4 flex items-center justify-between")], [
-            button.view(
-              [
-                event.on_click(ClearOrderedWords),
-                attribute.class(
-                  "py-2 px-3 rounded m-2 bg-red-100 text-red-800 hover:shadow-md hover:bg-red-200 disabled:bg-red-100 disabled:opacity-50 disabled:shadow-none",
-                ),
-              ],
-              [element.text("clear"), icon.x([attribute.class("ml-2 inline")])],
-              round_state.ordered_words == [] || round_state.submitted,
-            ),
-            button.view(
-              [
-                event.on_click(SubmitOrderedWords),
-                attribute.class(
-                  "py-2 px-3 m-2 rounded bg-green-100 text-green-900 hover:shadow-md hover:bg-green-200 disabled:green-50 disabled:opacity-50 disabled:shadow-none",
-                ),
-              ],
-              [
-                element.text("submit"),
-                icon.check([attribute.class("ml-2 inline")]),
-              ],
-              list.length(round_state.ordered_words)
-                != list.length(round_state.round.words)
-                || round_state.submitted,
-            ),
-          ]),
-          case round_state.submitted {
-            True ->
-              html.div([], [
-                html.h6([], [element.text("Waiting for other players:")]),
-                html.ul(
-                  [attribute.class("list-disc list-inside p-2")],
-                  list.filter_map(room.players, fn(player) {
-                    case list.contains(round_state.round.submitted, player.id) {
-                      False -> Ok(html.li([], [element.text(player.name)]))
-                      True -> Error(Nil)
-                    }
-                  }),
-                ),
-              ])
-            False -> element.none()
-          },
-        ]),
-      ])
+      element.map(
+        ordering.view(ordering.Model(
+          player_id:,
+          room:,
+          round: round_state.round,
+          ordered_words: round_state.ordered_words,
+          submitted: round_state.submitted,
+          dragging: None,
+        )),
+        OrderingMsg,
+      )
+    // html.div([attribute.class("flex flex-col max-w-2xl mx-auto")], [
+    //   html.div([attribute.class("m-4")], [
+    //     html.h2([attribute.class("text-lg mb-2")], [
+    //       element.text(choosing_player_heading(
+    //         room.players,
+    //         player_id,
+    //         round_state.round.leading_player_id,
+    //       )),
+    //     ]),
+    //     html.div(
+    //       [attribute.class("flex flex-col flex-wrap")],
+    //       list.map(round_state.round.words, fn(word) {
+    //         let bg_colour = case
+    //           list.find(round_state.ordered_words, fn(w) { w == word })
+    //         {
+    //           Ok(_) -> "bg-green-50"
+    //           Error(_) -> ""
+    //         }
+    //         html.button(
+    //           [
+    //             event.on_click(AddNextPreferedWord(word)),
+    //             attribute.class(
+    //               "p-2 m-1 rounded border border-slate-200 hover:shadow-md "
+    //               <> bg_colour,
+    //             ),
+    //           ],
+    //           [element.text(word)],
+    //         )
+    //       }),
+    //     ),
+    //     html.ol(
+    //       [attribute.class("list-decimal list-inside p-3")],
+    //       list.reverse(round_state.ordered_words)
+    //         |> list.map(fn(word) { html.li([], [element.text(word)]) }),
+    //     ),
+    //     html.div([attribute.class("mb-4 flex items-center justify-between")], [
+    //       button.view(
+    //         [
+    //           event.on_click(ClearOrderedWords),
+    //           attribute.class(
+    //             "py-2 px-3 rounded m-2 bg-red-100 text-red-800 hover:shadow-md hover:bg-red-200 disabled:bg-red-100 disabled:opacity-50 disabled:shadow-none",
+    //           ),
+    //         ],
+    //         [element.text("clear"), icon.x([attribute.class("ml-2 inline")])],
+    //         round_state.ordered_words == [] || round_state.submitted,
+    //       ),
+    //       button.view(
+    //         [
+    //           event.on_click(SubmitOrderedWords),
+    //           attribute.class(
+    //             "py-2 px-3 m-2 rounded bg-green-100 text-green-900 hover:shadow-md hover:bg-green-200 disabled:green-50 disabled:opacity-50 disabled:shadow-none",
+    //           ),
+    //         ],
+    //         [
+    //           element.text("submit"),
+    //           icon.check([attribute.class("ml-2 inline")]),
+    //         ],
+    //         list.length(round_state.ordered_words)
+    //           != list.length(round_state.round.words)
+    //           || round_state.submitted,
+    //       ),
+    //     ]),
+    //     case round_state.submitted {
+    //       True ->
+    //         html.div([], [
+    //           html.h6([], [element.text("Waiting for other players:")]),
+    //           html.ul(
+    //             [attribute.class("list-disc list-inside p-2")],
+    //             list.filter_map(room.players, fn(player) {
+    //               case list.contains(round_state.round.submitted, player.id) {
+    //                 False -> Ok(html.li([], [element.text(player.name)]))
+    //                 True -> Error(Nil)
+    //               }
+    //             }),
+    //           ),
+    //         ])
+    //       False -> element.none()
+    //     },
+    //   ]),
+    // ])
     InRoom(
       player_id:,
       active_game: Some(ActiveGame(
