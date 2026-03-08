@@ -1,3 +1,4 @@
+import components/button
 import components/link
 import gleam/bit_array
 import gleam/int
@@ -857,7 +858,7 @@ fn content(model: Model) {
               |> list.map(fn(word) { html.li([], [element.text(word)]) }),
           ),
           html.div([attribute.class("mb-4 flex items-center justify-between")], [
-            button(
+            button.view(
               [
                 event.on_click(ClearOrderedWords),
                 attribute.class(
@@ -867,7 +868,7 @@ fn content(model: Model) {
               [element.text("clear"), icon.x([attribute.class("ml-2 inline")])],
               round_state.ordered_words == [] || round_state.submitted,
             ),
-            button(
+            button.view(
               [
                 event.on_click(SubmitOrderedWords),
                 attribute.class(
@@ -1224,7 +1225,7 @@ fn display_menu(current_view: InGameView, game_started: Bool) {
   html.div(
     [attribute.class("my-4 mx-auto max-w-90 flex flex-col items-center")],
     [
-      button(
+      button.view(
         [
           event.on_click(SetView(Round)),
           attribute.class(
@@ -1234,7 +1235,7 @@ fn display_menu(current_view: InGameView, game_started: Bool) {
         [element.text("current round")],
         current_view == Round || !game_started,
       ),
-      button(
+      button.view(
         [
           event.on_click(SetView(Scores)),
           attribute.class(
@@ -1244,7 +1245,7 @@ fn display_menu(current_view: InGameView, game_started: Bool) {
         [element.text("view scores")],
         current_view == Scores || !game_started,
       ),
-      button(
+      button.view(
         [
           event.on_click(SetView(WordList)),
           attribute.class(
@@ -1255,7 +1256,7 @@ fn display_menu(current_view: InGameView, game_started: Bool) {
         current_view == WordList || !game_started,
       ),
       html.hr([attribute.class("my-4 mx-2 w-4/5")]),
-      button(
+      button.view(
         [
           event.on_click(LeaveGame),
           attribute.class(
@@ -1308,7 +1309,7 @@ fn display_full_word_list(room: shared.Room, add_word_input: String) {
             ],
             [element.text("Randomise 🎲")],
           ),
-          button(
+          button.view(
             [
               attribute.type_("submit"),
               attribute.class("ml-2 rounded flex-none self-center"),
@@ -1342,7 +1343,7 @@ fn display_full_word_list(room: shared.Room, add_word_input: String) {
             ],
             [
               element.text(word),
-              button(
+              button.view(
                 [
                   event.on_click(RemoveWord(word)),
                   attribute.class(
@@ -1358,31 +1359,4 @@ fn display_full_word_list(room: shared.Room, add_word_input: String) {
       ),
     ]),
   ]
-}
-
-fn button(
-  attrs: List(attribute.Attribute(a)),
-  content: List(element.Element(a)),
-  disabled: Bool,
-) {
-  html.button(
-    [
-      attribute.class("border-1 border-solid"),
-      attribute.class("py-2 px-3 rounded-lg"),
-      attribute.class("font-[Lacquer]"),
-      attribute.disabled(disabled),
-      case disabled {
-        True ->
-          attribute.class(
-            "cursor-not-allowed bg-gray-200 border-gray-400 text-gray-500",
-          )
-        False ->
-          attribute.class(
-            "cursor-pointer hover:shadow-gray-800 hover:shadow-sm",
-          )
-      },
-      ..attrs
-    ],
-    content,
-  )
 }
