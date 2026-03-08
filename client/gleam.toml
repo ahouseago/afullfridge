@@ -39,3 +39,10 @@ outdir = "../server/priv/static"
 
 [tools.lustre.html]
 title = "A Full Fridge"
+links = [
+  { rel="preconnect", href="https://fonts.googleapis.com" },
+  { rel="preconnect", href="https://fonts.gstatic.com" }
+]
+stylesheets = [
+  { href="https://fonts.googleapis.com/css2?family=Lacquer&display=swap" }
+]
