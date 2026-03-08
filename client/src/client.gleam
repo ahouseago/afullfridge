@@ -9,7 +9,7 @@ import gleam/string
 import gleam/uri
 import icon
 import lustre
-import lustre/attribute.{class}
+import lustre/attribute
 import lustre/effect
 import lustre/element
 import lustre/element/html
@@ -666,9 +666,9 @@ fn on_url_change(uri: uri.Uri) -> Msg {
 
 pub fn view(model: Model) -> element.Element(Msg) {
   html.div([], [
-    html.div([class("flex flex-col h-dvh max-h-dvh")], [
+    html.div([attribute.class("flex flex-col h-dvh max-h-dvh")], [
       header(model),
-      html.div([class("max-h-full overflow-y-auto")], [content(model)]),
+      html.div([attribute.class("max-h-full overflow-y-auto")], [content(model)]),
       footer(model),
     ]),
   ])
@@ -677,51 +677,51 @@ pub fn view(model: Model) -> element.Element(Msg) {
 fn header(model: Model) {
   case model {
     NotInRoom(route: Home(..), ..) ->
-      html.h1([class("text-4xl my-10 text-center")], [
+      html.h1([attribute.class("text-4xl my-10 text-center")], [
         element.text("A Full Fridge"),
       ])
     NotInRoom(route: Join(..), ..) ->
       html.div([], [
-        html.nav([class("flex items-center bg-sky-100 text-blue-900")], [
+        html.nav([attribute.class("flex items-center bg-sky-100 text-blue-900")], [
           link.view(
             "/",
-            [icon.house([class("mr-2 inline")]), element.text("Home")],
+            [icon.house([attribute.class("mr-2 inline")]), element.text("Home")],
             "",
           ),
         ]),
-        html.h1([class("text-2xl my-5")], [element.text("Joining game...")]),
+        html.h1([attribute.class("text-2xl my-5")], [element.text("Joining game...")]),
       ])
     NotInRoom(route: Play(Some(_)), ..) ->
       html.div([], [
-        html.nav([class("flex items-center bg-sky-100 text-blue-900")], [
+        html.nav([attribute.class("flex items-center bg-sky-100 text-blue-900")], [
           link.view(
             "/",
-            [icon.house([class("mr-2 inline")]), element.text("Home")],
+            [icon.house([attribute.class("mr-2 inline")]), element.text("Home")],
             "",
           ),
         ]),
-        html.h1([class("text-2xl my-5")], [element.text("Joining game...")]),
+        html.h1([attribute.class("text-2xl my-5")], [element.text("Joining game...")]),
       ])
     NotInRoom(route: Play(None), ..) ->
       html.div([], [
-        html.nav([class("flex items-center bg-sky-100 text-blue-900")], [
+        html.nav([attribute.class("flex items-center bg-sky-100 text-blue-900")], [
           link.view(
             "/",
-            [icon.house([class("mr-2 inline")]), element.text("Home")],
+            [icon.house([attribute.class("mr-2 inline")]), element.text("Home")],
             "",
           ),
         ]),
-        html.h1([class("text-2xl my-5 mx-4")], [element.text("Join game")]),
+        html.h1([attribute.class("text-2xl my-5 mx-4")], [element.text("Join game")]),
       ])
     InRoom(room_code:, display_state: DisplayState(menu_open: False, ..), ..) ->
-      html.div([class("flex bg-green-700 text-gray-100")], [
-        html.h1([class("text-xl my-5 mx-2")], [
+      html.div([attribute.class("flex bg-green-700 text-gray-100")], [
+        html.h1([attribute.class("text-xl my-5 mx-2")], [
           element.text("Game:"),
           html.code(
             [
               event.on_click(CopyRoomCode),
               attribute.attribute("title", "Copy"),
-              class(
+              attribute.class(
                 "mx-1 px-1 text-gray-100 border-dashed border-2 rounded-sm border-transparent hover:border-slate-500 hover:bg-green-200 hover:text-gray-800 cursor-pointer",
               ),
             ],
@@ -729,19 +729,19 @@ fn header(model: Model) {
           ),
         ]),
         html.button(
-          [event.on_click(ShowMenu(True)), class("ml-auto px-3 py-2")],
-          [element.text("Menu"), icon.menu([class("ml-2 inline")])],
+          [event.on_click(ShowMenu(True)), attribute.class("ml-auto px-3 py-2")],
+          [element.text("Menu"), icon.menu([attribute.class("ml-2 inline")])],
         ),
       ])
     InRoom(room_code:, display_state: DisplayState(menu_open: True, ..), ..) ->
-      html.div([class("flex bg-green-700 text-gray-100")], [
-        html.h1([class("text-xl my-5 mx-2")], [
+      html.div([attribute.class("flex bg-green-700 text-gray-100")], [
+        html.h1([attribute.class("text-xl my-5 mx-2")], [
           element.text("Game:"),
           html.code(
             [
               event.on_click(CopyRoomCode),
               attribute.attribute("title", "Copy"),
-              class(
+              attribute.class(
                 "mx-1 px-1 text-gray-100 border-dashed border-2 rounded-sm border-transparent hover:border-slate-500 hover:bg-green-200 hover:text-gray-800 cursor-pointer",
               ),
             ],
@@ -749,16 +749,16 @@ fn header(model: Model) {
           ),
         ]),
         html.button(
-          [event.on_click(ShowMenu(False)), class("ml-auto px-3 py-2")],
-          [element.text("Close"), icon.x([class("ml-2 inline")])],
+          [event.on_click(ShowMenu(False)), attribute.class("ml-auto px-3 py-2")],
+          [element.text("Close"), icon.x([attribute.class("ml-2 inline")])],
         ),
       ])
     NotInRoom(route: NotFound, ..) ->
       html.div([], [
-        html.nav([class("flex items-center")], [
+        html.nav([attribute.class("flex items-center")], [
           link.view("/", [element.text("Home")], ""),
         ]),
-        html.h1([class("text-2xl my-5")], [element.text("Page not found")]),
+        html.h1([attribute.class("text-2xl my-5")], [element.text("Page not found")]),
       ])
   }
 }
@@ -781,9 +781,9 @@ fn content(model: Model) {
       display_state: DisplayState(Round, False),
       ..,
     ) ->
-      html.div([class("flex flex-col max-w-2xl mx-auto")], [
-        html.div([class("m-4")], [
-          html.h2([class("text-lg mb-2")], [
+      html.div([attribute.class("flex flex-col max-w-2xl mx-auto")], [
+        html.div([attribute.class("m-4")], [
+          html.h2([attribute.class("text-lg mb-2")], [
             element.text(choosing_player_heading(
               room.players,
               player_id,
@@ -791,7 +791,7 @@ fn content(model: Model) {
             )),
           ]),
           html.div(
-            [class("flex flex-col flex-wrap")],
+            [attribute.class("flex flex-col flex-wrap")],
             list.map(round_state.round.words, fn(word) {
               let bg_colour = case
                 list.find(round_state.ordered_words, fn(w) { w == word })
@@ -802,7 +802,7 @@ fn content(model: Model) {
               html.button(
                 [
                   event.on_click(AddNextPreferedWord(word)),
-                  class(
+                  attribute.class(
                     "p-2 m-1 rounded border border-slate-200 hover:shadow-md "
                     <> bg_colour,
                   ),
@@ -812,22 +812,22 @@ fn content(model: Model) {
             }),
           ),
           html.ol(
-            [class("list-decimal list-inside p-3")],
+            [attribute.class("list-decimal list-inside p-3")],
             list.reverse(round_state.ordered_words)
               |> list.map(fn(word) { html.li([], [element.text(word)]) }),
           ),
-          html.div([class("mb-4 flex items-center justify-between")], [
+          html.div([attribute.class("mb-4 flex items-center justify-between")], [
             html.button(
               [
                 event.on_click(ClearOrderedWords),
                 attribute.disabled(
                   round_state.ordered_words == [] || round_state.submitted,
                 ),
-                class(
+                attribute.class(
                   "py-2 px-3 rounded m-2 bg-red-100 text-red-800 hover:shadow-md hover:bg-red-200 disabled:bg-red-100 disabled:opacity-50 disabled:shadow-none",
                 ),
               ],
-              [element.text("Clear"), icon.x([class("ml-2 inline")])],
+              [element.text("Clear"), icon.x([attribute.class("ml-2 inline")])],
             ),
             html.button(
               [
@@ -837,11 +837,11 @@ fn content(model: Model) {
                   != list.length(round_state.round.words)
                   || round_state.submitted,
                 ),
-                class(
+                attribute.class(
                   "py-2 px-3 m-2 rounded bg-green-100 text-green-900 hover:shadow-md hover:bg-green-200 disabled:green-50 disabled:opacity-50 disabled:shadow-none",
                 ),
               ],
-              [element.text("Submit"), icon.check([class("ml-2 inline")])],
+              [element.text("Submit"), icon.check([attribute.class("ml-2 inline")])],
             ),
           ]),
           case round_state.submitted {
@@ -849,7 +849,7 @@ fn content(model: Model) {
               html.div([], [
                 html.h6([], [element.text("Waiting for other players:")]),
                 html.ul(
-                  [class("list-disc list-inside p-2")],
+                  [attribute.class("list-disc list-inside p-2")],
                   list.filter_map(room.players, fn(player) {
                     case list.contains(round_state.round.submitted, player.id) {
                       False -> Ok(html.li([], [element.text(player.name)]))
@@ -872,17 +872,17 @@ fn content(model: Model) {
       display_state: DisplayState(Scores, False),
       ..,
     ) ->
-      html.div([class("max-w-2xl mx-auto")], [
-        html.div([class("flex flex-col m-4")], [
+      html.div([attribute.class("max-w-2xl mx-auto")], [
+        html.div([attribute.class("flex flex-col m-4")], [
           display_players(
             room.players,
             round_state.round.leading_player_id,
             room.finished_rounds,
           ),
-          html.hr([class("my-4 text-gray-400")]),
-          html.h2([class("text-2xl mt-1 mb-3 font-bold")], [
+          html.hr([attribute.class("my-4 text-gray-400")]),
+          html.h2([attribute.class("text-2xl mt-1 mb-3 font-bold")], [
             element.text("Previous rounds"),
-            html.span([class("font-normal")], [element.text(" (latest first)")]),
+            html.span([attribute.class("font-normal")], [element.text(" (latest first)")]),
           ]),
           ..list.reverse(room.finished_rounds)
           |> list.index_map(display_finished_round(player_id))
@@ -900,7 +900,7 @@ fn content(model: Model) {
       ..,
     ) ->
       html.div(
-        [class("flex flex-col p-4 max-w-2xl mx-auto")],
+        [attribute.class("flex flex-col p-4 max-w-2xl mx-auto")],
         display_full_word_list(room, add_word_input),
       )
     InRoom(
@@ -918,11 +918,11 @@ fn content(model: Model) {
       )),
       ..,
     ) ->
-      html.div([class("flex flex-col p-4 max-w-2xl mx-auto")], [
+      html.div([attribute.class("flex flex-col p-4 max-w-2xl mx-auto")], [
         html.div([], [
-          html.h2([class("text-lg")], [element.text("Players:")]),
+          html.h2([attribute.class("text-lg")], [element.text("Players:")]),
           html.ul(
-            [class("ml-3")],
+            [attribute.class("ml-3")],
             list.reverse(room.players)
               |> list.map(fn(player) {
                 let connected = case player.connected {
@@ -942,7 +942,7 @@ fn content(model: Model) {
               }),
           ),
         ]),
-        html.hr([class("my-2 text-gray-300")]),
+        html.hr([attribute.class("my-2 text-gray-300")]),
         html.p([], [
           element.text("Please add some things to the list. "),
           element.text(
@@ -952,8 +952,8 @@ fn content(model: Model) {
         ..display_full_word_list(room, add_word_input)
       ])
     InRoom(player_name:, active_game: None, error:, ..) ->
-      html.div([class("flex flex-col m-4 max-w-2xl mx-auto")], [
-        html.form([event.on_submit(SetPlayerName), class("flex flex-col m-4")], [
+      html.div([attribute.class("flex flex-col m-4 max-w-2xl mx-auto")], [
+        html.form([event.on_submit(SetPlayerName), attribute.class("flex flex-col m-4")], [
           html.label([attribute.for("name-input")], [element.text("Name:")]),
           html.input([
             attribute.name("name-input"),
@@ -962,7 +962,7 @@ fn content(model: Model) {
             event.on_input(UpdatePlayerName),
             attribute.value(player_name),
             attribute.type_("text"),
-            class(
+            attribute.class(
               "my-2 p-2 border-2 rounded placeholder:text-slate-300 placeholder:opacity-50",
             ),
           ]),
@@ -970,7 +970,7 @@ fn content(model: Model) {
             [
               attribute.type_("submit"),
               attribute.disabled(string.trim(player_name) == ""),
-              class(
+              attribute.class(
                 "p-2 text-lime-900 bg-emerald-100 hover:bg-emerald-200 rounded disabled:bg-emerald-100 disabled:text-lime-700 disabled:opacity-50",
               ),
             ],
@@ -978,7 +978,7 @@ fn content(model: Model) {
           ),
           case error {
             Some(error) ->
-              html.div([class("ml-2 text-red-800")], [element.text(error)])
+              html.div([attribute.class("ml-2 text-red-800")], [element.text(error)])
             None -> element.none()
           },
         ]),
@@ -990,7 +990,7 @@ fn content(model: Model) {
       error:,
       ..,
     ) -> {
-      html.div([class("flex flex-col m-4")], [
+      html.div([attribute.class("flex flex-col m-4")], [
         html.div([], [
           html.h2([], [element.text(player_name)]),
           case error {
@@ -1013,7 +1013,7 @@ fn footer(model: Model) {
       html.button(
         [
           event.on_click(StartRound),
-          class(
+          attribute.class(
             "mt-auto py-3 border-t-2 border-green-400 bg-green-50 text-green-900 hover:bg-green-100",
           ),
         ],
@@ -1027,7 +1027,7 @@ fn footer(model: Model) {
       html.button(
         [
           event.on_click(SetView(Round)),
-          class(
+          attribute.class(
             "mt-auto py-3 border-t-2 border-green-400 bg-green-50 text-green-900 hover:bg-green-100",
           ),
         ],
@@ -1087,7 +1087,7 @@ fn display_players(
     })
 
   html.div(
-    [class("flex flex-col")],
+    [attribute.class("flex flex-col")],
     list.reverse(players)
       |> list.map(fn(player) {
         let score =
@@ -1101,7 +1101,7 @@ fn display_players(
           False -> ""
         }
         html.div(
-          [class("my-1 p-2 rounded flex justify-between" <> extra_class)],
+          [attribute.class("my-1 p-2 rounded flex justify-between" <> extra_class)],
           [
             html.span([], [
               element.text(player.name),
@@ -1127,8 +1127,8 @@ fn display_finished_round(player_id: Id(Player)) {
       }
     }
 
-    html.div([class("my-3 py-1 border-solid border-l-2 p-2 border-gray-300")], [
-      html.h3([class("text-xl mb-2 font-bold")], [
+    html.div([attribute.class("my-3 py-1 border-solid border-l-2 p-2 border-gray-300")], [
+      html.h3([attribute.class("text-xl mb-2 font-bold")], [
         element.text("Round " <> int.to_string(round_index + 1)),
       ]),
       html.div(
@@ -1149,14 +1149,14 @@ fn display_finished_round(player_id: Id(Player)) {
         })
           |> list.map(fn(player_score) {
             html.div([], [
-              html.h4([class("text-lg")], [
+              html.h4([attribute.class("text-lg")], [
                 element.text(player_text(
                   player_score.player,
                   player_score.score,
                 )),
               ]),
               html.ol(
-                [class("list-decimal list-inside p-2")],
+                [attribute.class("list-decimal list-inside p-2")],
                 list.reverse(player_score.words)
                   |> list.map(fn(word) { html.li([], [element.text(word)]) }),
               ),
@@ -1168,12 +1168,12 @@ fn display_finished_round(player_id: Id(Player)) {
 }
 
 fn display_menu(current_view: InGameView, game_started: Bool) {
-  html.div([class("my-4 mx-2 max-w-90 flex flex-col items-center")], [
+  html.div([attribute.class("my-4 mx-2 max-w-90 flex flex-col items-center")], [
     html.button(
       [
         event.on_click(SetView(Round)),
         attribute.disabled(current_view == Round || !game_started),
-        class("underline p-2 disabled:no-underline disabled:text-slate-600"),
+        attribute.class("underline p-2 disabled:no-underline disabled:text-slate-600"),
       ],
       [element.text("Current round")],
     ),
@@ -1181,7 +1181,7 @@ fn display_menu(current_view: InGameView, game_started: Bool) {
       [
         event.on_click(SetView(Scores)),
         attribute.disabled(current_view == Scores || !game_started),
-        class("underline p-2 disabled:no-underline disabled:text-slate-600"),
+        attribute.class("underline p-2 disabled:no-underline disabled:text-slate-600"),
       ],
       [element.text("View scores")],
     ),
@@ -1189,19 +1189,19 @@ fn display_menu(current_view: InGameView, game_started: Bool) {
       [
         event.on_click(SetView(WordList)),
         attribute.disabled(current_view == WordList || !game_started),
-        class("underline p-2 disabled:no-underline disabled:text-slate-600"),
+        attribute.class("underline p-2 disabled:no-underline disabled:text-slate-600"),
       ],
       [element.text("Update list")],
     ),
-    html.hr([class("mt-4 mb-2 mx-2 w-4/5")]),
+    html.hr([attribute.class("mt-4 mb-2 mx-2 w-4/5")]),
     html.button(
       [
         event.on_click(LeaveGame),
-        class(
+        attribute.class(
           "underline p-2 disabled:no-underline disabled:text-slate-600 flex items-center p-2",
         ),
       ],
-      [icon.log_out([class("mr-2 inline")]), element.text("Leave game")],
+      [icon.log_out([attribute.class("mr-2 inline")]), element.text("Leave game")],
     ),
   ])
 }
@@ -1209,18 +1209,18 @@ fn display_menu(current_view: InGameView, game_started: Bool) {
 fn display_full_word_list(room: shared.Room, add_word_input: String) {
   [
     html.form(
-      [event.on_submit(AddWord), class("my-2 flex items-center flex-wrap")],
+      [event.on_submit(AddWord), attribute.class("my-2 flex items-center flex-wrap")],
       [
-        html.label([attribute.for("add-word-input"), class("mr-2")], [
+        html.label([attribute.for("add-word-input"), attribute.class("mr-2")], [
           element.text("Add to list"),
         ]),
-        html.div([class("flex max-w-80 min-w-56 flex-auto")], [
+        html.div([attribute.class("flex max-w-80 min-w-56 flex-auto")], [
           html.input([
             attribute.name("add-word-input"),
             attribute.id("add-word-input"),
             attribute.type_("text"),
             attribute.placeholder("A full fridge"),
-            class(
+            attribute.class(
               "my-2 p-2 border-2 rounded placeholder:text-slate-300 placeholder:opacity-50 flex-auto w-24",
             ),
             event.on_input(UpdateAddWordInput),
@@ -1230,7 +1230,7 @@ fn display_full_word_list(room: shared.Room, add_word_input: String) {
             [
               attribute.type_("button"),
               event.on_click(GenerateRandomWord),
-              class(
+              attribute.class(
                 "p-2 rounded border-solid border border-gray-200 hover:bg-emerald-50",
               ),
             ],
@@ -1239,23 +1239,23 @@ fn display_full_word_list(room: shared.Room, add_word_input: String) {
           html.button(
             [
               attribute.type_("submit"),
-              class(
+              attribute.class(
                 "py-2 px-3 ml-2 bg-green-200 hover:bg-green-300 rounded flex-none self-center",
               ),
             ],
-            [element.text("Add"), icon.plus([class("ml-2 inline")])],
+            [element.text("Add"), icon.plus([attribute.class("ml-2 inline")])],
           ),
         ]),
       ],
     ),
     html.div([], [
-      html.h2([class("text-lg my-2")], [element.text("List of words:")]),
+      html.h2([attribute.class("text-lg my-2")], [element.text("List of words:")]),
       html.ul(
         [],
         list.map(room.word_list, fn(word) {
           html.li(
             [
-              class(
+              attribute.class(
                 "flex justify-between items-center hover:bg-slate-100 pl-3 my-1",
               ),
             ],
@@ -1264,11 +1264,11 @@ fn display_full_word_list(room: shared.Room, add_word_input: String) {
               html.button(
                 [
                   event.on_click(RemoveWord(word)),
-                  class(
+                  attribute.class(
                     "rounded text-red-800 bg-red-50 border border-solid border-red-100 py-1 px-2 hover:bg-red-100",
                   ),
                 ],
-                [icon.x([class("inline")])],
+                [icon.x([attribute.class("inline")])],
               ),
             ],
           )
