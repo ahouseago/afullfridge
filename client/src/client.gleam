@@ -100,6 +100,7 @@ pub type Msg {
   AddNextPreferedWord(String)
   ClearOrderedWords
   SubmitOrderedWords
+  KickPlayer(player_id: Id(Player))
 }
 
 pub fn main() {
@@ -240,10 +241,6 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
       effect.none(),
     )
     NotInRoom(..), UpdatePlayerName(_) -> #(model, effect.none())
-    NotInRoom(..), _ -> {
-      // TODO: handle these cases individually to prevent accidentally swallowing errors
-      #(model, effect.none())
-    }
     InRoom(room_code:, ..), CopyRoomCode -> {
       let _ = clipboard.write_text(id_to_string(room_code))
       #(model, effect.none())
@@ -517,7 +514,208 @@ pub fn update(model: Model, msg: Msg) -> #(Model, effect.Effect(Msg)) {
         ),
       )
     }
-    InRoom(..), _ -> #(model, effect.none())
+    InRoom(active_game: Some(_), ..), NameIsValid(_) -> #(model, effect.none())
+    InRoom(active_game: None, ..), LeaveGame -> #(model, effect.none())
+    InRoom(active_game: None, ..), SetPlayerName([]) -> #(model, effect.none())
+    InRoom(active_game: None, ..), SetPlayerName([#(_, _)]) -> #(
+      model,
+      effect.none(),
+    )
+    InRoom(active_game: None, ..), SetPlayerName([#(_, _), _, ..]) -> #(
+      model,
+      effect.none(),
+    )
+    InRoom(active_game: Some(_), ..), SetPlayerName(_) -> #(
+      model,
+      effect.none(),
+    )
+    InRoom(active_game: None, ..), UpdateAddWordInput(_) -> #(
+      model,
+      effect.none(),
+    )
+    InRoom(active_game: Some(ActiveGame(..)), ..), AddWord([]) -> #(
+      model,
+      effect.none(),
+    )
+    InRoom(active_game: Some(ActiveGame(..)), ..), AddWord([#(_, _)]) -> #(
+      model,
+      effect.none(),
+    )
+    InRoom(active_game: Some(ActiveGame(..)), ..), AddWord([#(_, _), _, ..]) -> #(
+      model,
+      effect.none(),
+    )
+    InRoom(active_game: None, ..), AddWord(_) -> #(model, effect.none())
+    InRoom(active_game: None, ..), RemoveWord(_) -> #(model, effect.none())
+    InRoom(active_game: None, ..), StartRound -> #(model, effect.none())
+    InRoom(active_game: Some(ActiveGame(round: None, ..)), ..),
+      AddNextPreferedWord(_)
+    -> #(model, effect.none())
+    InRoom(active_game: None, ..), AddNextPreferedWord(_) -> #(
+      model,
+      effect.none(),
+    )
+    InRoom(active_game: Some(ActiveGame(round: None, ..)), ..),
+      ClearOrderedWords
+    -> #(model, effect.none())
+    InRoom(active_game: None, ..), ClearOrderedWords -> #(model, effect.none())
+    InRoom(active_game: Some(ActiveGame(round: None, ..)), ..),
+      SubmitOrderedWords
+    -> #(model, effect.none())
+    InRoom(active_game: None, ..), SubmitOrderedWords -> #(model, effect.none())
+    InRoom(..), OnWebsocketMessage(..) -> #(model, effect.none())
+    InRoom(..), StartGameMsg(..) -> #(model, effect.none())
+    InRoom(..), JoinGameMsg(..) -> #(model, effect.none())
+    InRoom(active_game: Some(ActiveGame(ws:, ..)), ..), KickPlayer(player_id:)
+    -> #(
+      model,
+      ws.send(
+        ws,
+        shared.encode(
+          shared.RemovePlayer(player_id),
+          shared.encode_websocket_request,
+        ),
+      ),
+    )
+    InRoom(active_game: None, ..), KickPlayer(..) -> #(model, effect.none())
+    NotInRoom(route: Home(_), ..), WebSocketEvent(_) -> #(model, effect.none())
+    NotInRoom(route: Home(_), ..), OnWebsocketMessage(_) -> #(
+      model,
+      effect.none(),
+    )
+    NotInRoom(route: Home(_), ..), JoinGameMsg(_) -> #(model, effect.none())
+    NotInRoom(route: Home(_), ..), NameIsValid(_) -> #(model, effect.none())
+    NotInRoom(route: Home(_), ..), LeaveGame -> #(model, effect.none())
+    NotInRoom(route: Home(_), ..), ShowMenu(_) -> #(model, effect.none())
+    NotInRoom(route: Home(_), ..), SetView(_) -> #(model, effect.none())
+    NotInRoom(route: Home(_), ..), CopyRoomCode -> #(model, effect.none())
+    NotInRoom(route: Home(_), ..), SetPlayerName(_) -> #(model, effect.none())
+    NotInRoom(route: Home(_), ..), UpdateAddWordInput(_) -> #(
+      model,
+      effect.none(),
+    )
+    NotInRoom(route: Home(_), ..), AddWord(_) -> #(model, effect.none())
+    NotInRoom(route: Home(_), ..), GenerateRandomWord -> #(model, effect.none())
+    NotInRoom(route: Home(_), ..), ReturnedRandomWord(_) -> #(
+      model,
+      effect.none(),
+    )
+    NotInRoom(route: Home(_), ..), RemoveWord(_) -> #(model, effect.none())
+    NotInRoom(route: Home(_), ..), StartRound -> #(model, effect.none())
+    NotInRoom(route: Home(_), ..), AddNextPreferedWord(_) -> #(
+      model,
+      effect.none(),
+    )
+    NotInRoom(route: Home(_), ..), ClearOrderedWords -> #(model, effect.none())
+    NotInRoom(route: Home(_), ..), SubmitOrderedWords -> #(model, effect.none())
+    NotInRoom(route: Home(_), ..), KickPlayer(..) -> #(model, effect.none())
+    NotInRoom(route: Join(_), ..), WebSocketEvent(_) -> #(model, effect.none())
+    NotInRoom(route: Join(_), ..), OnWebsocketMessage(_) -> #(
+      model,
+      effect.none(),
+    )
+    NotInRoom(route: Join(_), ..), StartGameMsg(_) -> #(model, effect.none())
+    NotInRoom(route: Join(_), ..), NameIsValid(_) -> #(model, effect.none())
+    NotInRoom(route: Join(_), ..), LeaveGame -> #(model, effect.none())
+    NotInRoom(route: Join(_), ..), ShowMenu(_) -> #(model, effect.none())
+    NotInRoom(route: Join(_), ..), SetView(_) -> #(model, effect.none())
+    NotInRoom(route: Join(_), ..), CopyRoomCode -> #(model, effect.none())
+    NotInRoom(route: Join(_), ..), SetPlayerName(_) -> #(model, effect.none())
+    NotInRoom(route: Join(_), ..), UpdateAddWordInput(_) -> #(
+      model,
+      effect.none(),
+    )
+    NotInRoom(route: Join(_), ..), AddWord(_) -> #(model, effect.none())
+    NotInRoom(route: Join(_), ..), GenerateRandomWord -> #(model, effect.none())
+    NotInRoom(route: Join(_), ..), ReturnedRandomWord(_) -> #(
+      model,
+      effect.none(),
+    )
+    NotInRoom(route: Join(_), ..), RemoveWord(_) -> #(model, effect.none())
+    NotInRoom(route: Join(_), ..), StartRound -> #(model, effect.none())
+    NotInRoom(route: Join(_), ..), AddNextPreferedWord(_) -> #(
+      model,
+      effect.none(),
+    )
+    NotInRoom(route: Join(_), ..), ClearOrderedWords -> #(model, effect.none())
+    NotInRoom(route: Join(_), ..), SubmitOrderedWords -> #(model, effect.none())
+    NotInRoom(route: Join(_), ..), KickPlayer(..) -> #(model, effect.none())
+    NotInRoom(route: Play(..), ..), WebSocketEvent(_) -> #(model, effect.none())
+    NotInRoom(route: Play(..), ..), OnWebsocketMessage(_) -> #(
+      model,
+      effect.none(),
+    )
+    NotInRoom(route: Play(..), ..), StartGameMsg(_) -> #(model, effect.none())
+    NotInRoom(route: Play(..), ..), JoinGameMsg(_) -> #(model, effect.none())
+    NotInRoom(route: Play(..), ..), NameIsValid(_) -> #(model, effect.none())
+    NotInRoom(route: Play(..), ..), LeaveGame -> #(model, effect.none())
+    NotInRoom(route: Play(..), ..), ShowMenu(_) -> #(model, effect.none())
+    NotInRoom(route: Play(..), ..), SetView(_) -> #(model, effect.none())
+    NotInRoom(route: Play(..), ..), CopyRoomCode -> #(model, effect.none())
+    NotInRoom(route: Play(..), ..), SetPlayerName(_) -> #(model, effect.none())
+    NotInRoom(route: Play(..), ..), UpdateAddWordInput(_) -> #(
+      model,
+      effect.none(),
+    )
+    NotInRoom(route: Play(..), ..), AddWord(_) -> #(model, effect.none())
+    NotInRoom(route: Play(..), ..), GenerateRandomWord -> #(
+      model,
+      effect.none(),
+    )
+    NotInRoom(route: Play(..), ..), ReturnedRandomWord(_) -> #(
+      model,
+      effect.none(),
+    )
+    NotInRoom(route: Play(..), ..), RemoveWord(_) -> #(model, effect.none())
+    NotInRoom(route: Play(..), ..), StartRound -> #(model, effect.none())
+    NotInRoom(route: Play(..), ..), AddNextPreferedWord(_) -> #(
+      model,
+      effect.none(),
+    )
+    NotInRoom(route: Play(..), ..), ClearOrderedWords -> #(model, effect.none())
+    NotInRoom(route: Play(..), ..), SubmitOrderedWords -> #(
+      model,
+      effect.none(),
+    )
+    NotInRoom(route: Play(..), ..), KickPlayer(..) -> #(model, effect.none())
+    NotInRoom(route: NotFound, ..), WebSocketEvent(_) -> #(model, effect.none())
+    NotInRoom(route: NotFound, ..), OnWebsocketMessage(_) -> #(
+      model,
+      effect.none(),
+    )
+    NotInRoom(route: NotFound, ..), StartGameMsg(_) -> #(model, effect.none())
+    NotInRoom(route: NotFound, ..), JoinGameMsg(_) -> #(model, effect.none())
+    NotInRoom(route: NotFound, ..), NameIsValid(_) -> #(model, effect.none())
+    NotInRoom(route: NotFound, ..), LeaveGame -> #(model, effect.none())
+    NotInRoom(route: NotFound, ..), ShowMenu(_) -> #(model, effect.none())
+    NotInRoom(route: NotFound, ..), SetView(_) -> #(model, effect.none())
+    NotInRoom(route: NotFound, ..), CopyRoomCode -> #(model, effect.none())
+    NotInRoom(route: NotFound, ..), SetPlayerName(_) -> #(model, effect.none())
+    NotInRoom(route: NotFound, ..), UpdateAddWordInput(_) -> #(
+      model,
+      effect.none(),
+    )
+    NotInRoom(route: NotFound, ..), AddWord(_) -> #(model, effect.none())
+    NotInRoom(route: NotFound, ..), GenerateRandomWord -> #(
+      model,
+      effect.none(),
+    )
+    NotInRoom(route: NotFound, ..), ReturnedRandomWord(_) -> #(
+      model,
+      effect.none(),
+    )
+    NotInRoom(route: NotFound, ..), RemoveWord(_) -> #(model, effect.none())
+    NotInRoom(route: NotFound, ..), StartRound -> #(model, effect.none())
+    NotInRoom(route: NotFound, ..), AddNextPreferedWord(_) -> #(
+      model,
+      effect.none(),
+    )
+    NotInRoom(route: NotFound, ..), ClearOrderedWords -> #(model, effect.none())
+    NotInRoom(route: NotFound, ..), SubmitOrderedWords -> #(
+      model,
+      effect.none(),
+    )
+    NotInRoom(route: NotFound, ..), KickPlayer(..) -> #(model, effect.none())
   }
 }
 
@@ -914,6 +1112,7 @@ fn content(model: Model) {
       html.div([attribute.class("max-w-2xl mx-auto")], [
         html.div([attribute.class("flex flex-col m-4")], [
           display_players(
+            player_id,
             room.players,
             round_state.round.leading_player_id,
             room.finished_rounds,
@@ -1099,6 +1298,7 @@ fn choosing_player_heading(
 }
 
 fn display_players(
+  current_player_id: Id(Player),
   players: List(Player),
   leading_player_id: shared.Id(Player),
   finished_rounds: List(shared.FinishedRound),
@@ -1153,6 +1353,24 @@ fn display_players(
             ),
           ],
           [
+            kick_dialog(player),
+            html.button(
+              [
+                attribute.attribute("command", "show-modal"),
+                attribute.attribute(
+                  "commandfor",
+                  "kick-dialog-" <> shared.id_to_string(player.id),
+                ),
+                attribute.disabled(player.id == current_player_id),
+                attribute.class(
+                  "cursor-pointer p-2 bg-red-100 hover:bg-red-200 "
+                  <> "disabled:cursor-not-allowed disabled:bg-gray-100",
+                ),
+              ],
+              [
+                element.text("🥾 Kick"),
+              ],
+            ),
             html.span([], [
               element.text(player.name),
               case player.connected {
@@ -1164,6 +1382,43 @@ fn display_players(
           ],
         )
       }),
+  )
+}
+
+fn kick_dialog(player: Player) {
+  let id = "kick-dialog-" <> shared.id_to_string(player.id)
+  html.dialog(
+    [
+      attribute.id(id),
+      attribute.attribute("closedby", "all"),
+      attribute.class("m-auto p-6 rounded border border-gray-300 shadow-lg"),
+    ],
+    [
+      element.text(
+        "Are you sure you want to kick " <> player.name <> " out of the game?",
+      ),
+      html.div([attribute.class("flex justify-between mt-8")], [
+        html.button(
+          [
+            attribute.attribute("commandfor", id),
+            attribute.attribute("command", "close"),
+            attribute.class(
+              "cursor-pointer p-2 bg-gray-100 hover:bg-gray-200 hover:shadow-sm",
+            ),
+          ],
+          [element.text("Cancel")],
+        ),
+        html.button(
+          [
+            event.on_click(KickPlayer(player.id)),
+            attribute.class(
+              "cursor-pointer p-2 bg-red-100 hover:bg-red-200 hover:shadow-sm",
+            ),
+          ],
+          [element.text("Kick them out!")],
+        ),
+      ]),
+    ],
   )
 }
 
