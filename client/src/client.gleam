@@ -1353,7 +1353,11 @@ fn display_players(
             ),
           ],
           [
-            kick_dialog(player),
+            // No need to render a dialog to kick yourself; there is a leave button.
+            case player.id == current_player_id {
+              True -> element.none()
+              False -> kick_dialog(player)
+            },
             html.button(
               [
                 attribute.attribute("command", "show-modal"),
