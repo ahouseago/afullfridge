@@ -1,12 +1,17 @@
 FROM erlang:27.1.1.0-alpine AS build
-COPY --from=ghcr.io/gleam-lang/gleam:v1.10.0-erlang-alpine /bin/gleam /bin/gleam
+COPY --from=ghcr.io/gleam-lang/gleam:v1.17.0-erlang-alpine /bin/gleam /bin/gleam
 
 # Add project code
 COPY ./client /build/client
 COPY ./shared /build/shared
 COPY ./server /build/server
 
-RUN cd /build/client && gleam run -m lustre/dev build app
+# Install dependencies for all projects
+RUN cd /build/shared && gleam deps download
+RUN cd /build/client && gleam deps download
+RUN cd /build/server && gleam deps download
+
+RUN cd /build/client && gleam run -m lustre/dev build --minify --outdir=../server/priv/static
 
 # RUN mkdir -p /build/server/priv/static
 # RUN cp /build/client/priv/static/* /build/server/priv/static/

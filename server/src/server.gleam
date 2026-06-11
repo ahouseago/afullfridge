@@ -87,9 +87,9 @@ pub fn main() {
           |> response.set_header("Access-Control-Allow-Headers", "content-type")
         http.Get | http.Post ->
           case request.path_segments(req) {
-            ["client.mjs"] ->
+            ["client.js"] ->
               mist.send_file(
-                priv <> "/static/client.mjs",
+                priv <> "/static/client.js",
                 offset: 0,
                 limit: None,
               )
@@ -166,7 +166,7 @@ pub fn main() {
                       attribute.href("/client.css"),
                     ]),
                     html.script(
-                      [attribute.type_("module"), attribute.src("/client.mjs")],
+                      [attribute.type_("module"), attribute.src("/client.js")],
                       "",
                     ),
                   ]),
